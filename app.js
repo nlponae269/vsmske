@@ -1,6 +1,6 @@
 /* ==========================================================================
    VСмске — социальная сеть на Firebase (Auth + Firestore).
-   Хостинг: Firebase Hosting. Фото сжимаются в браузере и хранятся в Firestore.
+   Хостинг: GitHub Pages. Фото и файлы хранятся прямо в Firestore (тариф Spark).
    ========================================================================== */
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import { getAnalytics, isSupported } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-analytics.js";
@@ -38,7 +38,9 @@ const MAX_POST_IMG = 700000;   // символов dataURL (~520 КБ), лими
 const MAX_AVATAR = 120000;
 const CHUNK = 700000;                                   // символов base64 в одном куске (кратно 4)
 const LIMITS = { disk: 10 * 1024 * 1024, video: 20 * 1024 * 1024 };
-const VERSION = '1.2';
+const VERSION = '1.3';
+const MAX_MSG_IMG = 380000;    // фото в сообщении
+const ONLINE_MS = 5 * 60 * 1000; // «в сети», если заходил не раньше 5 минут назад
 
 /* ---------- Тема ---------- */
 const lsGet = k => { try { return localStorage.getItem(k); } catch (e) { return null; } };
@@ -50,6 +52,9 @@ function applyTheme(t) {
 applyTheme(lsGet('vs_theme'));
 
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+// Текст с кликабельными ссылками (всё остальное экранируется)
+const linkify = t => String(t ?? '').split(/(https?:\/\/[^\s<]+[^\s<.,:;!?)\]"'»])/g)
+  .map((part, i) => i % 2 ? `<a href="${esc(part)}" target="_blank" rel="noopener nofollow ugc">${esc(part)}</a>` : esc(part)).join('');
 const ms = t => t && typeof t.toMillis === 'function' ? t.toMillis() : (typeof t === 'number' ? t : Date.now());
 const data = s => ({ id: s.id, ...s.data({ serverTimestamps: 'estimate' }) });
 const chatId = (a, b) => [a, b].sort().join('_');
@@ -211,11 +216,11 @@ function errText(e) {
     'auth/provider-already-linked': 'Этот способ входа уже подключён.',
     'auth/requires-recent-login': 'Для этого действия выйдите и войдите заново.',
     'auth/email-already-exists': 'Эта почта уже занята другим аккаунтом.',
-    'permission-denied':'Нет доступа. Проверьте, что правила Firestore опубликованы (firebase deploy).',
+    'permission-denied': 'Нет доступа к этому действию. Если вы владелец сайта, проверьте, что правила Firestore опубликованы в консоли.',
     'unavailable': 'Сервер недоступен. Проверьте интернет.',
   };
   if (map[code]) return map[code];
-  if (code === 'failed-precondition' && /index/i.test(e.message || '')) return 'Нужен индекс Firestore. Выполните firebase deploy или создайте его по ссылке ниже.';
+  if (code === 'failed-precondition' && /index/i.test(e.message || '')) return 'Нужен индекс Firestore. Создайте его по ссылке ниже.';
   return (e?.message || 'Что-то пошло не так').replace(/^Firebase:\s*/, '');
 }
 const indexLink = e => (String(e?.message || '').match(/https:\/\/console\.firebase\.google\.com\S+/) || [])[0];
@@ -262,6 +267,7 @@ const S = {
   draft: { text: '', image: '' }, editColor: null, editPhoto: undefined, busy: false,
   upload: null, videoDraft: null, linkForm: false, videoOwner: null, watchId: null, videoSrc: null, videoErr: null,
   albumsOwner: null, albumId: null, lightbox: null, lightboxImg: null, preview: null, newAlbum: false,
+  editPost: null, msgSel: null,
 };
 const cache = {
   users: new Map(), feed: new Map(), wall: [], comments: new Map(),
@@ -325,6 +331,7 @@ async function createProfile({ name, nick, city = '', photo = '' }) {
   if (taken.exists() && taken.data().uid !== id) throw new Error('nick-taken');
   const b = writeBatch(db);
   b.set(doc(db, 'usernames', nick), { uid: id });
+  name = name.slice(0, 60); city = city.slice(0, 40);
   b.set(doc(db, 'users', id), {
     name, nick, city, status: '', about: '', photo,
     color: COLORS[Math.floor(Math.random() * COLORS.length)],
@@ -333,19 +340,56 @@ async function createProfile({ name, nick, city = '', photo = '' }) {
   await b.commit();
 }
 
+/* «В сети»: отмечаемся раз в 4 минуты, пока вкладка открыта (≈15 записей в час) */
+let seenAt = 0;
+function touchSeen() {
+  if (S.phase !== 'app' || document.hidden || Date.now() - seenAt < 4 * 60 * 1000) return;
+  seenAt = Date.now();
+  updateDoc(doc(db, 'users', uid()), { lastSeen: serverTimestamp() }).catch(console.error);
+}
+setInterval(touchSeen, 60 * 1000);
+document.addEventListener('visibilitychange', touchSeen);
+function seenText(u) {
+  if (!u?.lastSeen) return '';
+  const t = ms(u.lastSeen);
+  return Date.now() - t < ONLINE_MS ? 'в сети' : 'был(а) в сети ' + ago(t);
+}
+const isOnline = u => !!u?.lastSeen && Date.now() - ms(u.lastSeen) < ONLINE_MS;
+
+/* Уведомления браузера о новых сообщениях */
+const canNotify = () => 'Notification' in window;
+const notifyOn = () => canNotify() && Notification.permission === 'granted' && lsGet('vs_notify') !== '0';
+function notifyChats(s, first) {
+  if (first || !notifyOn()) return;
+  s.docChanges().forEach(ch => {
+    if (ch.type === 'removed') return;
+    const c = data(ch.doc), from = c.members.find(m => m !== uid());
+    if (c.lastFrom === uid() || !isUnread(c) || ms(c.lastAt) < sessionAt) return;
+    if (!document.hidden && S.view === 'messages' && S.chatWith === from) return;
+    try {
+      const n = new Notification(U(from)?.name || 'Новое сообщение', { body: c.lastText || '', tag: c.id, icon: safeImg(U(from)?.photo) || undefined });
+      n.onclick = () => { window.focus(); go('im/' + from); n.close(); };
+    } catch (e) { console.error(e); }
+  });
+}
+let sessionAt = 0;
+
 function startSession() {
   const id = uid();
+  sessionAt = Date.now(); seenAt = 0;
+  let firstChats = true;
   globalUnsubs.push(onSnapshot(doc(db, 'users', id), s => {
     if (!s.exists()) return;
     const prevFriends = JSON.stringify(S.me?.friends || []);
     S.me = data(s); cache.users.set(id, S.me); S.phase = 'app';
-    if (!routedOnce) { routedOnce = true; route(); return; }
+    if (!routedOnce) { routedOnce = true; route(); touchSeen(); return; }
     if (S.view === 'feed' && S.feedTab === 'friends' && prevFriends !== JSON.stringify(S.me.friends || [])) attachView();
     else render();
   }, e => { S.fatal = e; render(); }));
   globalUnsubs.push(onSnapshot(query(collection(db, 'chats'), where('members', 'array-contains', id), orderBy('lastAt', 'desc'), limit(100)), s => {
     cache.chats = s.docs.map(data);
     ensureUsers(cache.chats.map(c => c.members.find(m => m !== id)));
+    notifyChats(s, firstChats); firstChats = false;
     markRead(); render();
   }, e => { console.error(e); S.chatsError = e; render(); }));
   globalUnsubs.push(onSnapshot(query(collection(db, 'friendRequests'), where('to', '==', id)), s => {
@@ -407,7 +451,10 @@ function attachView() {
   } else if (S.view === 'messages') {
     cache.messages = [];
     if (S.chatWith) {
-      ensureUsers([S.chatWith]);
+      const peer = S.chatWith;
+      viewUnsubs.push(onSnapshot(doc(db, 'users', peer), s => {
+        cache.users.set(peer, s.exists() ? data(s) : { id: peer, name: 'Удалённая страница', friends: [], deleted: true }); render();
+      }, console.error));
       viewUnsubs.push(onSnapshot(query(collection(db, 'chats', chatId(id, S.chatWith), 'messages'), orderBy('createdAt', 'asc'), limitToLast(200)), s => {
         cache.messages = s.docs.map(data); S.loading = false; markRead(); render();
       }, onViewErr));
@@ -499,6 +546,8 @@ const loadingBox = () => `<div class="card loading"><div class="spin"></div></di
 
 const playerKey = () => { const v = cache.video; return `${S.watchId}:${v ? (v.missing ? 'x' : v.source) : '-'}:${S.videoSrc ? 1 : 0}:${S.videoErr ? 1 : 0}`; };
 function render() {
+  const unread = S.phase === 'app' ? cache.chats.filter(isUnread).length : 0;
+  document.title = (unread ? `(${unread}) ` : '') + 'VСмске';
   // на странице видео не пересоздаём плеер, чтобы ролик не перезапускался
   if (S.phase === 'app' && S.view === 'watch' && !S.viewError) {
     const pl = app.querySelector('#player');
@@ -822,6 +871,11 @@ function viewSettings() {
     <div class="card pad set"><h2 class="h" style="font-size:16px">Оформление</h2>
       <div class="set-row"><span class="grow">Тема</span>${seg('theme', th, [['system', 'Как в системе'], ['light', 'Светлая'], ['dark', 'Тёмная']])}</div>
       <p class="hint" style="margin:0">Сохраняется на этом устройстве.</p></div>
+    ${canNotify() ? `<div class="card pad set"><h2 class="h" style="font-size:16px">Уведомления</h2>
+      <div class="set-row"><span class="grow">Новые сообщения, когда вкладка VСмске в фоне</span>${
+        Notification.permission === 'denied' ? '<span class="muted small">Запрещены в настройках браузера</span>'
+        : seg('notify', notifyOn() ? 'on' : 'off', [['on', 'Вкл'], ['off', 'Выкл']])}</div>
+      <p class="hint" style="margin:0">Сохраняется на этом устройстве. Число непрочитанных диалогов видно и в названии вкладки.</p></div>` : ''}
     <div class="card pad set"><h2 class="h" style="font-size:16px">Приватность</h2>
       <div class="set-row"><span class="grow">Кто может писать мне сообщения</span>${seg('pmsg', pr.messages || 'all', [['all', 'Все'], ['friends', 'Только друзья']])}</div>
       <div class="set-row"><span class="grow">Кто может писать на моей стене</span>${seg('pwall', pr.wall || 'friends', [['friends', 'Друзья'], ['me', 'Только я']])}</div></div>
@@ -877,16 +931,20 @@ function postCard(p) {
   const me = S.me, wall = p.wallId !== p.authorId ? U(p.wallId) : null;
   const likes = p.likes || [], liked = likes.includes(me.id);
   const open = S.openComments.has(p.id), comments = cache.comments.get(p.id);
-  const canDel = p.authorId === me.id || p.wallId === me.id;
+  const canDel = p.authorId === me.id || p.wallId === me.id, canEdit = p.authorId === me.id, editing = canEdit && S.editPost === p.id;
   const n = p.commentCount || 0;
   const confirmKey = 'post:' + p.id;
   return `<article class="card pad post">
     <div class="row post-head">${avatar(a, 44)}
       <div class="grow">${nameLink(a)}${wall ? ` <span class="muted">→</span> ${nameLink(wall)}` : ''}
-        <div class="muted small">${ago(p.createdAt)}</div></div>
+        <div class="muted small">${ago(p.createdAt)}${p.editedAt ? ' · изменено' : ''}</div></div>
+      ${canEdit && !editing ? `<button class="btn ghost small" data-act="editpost" data-id="${esc(p.id)}">Изменить</button>` : ''}
       ${canDel ? `<button class="btn ${S.confirm === confirmKey ? 'danger' : 'ghost'} small" data-act="delpost" data-id="${esc(p.id)}">${S.confirm === confirmKey ? 'Удалить?' : 'Удалить'}</button>` : ''}
     </div>
-    ${p.text ? `<div class="post-text">${esc(p.text)}</div>` : ''}
+    ${editing ? `<form class="form" data-form="editpost" data-id="${esc(p.id)}">
+        <textarea id="ep_${esc(p.id)}" rows="3" maxlength="4000">${esc(p.text)}</textarea>
+        <div class="row"><button class="btn" type="submit">Сохранить</button><button type="button" class="btn ghost" data-act="editpost" data-id="">Отмена</button></div></form>`
+      : p.text ? `<div class="post-text">${linkify(p.text)}</div>` : ''}
     ${p.image ? `<img class="post-img" src="${esc(p.image)}" alt="Фото к записи" loading="lazy">` : ''}
     <div class="post-actions">
       <button class="pill ${liked ? 'liked' : ''}" data-act="like" data-id="${esc(p.id)}" aria-pressed="${liked}" aria-label="Нравится">${liked ? I.heart : I.heartO}${likes.length || ''}</button>
@@ -896,7 +954,7 @@ function postCard(p) {
       ${!comments ? '<div class="muted small">Загружаем…</div>' : comments.map(c => {
         const ca = U(c.authorId); if (!ca) return '';
         const del = c.authorId === me.id || canDel;
-        return `<div class="comment">${avatar(ca, 32)}<div class="bubble">${nameLink(ca)} <span class="post-text">${esc(c.text)}</span>
+        return `<div class="comment">${avatar(ca, 32)}<div class="bubble">${nameLink(ca)} <span class="post-text">${linkify(c.text)}</span>
           <div class="muted small">${ago(c.createdAt)}${del ? ` · <button class="btn ghost small" style="padding:0 4px" data-act="delc" data-post="${esc(p.id)}" data-id="${esc(c.id)}">удалить</button>` : ''}</div></div></div>`;
       }).join('')}
       <form class="cform" data-form="comment" data-post="${esc(p.id)}">${avatar(me, 32, false)}<input id="c_${esc(p.id)}" placeholder="Написать комментарий…" maxlength="1000" autocomplete="off"><button class="icon-btn" aria-label="Отправить комментарий">${I.send}</button></form>
@@ -937,7 +995,8 @@ function viewProfile() {
   return `<div class="card">
     <div class="cover"></div>
     <div class="prof">${avatar(u, 120, false)}
-      <div class="prof-info"><h1 class="prof-name">${esc(u.name)}</h1><div class="muted">${u.status ? esc(u.status) : own ? 'Добавьте статус в «Редактировать»' : '@' + esc(u.nick)}</div></div>
+      <div class="prof-info"><h1 class="prof-name">${esc(u.name)}</h1><div class="muted">${u.status ? esc(u.status) : own ? 'Добавьте статус в «Редактировать»' : '@' + esc(u.nick)}</div>
+        ${!own && seenText(u) ? `<div class="seen small ${isOnline(u) ? 'on' : ''}">${seenText(u)}</div>` : ''}</div>
       <div class="prof-btns">${own ? `<a class="btn sec" href="#edit">Редактировать</a>` : `<a class="btn" href="#im/${esc(u.id)}">Написать</a>${relButtons(u.id)}`}</div>
     </div>
     <dl class="facts">
@@ -1035,13 +1094,14 @@ function viewMessages() {
     let lastDay = '';
     const body = S.loading ? '<div class="loading"><div class="spin"></div></div>' : cache.messages.map(m => {
       const dl = dayLabel(m.createdAt), sep = dl !== lastDay ? `<div class="daysep">${dl}</div>` : ''; lastDay = dl;
-      return sep + `<div class="msg ${m.from === id ? 'me' : ''}">${esc(m.text)}<time>${hm(new Date(ms(m.createdAt)))}</time></div>`;
+      const mine = m.from === id, img = safeImg(m.image), sel = mine && S.msgSel === m.id;
+      return sep + `<div class="msg ${mine ? 'me' : ''} ${img ? 'has-img' : ''} ${sel ? 'sel' : ''}" ${mine ? `data-act="selmsg" data-id="${esc(m.id)}"` : ''}>${img ? `<img class="msg-img" src="${esc(img)}" alt="Фото" loading="lazy">` : ''}${m.text ? `<span>${linkify(m.text)}</span>` : ''}<time>${hm(new Date(ms(m.createdAt)))}</time>${sel ? `<button class="msg-del" data-act="delmsg" data-id="${esc(m.id)}">${S.confirm === 'msg:' + m.id ? 'Удалить у всех?' : 'Удалить'}</button>` : ''}</div>`;
     }).join('') || `<div class="empty">Напишите ${esc(o.name.split(' ')[0])} первым</div>`;
     chatHtml = `<div class="chat-head"><a class="icon-btn back" href="#im" aria-label="К диалогам">${I.back}</a>${avatar(o, 38)}
-      <div class="grow">${nameLink(o)}<div class="muted small">${esc(o.city || '@' + (o.nick || ''))}</div></div></div>
+      <div class="grow">${nameLink(o)}<div class="small seen ${isOnline(o) ? 'on' : ''}">${esc(seenText(o) || o.city || '@' + (o.nick || ''))}</div></div></div>
       <div class="msgs">${body}</div>
       ${o.deleted ? '' : o.privacy?.messages === 'friends' && !(S.me.friends || []).includes(o.id) && !cache.messages.length
-        ? `<div class="chat-form muted small" style="justify-content:center">${esc(o.name.split(' ')[0])} принимает сообщения только от друзей</div>` : `<form class="chat-form" data-form="msg" data-to="${esc(o.id)}"><input id="msgInput" placeholder="Сообщение" maxlength="2000" autocomplete="off"><button class="btn" aria-label="Отправить">${I.send}</button></form>`}`;
+        ? `<div class="chat-form muted small" style="justify-content:center">${esc(o.name.split(' ')[0])} принимает сообщения только от друзей</div>` : `<form class="chat-form" data-form="msg" data-to="${esc(o.id)}"><button type="button" class="icon-btn" data-act="msgphoto" aria-label="Отправить фото" ${S.busy ? 'disabled' : ''}>${I.photo}</button><input id="msgInput" placeholder="Сообщение" maxlength="2000" autocomplete="off"><button class="btn" aria-label="Отправить">${I.send}</button></form>`}`;
   }
   return `${S.chatsError ? errBox(S.chatsError) : ''}<div class="card im ${S.chatWith ? 'open' : ''}">
     <div class="dlist">${list.length ? list.map(c => {
@@ -1062,7 +1122,8 @@ document.addEventListener('click', async e => {
   const stop = e.target.closest('[data-stop]'); if (stop && !stop.contains(b)) return;
   const { act, id } = b.dataset;
   const twoStep = key => { if (S.confirm === key) { S.confirm = null; return true; } S.confirm = key; render(); return false; };
-  if (!['delpost', 'unfriend', 'delvideo', 'delalbum', 'delfile', 'delphoto'].includes(act)) S.confirm = null;
+  if (!['delpost', 'unfriend', 'delvideo', 'delalbum', 'delfile', 'delphoto', 'delmsg'].includes(act)) S.confirm = null;
+  if (act !== 'selmsg' && act !== 'delmsg') S.msgSel = null;
   try {
     switch (act) {
       case 'authtab': S.authTab = b.dataset.tab; S.authError = ''; S.fatal = null; render(); break;
@@ -1167,6 +1228,22 @@ document.addEventListener('click', async e => {
       case 'theme': lsSet('vs_theme', b.dataset.v); applyTheme(b.dataset.v); render(); break;
       case 'pmsg': await updateDoc(doc(db, 'users', uid()), { 'privacy.messages': b.dataset.v }); toast('Сохранено'); break;
       case 'pwall': await updateDoc(doc(db, 'users', uid()), { 'privacy.wall': b.dataset.v }); toast('Сохранено'); break;
+      case 'notify':
+        if (b.dataset.v === 'on') {
+          const r = Notification.permission === 'granted' ? 'granted' : await Notification.requestPermission();
+          lsSet('vs_notify', r === 'granted' ? '1' : '0');
+          toast(r === 'granted' ? 'Уведомления включены' : 'Браузер не разрешил уведомления');
+        } else { lsSet('vs_notify', '0'); toast('Уведомления выключены'); }
+        render(); break;
+      case 'selmsg':
+        if (e.target.closest('a')) return;
+        S.msgSel = S.msgSel === id ? null : id; S.confirm = null; render(); break;
+      case 'delmsg': {
+        if (!twoStep('msg:' + id)) return;
+        await deleteMessage(id); S.msgSel = null; render(); break;
+      }
+      case 'msgphoto': pick('msgphoto', 'image/*', false); break;
+      case 'editpost': S.editPost = id || null; render(); if (id) document.getElementById('ep_' + id)?.focus(); break;
       case 'unattach': S.draft.image = ''; render(); break;
       case 'noavatar': S.editPhoto = ''; render(); break;
       case 'color': S.editColor = b.dataset.c; render(); break;
@@ -1178,6 +1255,25 @@ document.addEventListener('click', async e => {
     }
   } catch (err) { console.error(err); toast(errText(err)); }
 });
+
+/* Сообщения */
+async function sendMessage(to, text, image = '') {
+  const me = uid(), cid = chatId(me, to), bt = writeBatch(db);
+  const msg = { from: me, text, createdAt: serverTimestamp() };
+  if (image) msg.image = image;
+  bt.set(doc(collection(db, 'chats', cid, 'messages')), msg);
+  bt.set(doc(db, 'chats', cid), { members: [me, to].sort(), lastText: (text || '📷 Фото').slice(0, 200), lastFrom: me, lastAt: serverTimestamp(), read: { [me]: serverTimestamp() } }, { merge: true });
+  await bt.commit();
+  const box = app.querySelector('.msgs'); if (box) box.scrollTop = box.scrollHeight;
+}
+async function deleteMessage(mid) {
+  const cid = chatId(uid(), S.chatWith), bt = writeBatch(db), list = cache.messages;
+  bt.delete(doc(db, 'chats', cid, 'messages', mid));
+  // если удаляем последнее сообщение, поправим подпись в списке диалогов
+  const chat = cache.chats.find(c => c.id === cid);
+  if (list.length && list[list.length - 1].id === mid && chat?.lastFrom === uid()) bt.update(doc(db, 'chats', cid), { lastText: 'Сообщение удалено' });
+  await bt.commit(); toast('Сообщение удалено');
+}
 
 /* Дружба: заявка → принять / отклонить */
 async function friendAdd(to) {
@@ -1254,6 +1350,11 @@ document.getElementById('filePick').addEventListener('change', async e => {
     if (pickTarget === 'avatar') { S.editPhoto = await compress(f, 256, MAX_AVATAR, true); render(); }
     else if (pickTarget === 'post') { S.draft.image = await compress(f, 1280, MAX_POST_IMG); render(); }
     else if (pickTarget === 'photos') await uploadPhotos(files);
+    else if (pickTarget === 'msgphoto') {
+      if (!S.chatWith || S.busy) return;
+      S.busy = true; render();
+      try { await sendMessage(S.chatWith, '', await compress(f, 1280, MAX_MSG_IMG)); } finally { S.busy = false; render(); }
+    }
     else if (pickTarget === 'video') {
       if (!(f.type || '').startsWith('video/')) { toast('Выберите видеофайл'); return; }
       if (f.size > LIMITS.video) { toast(`Видео весит ${fmtSize(f.size)}, а можно до ${fmtSize(LIMITS.video)}. Добавьте его ссылкой с YouTube, Rutube или VK.`); return; }
@@ -1348,14 +1449,17 @@ document.addEventListener('submit', async e => {
         await bt.commit(); break;
       }
       case 'msg': {
-        const text = v('msgInput'); if (!text) return; const to = f.dataset.to, me = uid();
+        const text = v('msgInput'); if (!text) return;
         clear('msgInput');
-        const cid = chatId(me, to), bt = writeBatch(db);
-        bt.set(doc(collection(db, 'chats', cid, 'messages')), { from: me, text, createdAt: serverTimestamp() });
-        bt.set(doc(db, 'chats', cid), { members: [me, to].sort(), lastText: text.slice(0, 200), lastFrom: me, lastAt: serverTimestamp(), read: { [me]: serverTimestamp() } }, { merge: true });
-        await bt.commit();
-        const box = app.querySelector('.msgs'); if (box) box.scrollTop = box.scrollHeight;
+        await sendMessage(f.dataset.to, text);
         break;
+      }
+      case 'editpost': {
+        const pid = f.dataset.id, text = v('ep_' + pid);
+        const p = [...cache.feed.values()].flat().concat(cache.wall).find(x => x.id === pid);
+        if (!text && !p?.image) { toast('Запись не может быть пустой'); return; }
+        await updateDoc(doc(db, 'posts', pid), { text, editedAt: serverTimestamp() });
+        S.editPost = null; render(); toast('Запись изменена'); break;
       }
       case 'edit': {
         const me = S.me, nick = v('eNick').toLowerCase(), name = v('eName'), city = v('eCity');
