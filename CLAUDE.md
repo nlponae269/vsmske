@@ -4,6 +4,7 @@
 
 ## Как устроено
 - Чистый HTML/CSS/JS без сборки и без npm: `index.html`, `style.css`, `app.js` (ES-модуль).
+- PWA: `manifest.webmanifest`, `sw.js` (сеть в приоритете, кэш только без интернета; Firebase не кэширует), иконки `icon-*.png`, `apple-touch-icon.png`.
 - Firebase JS SDK 10.12.2 подключается из `https://www.gstatic.com/firebasejs/...`.
 - Firebase-проект `vsmske`: Authentication (почта+пароль и Google) и Firestore.
 - Хостинг: GitHub Pages, адрес `https://nlponae269.github.io/vsmske/`.
@@ -14,14 +15,15 @@
   - файлы Диска и видео режутся на куски по 700 000 символов base64 в `files/{id}/chunks/{0000..}`.
 - Маршрутизация через hash: `#feed`, `#id/<uid>`, `#im/<uid>`, `#friends`, `#people`, `#edit`,
   `#video`, `#video/<id>`, `#videos/<uid>`, `#albums/<uid>`, `#album/<id>`, `#disk`, `#vid`, `#settings`, `#more`,
-  `#post/<id>` (одна запись), `#notif` (уведомления). `#im/<свой uid>` — «Избранное» (чат с самим собой, id `uid_uid`).
+  `#post/<id>` (одна запись), `#notif` (уведомления), `#clubs` (сообщества), `#club/<id>` (сообщество). `#im/<свой uid>` — «Избранное» (чат с самим собой, id `uid_uid`).
 - Рендер: функция `render()` целиком перерисовывает `#app` через innerHTML, а значения полей ввода сохраняются между перерисовками.
   Исключение — страница видео: там обновляются только части страницы, чтобы плеер не перезапускался (см. `playerKey`).
 
 ## Коллекции Firestore
 `users`, `usernames` (уникальные короткие имена), `friendRequests` (id = `от_кому`), `posts` + `posts/{id}/comments`,
 `chats` (id = `uid1_uid2` по алфавиту) + `chats/{id}/messages`, `videos`, `files` + `files/{id}/chunks`,
-`albums`, `photos` (миниатюры), `photoFull` (полные фото), `notifs` (уведомления: `to`, `from`, `type`, `postId`, `text`).
+`albums`, `photos` (миниатюры), `photoFull` (полные фото), `notifs` (уведомления: `to`, `from`, `type`, `postId`, `text`),
+`groups` (сообщества: `name`, `about`, `photo`, `cover`, `ownerId`, `admins[]`, `membersCount`).
 
 Поля, добавленные в 1.3: `users.lastSeen` (статус «в сети», пишется не чаще раза в 4 минуты),
 `posts.editedAt` (запись изменена автором), `chats/{id}/messages.image` (фото в сообщении, dataURL до `MAX_MSG_IMG`).
@@ -29,6 +31,12 @@
 Поля, добавленные в 1.4: `posts.poll` (`{q, options[2..6], votes: {uid: номер}}`), `messages.replyTo` (`{id, from, text}`),
 `users.pinned` (закреплённая запись), `users.cover` (ключ из `COVERS`), `users.notifSeenAt` (когда смотрел уведомления).
 Уведомления пишутся «по возможности» отдельной записью (`notify()`), лайк — с id `like_<post>_<uid>`, снимается при снятии лайка.
+Поля 1.5:
+- `users.admin` (true — администратор сайта). **Ставится только вручную в консоли Firestore**, правила не дают изменить его с сайта.
+  Админ может удалять любые записи, комментарии, видео и сообщества; у него особый дизайн профиля и значок ✓ у имени.
+- `users.groups` (подписки на сообщества, до 500). Подписка = в одной пачке `users.groups` и `groups.membersCount` ±1.
+  Записи сообщества лежат в `posts` с `wallId = groupId` и полем `groupId`; писать могут только `groups.admins`.
+- `messages.audio` (голосовое, dataURL `data:audio/...` до ~500 КБ, до 60 с) и `messages.dur` (секунды).
 Хранится не больше `NOTIF_KEEP` уведомлений на человека: лишние удаляет клиент получателя (запрос без orderBy, чтобы не нужен был индекс).
 
 Составные индексы (созданы в консоли):

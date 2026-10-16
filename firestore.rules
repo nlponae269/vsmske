@@ -12,6 +12,10 @@ service cloud.firestore {
     function now(v) { return v == request.time; }
     function path(c, id) { return /databases/$(database)/documents/$(c)/$(id); }
     function user(id) { return get(path('users', id)).data; }
+    // Админ назначается только вручную в консоли Firestore: users/{uid}.admin = true
+    function isAdmin() { return user(me()).get('admin', false) == true; }
+    function group(id) { return get(path('groups', id)).data; }
+    function groupAdmin(id) { return me() in group(id).admins; }
 
     // Список изменился ровно на «добавить меня» или «убрать меня»
     function toggledMe(before, after) {
@@ -43,7 +47,8 @@ service cloud.firestore {
         && (!('lastSeen' in u) || u.lastSeen is timestamp)
         && (!('notifSeenAt' in u) || u.notifSeenAt is timestamp)
         && str(u.get('pinned', ''), 0, 40)
-        && u.get('cover', 'blue') in ['blue', 'sunset', 'sea', 'night', 'rose', 'gold'];
+        && u.get('cover', 'blue') in ['blue', 'sunset', 'sea', 'night', 'rose', 'gold']
+        && u.get('groups', []) is list && u.get('groups', []).size() <= 500;
     }
     // Ник в профиле должен принадлежать владельцу профиля (после пачки)
     function nickOwned(u) { return getAfter(path('usernames', u.nick)).data.uid == me(); }
@@ -57,11 +62,11 @@ service cloud.firestore {
 
     match /users/{uid} {
       allow read: if signed();
-      allow create: if signed() && uid == me() && validProfile(d()) && d().friends.size() == 0
+      allow create: if signed() && uid == me() && validProfile(d()) && d().friends.size() == 0 && !('admin' in d())
         && now(d().createdAt) && nickOwned(d());
       // свой профиль
       allow update: if signed() && uid == me() && validProfile(d())
-        && !changed().hasAny(['createdAt'])
+        && !changed().hasAny(['createdAt', 'admin'])
         && (!changed().hasAny(['nick']) || nickOwned(d()))
         && (!changed().hasAny(['friends']) || friendsOk(resource.data.get('friends', []), d().friends));
       // чужой профиль: только добавить себя в друзья (по моей принятой заявке) или убрать себя
@@ -92,8 +97,9 @@ service cloud.firestore {
     }
     match /posts/{pid} {
       allow read: if signed();
-      allow create: if signed() && d().keys().hasOnly(['authorId', 'wallId', 'text', 'image', 'poll', 'likes', 'commentCount', 'createdAt'])
-        && d().authorId == me() && d().wallId is string && canWriteWall(d().wallId)
+      allow create: if signed() && d().keys().hasOnly(['authorId', 'wallId', 'groupId', 'text', 'image', 'poll', 'likes', 'commentCount', 'createdAt'])
+        && d().authorId == me() && d().wallId is string
+        && (('groupId' in d()) ? (d().groupId == d().wallId && groupAdmin(d().groupId)) : canWriteWall(d().wallId))
         && str(d().text, 0, 4000) && str(d().image, 0, 750000) && (d().text.size() > 0 || d().image.size() > 0 || 'poll' in d())
         && (!('poll' in d()) || validPoll(d().poll))
         && d().likes == [] && d().commentCount == 0 && now(d().createdAt);
@@ -111,7 +117,8 @@ service cloud.firestore {
       // автор правит текст
       allow update: if signed() && resource.data.authorId == me() && onlyChanged(['text', 'editedAt'])
         && str(d().text, 0, 4000) && (d().text.size() > 0 || resource.data.image.size() > 0) && now(d().editedAt);
-      allow delete: if signed() && (resource.data.authorId == me() || resource.data.wallId == me());
+      allow delete: if signed() && (resource.data.authorId == me() || resource.data.wallId == me()
+        || (('groupId' in resource.data) && groupAdmin(resource.data.groupId)) || isAdmin());
 
       match /comments/{cid} {
         allow read: if signed();
@@ -119,7 +126,8 @@ service cloud.firestore {
           && d().authorId == me() && str(d().text, 1, 1000) && now(d().createdAt);
         allow delete: if signed() && (resource.data.authorId == me()
           || get(path('posts', pid)).data.authorId == me()
-          || get(path('posts', pid)).data.wallId == me());
+          || get(path('posts', pid)).data.wallId == me()
+          || isAdmin());
       }
     }
 
@@ -152,13 +160,39 @@ service cloud.firestore {
       match /messages/{mid} {
         allow read: if signed() && inChat(cid);
         allow create: if signed() && inChat(cid) && canStart()
-          && d().keys().hasOnly(['from', 'text', 'image', 'replyTo', 'createdAt'])
+          && d().keys().hasOnly(['from', 'text', 'image', 'audio', 'dur', 'replyTo', 'createdAt'])
+          && (!('audio' in d()) || (str(d().audio, 1, 700000) && d().audio.matches('^data:audio/.*') && d().dur is number && d().dur <= 61))
           && d().from == me() && str(d().text, 0, 2000) && str(d().get('image', ''), 0, 400000)
           && (!('replyTo' in d()) || (d().replyTo is map && d().replyTo.keys().hasOnly(['id', 'from', 'text'])
             && str(d().replyTo.text, 0, 120) && str(d().replyTo.id, 1, 40)))
-          && (d().text.size() > 0 || d().get('image', '').size() > 0) && now(d().createdAt);
+          && (d().text.size() > 0 || d().get('image', '').size() > 0 || 'audio' in d()) && now(d().createdAt);
         allow delete: if signed() && resource.data.from == me();
       }
+    }
+
+    // ---------- Сообщества ----------
+    // Подписки хранятся у пользователя (users.groups), счётчик — в группе (membersCount, ровно ±1 вместе с подпиской)
+    function validGroup(g) {
+      return str(g.name, 1, 60) && str(g.get('about', ''), 0, 600) && str(g.get('photo', ''), 0, 130000)
+        && g.get('cover', 'blue') in ['blue', 'sunset', 'sea', 'night', 'rose', 'gold'];
+    }
+    match /groups/{gid} {
+      allow read: if signed();
+      allow create: if signed() && d().keys().hasOnly(['name', 'about', 'photo', 'cover', 'ownerId', 'admins', 'membersCount', 'createdAt'])
+        && validGroup(d()) && d().ownerId == me() && d().admins == [me()] && d().membersCount == 1 && now(d().createdAt)
+        && gid in getAfter(path('users', me())).data.get('groups', []);
+      // админы сообщества меняют название, описание, фото, обложку
+      allow update: if signed() && me() in resource.data.admins && onlyChanged(['name', 'about', 'photo', 'cover']) && validGroup(d());
+      // владелец назначает админов (сам остаётся админом)
+      allow update: if signed() && resource.data.ownerId == me() && onlyChanged(['admins'])
+        && d().admins is list && me() in d().admins && d().admins.size() <= 20;
+      // подписка / отписка
+      allow update: if signed() && onlyChanged(['membersCount'])
+        && ((d().membersCount == resource.data.membersCount + 1
+              && !(gid in user(me()).get('groups', [])) && gid in getAfter(path('users', me())).data.get('groups', []))
+          || (d().membersCount == resource.data.membersCount - 1
+              && gid in user(me()).get('groups', []) && !(gid in getAfter(path('users', me())).data.get('groups', []))));
+      allow delete: if signed() && (resource.data.ownerId == me() || isAdmin());
     }
 
     // ---------- Уведомления: лайк, комментарий, запись на стене, принятая дружба ----------
@@ -182,7 +216,7 @@ service cloud.firestore {
       allow update: if signed() && resource.data.ownerId == me() && onlyChanged(['title', 'description'])
         && str(d().title, 1, 120) && str(d().get('description', ''), 0, 2000);
       allow update: if signed() && onlyChanged(['likes']) && toggledMe(resource.data.likes, d().likes);
-      allow delete: if signed() && resource.data.ownerId == me();
+      allow delete: if signed() && (resource.data.ownerId == me() || isAdmin());
     }
 
     // ---------- Файлы ВС Диска и видео (кусками по 700 000 символов) ----------

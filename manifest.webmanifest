@@ -1,0 +1,16 @@
+{
+  "name": "VСмске",
+  "short_name": "VСмске",
+  "description": "Социальная сеть: стена, друзья, сообщения, сообщества, видео и фото.",
+  "lang": "ru",
+  "start_url": "./#feed",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#2F44D0",
+  "theme_color": "#2F44D0",
+  "icons": [
+    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

@@ -382,3 +382,47 @@ input[type=search]::-webkit-search-cancel-button{display:none}
 .covers button{width:56px;border-radius:10px}
 .search{min-width:0}
 @media (max-width:760px){ .top-in{gap:10px} .top-bell + .top-me{margin-left:0} }
+
+/* 1.5: администратор */
+.adm-badge{display:inline-grid;place-items:center;width:16px;height:16px;margin-left:5px;border-radius:50%;font-size:10px;font-weight:800;line-height:1;
+  color:#1a1205;background:linear-gradient(135deg,#FFE08A,#E8A100);vertical-align:1px;box-shadow:0 0 0 2px color-mix(in srgb,#E8A100 25%,transparent)}
+.prof-name .adm-badge{width:22px;height:22px;font-size:13px;margin-left:8px;vertical-align:3px}
+.admin-card{background:linear-gradient(180deg,#120E22,#0B0A14 60%);color:#F3EEFF;border:1px solid #3A2A66;overflow:hidden}
+.admin-card .muted,.admin-card .facts dt,.admin-card .stats span{color:#B8AEDB}
+.admin-card .facts,.admin-card .stats{border-color:#2A2148}
+.admin-card .facts dd,.admin-card .stats b{color:#F3EEFF}
+.admin-card .prof-name{background:linear-gradient(90deg,#FFE08A,#FFB347,#C9A7FF,#FFE08A);background-size:300% 100%;-webkit-background-clip:text;background-clip:text;color:transparent;animation:admShine 6s linear infinite}
+.admin-card .prof-name .adm-badge{-webkit-text-fill-color:#1a1205}
+.admin-cover{position:relative;height:190px;background:#0B0A14;overflow:hidden}
+.admin-cover .aurora{position:absolute;inset:-40%;background:
+  radial-gradient(closest-side,rgba(255,196,0,.55),transparent) 20% 30%/45% 45% no-repeat,
+  radial-gradient(closest-side,rgba(140,82,255,.7),transparent) 70% 40%/55% 55% no-repeat,
+  radial-gradient(closest-side,rgba(255,92,160,.45),transparent) 45% 80%/45% 45% no-repeat;
+  filter:blur(18px);animation:admAurora 14s ease-in-out infinite alternate}
+.admin-cover::after{content:"";position:absolute;inset:0;background-image:radial-gradient(rgba(255,255,255,.35) 1px,transparent 1.4px);background-size:22px 22px;opacity:.35}
+.adm-tag{position:absolute;right:16px;top:14px;z-index:1;padding:6px 12px;border-radius:99px;font-weight:700;font-size:13px;color:#1a1205;
+  background:linear-gradient(135deg,#FFE08A,#E8A100);box-shadow:0 4px 18px rgba(232,161,0,.45)}
+.adm-ring{display:inline-flex;padding:4px;border-radius:50%;background:conic-gradient(from 0deg,#FFE08A,#E8A100,#C9A7FF,#7C4DFF,#FFE08A);animation:admSpin 8s linear infinite;flex:none}
+.adm-ring .av{border-color:#0B0A14!important;animation:admSpin 8s linear infinite reverse}
+.adm-role{color:#FFD45C}
+.admin-card .btn.sec{background:#2A2148;color:#F3EEFF}
+@keyframes admShine{to{background-position:300% 0}}
+@keyframes admAurora{0%{transform:translate(-4%,-2%) rotate(0deg)}100%{transform:translate(4%,3%) rotate(12deg)}}
+@keyframes admSpin{to{transform:rotate(360deg)}}
+@media (prefers-reduced-motion:reduce){.admin-card .prof-name,.admin-cover .aurora,.adm-ring,.adm-ring .av{animation:none}}
+
+/* 1.5: сообщества */
+.gav{border-radius:28%!important;color:#fff}
+.gav img{border-radius:inherit}
+.inp{border:1px solid var(--line);background:var(--surface-2);border-radius:10px;padding:9px 12px;min-width:0}
+
+/* 1.5: голосовые */
+.voice{display:flex;align-items:center;gap:10px;min-width:200px;padding:2px 0}
+.voice-btn{width:36px;height:36px;flex:none;border-radius:50%;border:0;display:grid;place-items:center;cursor:pointer;background:var(--accent);color:var(--accent-fg)}
+.msg.me .voice-btn{background:var(--accent-fg);color:var(--accent)}
+.voice-btn svg{width:18px;height:18px}
+.voice-bar{flex:1;height:4px;border-radius:99px;background:color-mix(in srgb,currentColor 25%,transparent);overflow:hidden}
+.voice-bar i{display:block;height:100%;background:currentColor;border-radius:inherit}
+.rec-bar{align-items:center}
+.rec-dot{width:10px;height:10px;border-radius:50%;background:var(--like);animation:recBlink 1s ease-in-out infinite}
+@keyframes recBlink{50%{opacity:.25}}

@@ -44,9 +44,26 @@ const MAX_POST_IMG = 700000;   // символов dataURL (~520 КБ), лими
 const MAX_AVATAR = 120000;
 const CHUNK = 700000;                                   // символов base64 в одном куске (кратно 4)
 const LIMITS = { disk: 10 * 1024 * 1024, video: 20 * 1024 * 1024 };
-const VERSION = '1.4';
+const VERSION = '1.5';
 const MAX_MSG_IMG = 380000;    // фото в сообщении
 const ONLINE_MS = 5 * 60 * 1000; // «в сети», если заходил не раньше 5 минут назад
+
+/* ---------- Приложение на главном экране (PWA) ---------- */
+let installPrompt = null;
+if ('serviceWorker' in navigator && location.protocol === 'https:') navigator.serviceWorker.register('sw.js').catch(console.error);
+window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); installPrompt = e; if (typeof render === 'function' && S.phase === 'app') render(); });
+window.addEventListener('appinstalled', () => { installPrompt = null; toast('VСмске установлено на главный экран'); });
+const isStandalone = () => matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
+const isIOS = () => /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+function installCard() {
+  if (isStandalone()) return '';
+  if (installPrompt) return `<div class="card pad set install"><h2 class="h" style="font-size:16px">Приложение VСмске</h2>
+    <div class="set-row"><span class="grow">Значок на главном экране, открывается без адресной строки</span><button class="btn" data-act="install">Установить</button></div></div>`;
+  if (isIOS()) return `<div class="card pad set install"><h2 class="h" style="font-size:16px">Приложение VСмске</h2>
+    <p class="hint" style="margin:0">В Safari нажмите «Поделиться» (квадрат со стрелкой) → «На экран „Домой“».</p></div>`;
+  return `<div class="card pad set install"><h2 class="h" style="font-size:16px">Приложение VСмске</h2>
+    <p class="hint" style="margin:0">Откройте меню браузера (⋮) → «Добавить на главный экран» или «Установить приложение».</p></div>`;
+}
 
 /* ---------- Тема ---------- */
 const lsGet = k => { try { return localStorage.getItem(k); } catch (e) { return null; } };
@@ -242,6 +259,9 @@ const I = {
   vid:'<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M12 3l8 3v6c0 4.5-3.4 8-8 9-4.6-1-8-4.5-8-9V6z"/><path d="M8.5 12l2.5 2.5 4.5-5" stroke-linecap="round"/></svg>',
   gear:'<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>',
   poll:'<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M5 20V10M12 20V4M19 20v-7"/></svg>',
+  club:'<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 21V9l8-5 8 5v12"/><path d="M9 21v-6h6v6"/></svg>',
+  mic:'<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg>',
+  pause:'<svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="5" width="4" height="14" rx="1"/><rect x="14" y="5" width="4" height="14" rx="1"/></svg>',
   bell:'<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 16V11a6 6 0 0 1 12 0v5l2 2H4z"/><path d="M10 20a2 2 0 0 0 4 0"/></svg>',
   reply:'<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 14L4 9l5-5"/><path d="M4 9h11a5 5 0 0 1 5 5v5"/></svg>',
   more:'<svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="19" cy="12" r="2"/></svg>',
@@ -282,6 +302,7 @@ const cache = {
   users: new Map(), feed: new Map(), wall: [], comments: new Map(),
   chats: [], messages: [], incoming: [], outgoing: [], people: [],
   videos: [], video: null, albums: [], album: null, photos: [], files: [], post: null, notifs: [],
+  groups: new Map(), groupList: [], groupWall: [],
 };
 let globalUnsubs = [], viewUnsubs = [], commentUnsubs = new Map(), routedOnce = false;
 const uid = () => S.authUser?.uid;
@@ -291,7 +312,8 @@ function stopAll() {
   globalUnsubs.forEach(u => u()); globalUnsubs = [];
   clearView(); routedOnce = false;
   Object.assign(cache, { users: new Map(), feed: new Map(), wall: [], comments: new Map(), chats: [], messages: [], incoming: [], outgoing: [], people: [],
-    videos: [], video: null, albums: [], album: null, photos: [], files: [], post: null, notifs: [] });
+    videos: [], video: null, albums: [], album: null, photos: [], files: [], post: null, notifs: [],
+    groups: new Map(), groupList: [], groupWall: [] });
 }
 function clearView() {
   viewUnsubs.forEach(u => u()); viewUnsubs = [];
@@ -299,7 +321,11 @@ function clearView() {
   S.openComments = new Set(); S.viewError = null;
 }
 
-const findPost = id => [...cache.feed.values()].flat().concat(cache.wall, cache.post ? [cache.post] : []).find(x => x.id === id);
+function ensurePostPeople(posts) {
+  ensureUsers(posts.flatMap(p => p.groupId ? [p.authorId] : [p.authorId, p.wallId]));
+  ensureGroups(posts.map(p => p.groupId).filter(Boolean));
+}
+const findPost = id => [...cache.feed.values()].flat().concat(cache.wall, cache.groupWall, cache.post ? [cache.post] : []).find(x => x.id === id);
 
 /* ---------- Уведомления (лайки, комментарии, записи на стене, дружба) ----------
    Пишутся отдельно и «по возможности»: если не получилось, основное действие всё равно выполнено. */
@@ -328,6 +354,25 @@ function ensureUsers(ids) {
   })).then(render);
 }
 const U = id => cache.users.get(id);
+
+/* ---------- Сообщества (кэш) ---------- */
+const pendingGroups = new Set();
+function ensureGroups(ids) {
+  const miss = [...new Set(ids)].filter(i => i && !cache.groups.has(i) && !pendingGroups.has(i));
+  if (!miss.length) return;
+  miss.forEach(i => pendingGroups.add(i));
+  Promise.all(miss.map(async i => {
+    try { const s = await getDoc(doc(db, 'groups', i)); cache.groups.set(i, s.exists() ? data(s) : { id: i, name: 'Удалённое сообщество', admins: [], deleted: true }); }
+    catch (e) { cache.groups.set(i, { id: i, name: 'Сообщество', admins: [], deleted: true }); }
+    finally { pendingGroups.delete(i); }
+  })).then(render);
+}
+const G = id => cache.groups.get(id);
+const groupAvatar = (g, size = 40, link = true) => {
+  const inner = safeImg(g?.photo) ? `<img src="${esc(g.photo)}" alt="">` : esc(initials(g?.name));
+  const st = `width:${size}px;height:${size}px;font-size:${Math.round(size * .38)}px;background:${COVERS[g?.cover] || COVERS.blue}`;
+  return link && g && !g.deleted ? `<a class="av gav" style="${st}" href="#club/${esc(g.id)}" aria-label="${esc(g.name)}">${inner}</a>` : `<span class="av gav" style="${st}">${inner}</span>`;
+};
 
 /* ---------- Вход ---------- */
 onAuthStateChanged(auth, async user => {
@@ -402,10 +447,10 @@ function startSession() {
   let firstChats = true;
   globalUnsubs.push(onSnapshot(doc(db, 'users', id), s => {
     if (!s.exists()) return;
-    const prevFriends = JSON.stringify(S.me?.friends || []);
+    const prevFriends = JSON.stringify([S.me?.friends || [], S.me?.groups || []]);
     S.me = data(s); cache.users.set(id, S.me); S.phase = 'app';
     if (!routedOnce) { routedOnce = true; route(); touchSeen(); return; }
-    if (S.view === 'feed' && S.feedTab === 'friends' && prevFriends !== JSON.stringify(S.me.friends || [])) attachView();
+    if (S.view === 'feed' && S.feedTab === 'friends' && prevFriends !== JSON.stringify([S.me.friends || [], S.me.groups || []])) attachView();
     else render();
   }, e => { S.fatal = e; render(); }));
   globalUnsubs.push(onSnapshot(query(collection(db, 'chats'), where('members', 'array-contains', id), orderBy('lastAt', 'desc'), limit(100)), s => {
@@ -444,13 +489,15 @@ function route() {
   else if (v === 'albums') { S.view = 'albums'; S.albumsOwner = arg || uid(); }
   else if (v === 'album' && arg) { S.view = 'album'; S.albumId = arg; }
   else if (v === 'post' && arg) { S.view = 'post'; S.postId = arg; }
-  else if (['feed', 'friends', 'people', 'edit', 'disk', 'vid', 'settings', 'more', 'notif'].includes(v)) S.view = v;
+  else if (v === 'club' && arg) { S.view = 'club'; S.clubId = arg; }
+  else if (['feed', 'friends', 'people', 'edit', 'disk', 'vid', 'settings', 'more', 'notif', 'clubs'].includes(v)) S.view = v;
   else S.view = 'feed';
   if (S.view !== 'edit') { S.editColor = null; S.editCover = null; S.editPhoto = undefined; }
   if (S.view !== 'watch') { S.videoSrc = null; S.videoErr = null; }
   S.lightbox = null; S.lightboxImg = null; S.preview = null; S.linkForm = false; S.newAlbum = false;
-  S.viewImg = null; S.postMenu = null; S.emoji = null; S.msgSel = null;
+  S.viewImg = null; S.postMenu = null; S.emoji = null; S.msgSel = null; S.clubEdit = false; S.editGroupPhoto = undefined; S.editGroupCover = null;
   if (S.view !== 'messages') S.replyTo = null;
+  recStop(false); players.forEach(p => p.pause()); players.clear();
   if (S.view !== 'video') S.videoDraft = null;
   attachView();
   window.scrollTo(0, 0);
@@ -468,11 +515,16 @@ function attachView() {
     cache.feed = new Map();
     const listen = (q, key) => viewUnsubs.push(onSnapshot(q, s => {
       const posts = s.docs.map(data); cache.feed.set(key, posts); S.loading = false;
-      ensureUsers(posts.flatMap(p => [p.authorId, p.wallId])); render();
+      ensurePostPeople(posts); render();
     }, onViewErr));
     if (S.feedTab === 'all') listen(query(collection(db, 'posts'), orderBy('createdAt', 'desc'), limit(50)), 'all');
-    else chunk([id, ...(S.me.friends || [])], 30).forEach((c, i) =>
-      listen(query(collection(db, 'posts'), where('authorId', 'in', c), orderBy('createdAt', 'desc'), limit(50)), i));
+    else {
+      chunk([id, ...(S.me.friends || [])], 30).forEach((c, i) =>
+        listen(query(collection(db, 'posts'), where('authorId', 'in', c), orderBy('createdAt', 'desc'), limit(50)), i));
+      // записи сообществ, на которые я подписан
+      chunk(S.me.groups || [], 30).forEach((c, i) =>
+        listen(query(collection(db, 'posts'), where('wallId', 'in', c), orderBy('createdAt', 'desc'), limit(30)), 'g' + i));
+    }
   } else if (S.view === 'profile') {
     const pid = S.profileId; cache.wall = [];
     if (pid !== id) viewUnsubs.push(onSnapshot(doc(db, 'users', pid), s => {
@@ -556,6 +608,21 @@ function attachView() {
       cache.post = s.exists() ? data(s) : { id: pid, missing: true }; S.loading = false;
       if (!cache.post.missing) ensureUsers([cache.post.authorId, cache.post.wallId]); render();
     }, onViewErr));
+  } else if (S.view === 'clubs') {
+    ensureGroups(S.me.groups || []);
+    getDocs(query(collection(db, 'groups'), orderBy('createdAt', 'desc'), limit(50))).then(s => {
+      cache.groupList = s.docs.map(data); cache.groupList.forEach(g => cache.groups.set(g.id, g));
+      S.loading = false; render();
+    }).catch(onViewErr);
+  } else if (S.view === 'club') {
+    const gid = S.clubId; cache.groupWall = [];
+    viewUnsubs.push(onSnapshot(doc(db, 'groups', gid), s => {
+      cache.groups.set(gid, s.exists() ? data(s) : { id: gid, name: 'Сообщество не найдено', admins: [], deleted: true });
+      ensureUsers(G(gid).admins || []); render();
+    }, onViewErr));
+    viewUnsubs.push(onSnapshot(query(collection(db, 'posts'), where('wallId', '==', gid), orderBy('createdAt', 'desc'), limit(50)), s => {
+      cache.groupWall = s.docs.map(data); S.loading = false; ensurePostPeople(cache.groupWall); render();
+    }, onViewErr));
   } else if (S.view === 'notif') {
     S.loading = false;
     if (unseenNotifs()) updateDoc(doc(db, 'users', id), { notifSeenAt: serverTimestamp() }).catch(console.error);
@@ -589,7 +656,10 @@ const avatar = (u, size = 40, link = true) => {
     ? `<a class="av" style="${st}" href="#id/${esc(u.id)}" aria-label="${esc(u.name)}">${inner}</a>`
     : `<span class="av" style="${st}">${inner}</span>`;
 };
-const nameLink = u => u && !u.deleted ? `<a class="name" href="#id/${esc(u.id)}" style="color:var(--fg);font-weight:600">${esc(u.name)}</a>` : `<span class="name">${esc(u?.name || '…')}</span>`;
+// Значок администратора у имени (admin ставится только в консоли Firestore)
+const admBadge = u => u?.admin === true ? `<span class="adm-badge" title="Администратор VСмске" aria-label="Администратор">✓</span>` : '';
+const isSiteAdmin = () => S.me?.admin === true;
+const nameLink = u => u && !u.deleted ? `<a class="name" href="#id/${esc(u.id)}" style="color:var(--fg);font-weight:600">${esc(u.name)}</a>${admBadge(u)}` : `<span class="name">${esc(u?.name || '…')}</span>`;
 const loadingBox = () => `<div class="card loading"><div class="spin"></div></div>`;
 
 const playerKey = () => { const v = cache.video; return `${S.watchId}:${v ? (v.missing ? 'x' : v.source) : '-'}:${S.videoSrc ? 1 : 0}:${S.videoErr ? 1 : 0}`; };
@@ -677,10 +747,10 @@ function viewOnboarding() {
 
 function navHtml() {
   const me = S.me, unread = cache.chats.filter(isUnread).length, reqs = cache.incoming.length;
-  const groups = { video: ['video', 'watch'], albums: ['albums', 'album'] };
+  const groups = { video: ['video', 'watch'], albums: ['albums', 'album'], clubs: ['clubs', 'club'] };
   const on = v => (groups[v] ? groups[v].includes(S.view) : S.view === v) && (v !== 'profile' || S.profileId === me.id) ? 'on' : '';
   const nav = (v, href, icon, label, badge = 0, cls = '') => `<a class="navlink ${on(v)} ${cls}" href="#${href}">${icon}<span>${label}</span>${badge ? `<span class="badge">${badge}</span>` : ''}</a>`;
-  const moreOn = ['more', 'profile', 'people', 'albums', 'album', 'disk', 'vid', 'settings', 'edit', 'notif', 'post'].includes(S.view) ? 'on' : '';
+  const moreOn = ['more', 'profile', 'people', 'albums', 'album', 'disk', 'vid', 'settings', 'edit', 'notif', 'post', 'clubs', 'club'].includes(S.view) ? 'on' : '';
   return `<nav class="nav">
       ${nav('profile', 'id/' + me.id, I.home, 'Моя страница', 0, 'm-hide')}
       ${nav('feed', 'feed', I.feed, 'Новости')}
@@ -688,6 +758,7 @@ function navHtml() {
       ${nav('friends', 'friends', I.friends, 'Друзья', reqs)}
       ${nav('notif', 'notif', I.bell, 'Уведомления', unseenNotifs(), 'm-hide')}
       ${nav('people', 'people', I.people, 'Люди', 0, 'm-hide')}
+      ${nav('clubs', 'clubs', I.club, 'Сообщества', 0, 'm-hide')}
       ${nav('video', 'video', I.video, 'Видео')}
       ${nav('albums', 'albums', I.album, 'Альбомы', 0, 'm-hide')}
       ${nav('disk', 'disk', I.disk, 'Диск', 0, 'm-hide')}
@@ -718,6 +789,8 @@ function shell() {
   else if (S.view === 'more') main = viewMore();
   else if (S.view === 'post') main = viewPost();
   else if (S.view === 'notif') main = viewNotifs();
+  else if (S.view === 'clubs') main = viewClubs();
+  else if (S.view === 'club') main = viewClub();
   else main = viewFeed();
   const up = S.upload ? `<div class="card pad upbar" role="status"><div class="row"><span class="grow">${esc(S.upload.label)}</span><b class="tnum">${Math.round(S.upload.pct * 100)}%</b></div><div class="bar"><i style="width:${Math.round(S.upload.pct * 100)}%"></i></div><div class="hint">Не закрывайте страницу до конца загрузки</div></div>` : '';
   return `
@@ -830,7 +903,7 @@ function watchInfo() {
     <div class="row" style="flex-wrap:wrap">${avatar(o, 40)}<div class="grow">${nameLink(o)}<div class="muted small">${ago(v.createdAt)}</div></div>
       <button class="pill ${liked ? 'liked' : ''}" data-act="likevideo" data-id="${esc(v.id)}" aria-pressed="${liked}">${liked ? I.heart : I.heartO}${likes.length || ''}</button>
       <button class="pill" data-act="copylink" data-id="${esc(v.id)}">${I.link}Ссылка</button>
-      ${own ? `<button class="btn ${S.confirm === 'video:' + v.id ? 'danger' : 'ghost'} small" data-act="delvideo" data-id="${esc(v.id)}">${S.confirm === 'video:' + v.id ? 'Удалить видео?' : 'Удалить'}</button>` : ''}</div>
+      ${own || isSiteAdmin() ? `<button class="btn ${S.confirm === 'video:' + v.id ? 'danger' : 'ghost'} small" data-act="delvideo" data-id="${esc(v.id)}">${S.confirm === 'video:' + v.id ? 'Удалить видео?' : 'Удалить'}</button>` : ''}</div>
     ${v.description ? `<div class="post-text">${esc(v.description)}</div>` : ''}
   </div>`;
 }
@@ -930,6 +1003,7 @@ function viewSettings() {
     <div class="card pad set"><h2 class="h" style="font-size:16px">Оформление</h2>
       <div class="set-row"><span class="grow">Тема</span>${seg('theme', th, [['system', 'Как в системе'], ['light', 'Светлая'], ['dark', 'Тёмная']])}</div>
       <p class="hint" style="margin:0">Сохраняется на этом устройстве.</p></div>
+    ${installCard()}
     ${canNotify() ? `<div class="card pad set"><h2 class="h" style="font-size:16px">Уведомления</h2>
       <div class="set-row"><span class="grow">Новые сообщения, когда вкладка VСмске в фоне</span>${
         Notification.permission === 'denied' ? '<span class="muted small">Запрещены в настройках браузера</span>'
@@ -953,6 +1027,7 @@ function viewMore() {
   return `<a class="card pad row" href="#id/${esc(me.id)}" style="color:var(--fg)">${avatar(me, 52, false)}<div class="grow"><b>${esc(me.name)}</b><div class="muted small">Моя страница</div></div>›</a>
     <div class="card ulist">
       ${item('notif', I.bell, 'Уведомления' + (unseenNotifs() ? ` <span class="badge">${unseenNotifs()}</span>` : ''), 'Лайки, комментарии, записи на стене')}
+      ${item('clubs', I.club, 'Сообщества', 'Группы по интересам')}
       ${item('people', I.people, 'Люди', 'Поиск и новые пользователи')}
       ${item('albums', I.album, 'ВС Альбомы', 'Ваши фотографии')}
       ${item('disk', I.disk, 'ВС Диск', 'Личные файлы')}
@@ -961,7 +1036,8 @@ function viewMore() {
     <div class="card ulist">
       ${item('vid', I.vid, 'VС ID', 'Вход, почта, пароль')}
       ${item('settings', I.gear, 'Настройки', 'Тема и приватность')}
-    </div>`;
+    </div>
+    ${installCard()}`;
 }
 
 /* Одна запись (#post/<id>) */
@@ -970,6 +1046,67 @@ function viewPost() {
   if (!p) return loadingBox();
   if (p.missing) return `<div class="card empty"><b>Запись удалена или не найдена</b><a class="btn sec" href="#feed">К новостям</a></div>`;
   return `<div class="card pad row"><a class="icon-btn" href="#id/${esc(p.wallId)}" aria-label="На стену">${I.back}</a><b class="grow">Запись</b></div>${postCard(p)}`;
+}
+
+/* ---------- Сообщества ---------- */
+const memberWord = n => `${n} ${plural(n, 'подписчик', 'подписчика', 'подписчиков')}`;
+function groupRow(g) {
+  const sub = (S.me.groups || []).includes(g.id);
+  return `<div class="uitem">${groupAvatar(g, 52)}
+    <div class="grow" style="min-width:0"><a class="name" href="#club/${esc(g.id)}" style="color:var(--fg);font-weight:600">${esc(g.name)}</a>
+      <div class="muted small">${memberWord(g.membersCount || 0)}${g.about ? ' · ' + esc(g.about.slice(0, 80)) : ''}</div></div>
+    <div class="acts"><button class="btn ${sub ? 'ghost' : 'sec'}" data-act="${sub ? 'unsub' : 'sub'}" data-id="${esc(g.id)}">${sub ? 'Отписаться' : 'Подписаться'}</button></div></div>`;
+}
+function viewClubs() {
+  const mine = (S.me.groups || []).map(G).filter(g => g && !g.deleted);
+  const others = cache.groupList.filter(g => !(S.me.groups || []).includes(g.id));
+  return `<div class="card pad"><div class="row" style="flex-wrap:wrap"><h1 class="h brandh grow">Сообщества</h1>
+      <button class="btn" data-act="newclub">Создать сообщество</button></div>
+      ${S.newClub ? `<form class="form" data-form="club" style="margin-top:14px">
+        <div class="field"><label for="clName">Название</label><input id="clName" required maxlength="60" placeholder="Любители кофе"></div>
+        <div class="field"><label for="clAbout">Описание</label><textarea id="clAbout" rows="2" maxlength="600" placeholder="О чём сообщество (необязательно)"></textarea></div>
+        <div class="row"><button class="btn" type="submit" ${S.busy ? 'disabled' : ''}>Создать</button><button type="button" class="btn ghost" data-act="newclub">Отмена</button></div></form>` : ''}</div>
+    <div class="card"><div class="pad" style="padding-bottom:4px"><h2 class="h" style="font-size:16px">Мои сообщества <span class="muted">${mine.length}</span></h2></div>
+      <div class="ulist">${mine.length ? mine.map(groupRow).join('') : '<div class="empty">Вы пока ни на что не подписаны</div>'}</div></div>
+    <div class="card"><div class="pad" style="padding-bottom:4px"><h2 class="h" style="font-size:16px">Новые сообщества</h2></div>
+      <div class="ulist">${S.loading ? '<div class="loading"><div class="spin"></div></div>' : others.length ? others.map(groupRow).join('') : '<div class="empty">Других сообществ пока нет — создайте первое!</div>'}</div></div>`;
+}
+function viewClub() {
+  const g = G(S.clubId), me = S.me;
+  if (!g) return loadingBox();
+  if (g.deleted) return `<div class="card empty"><b>Сообщество удалено или не найдено</b><a class="btn sec" href="#clubs">Все сообщества</a></div>`;
+  const admin = (g.admins || []).includes(me.id), owner = g.ownerId === me.id, sub = (me.groups || []).includes(g.id);
+  const canDel = owner || isSiteAdmin(), photo = S.editGroupPhoto === undefined ? g.photo : S.editGroupPhoto, cover = S.editGroupCover || g.cover || 'blue';
+  const admins = (g.admins || []).map(U).filter(Boolean);
+  const manage = admin && S.clubEdit ? `<div class="card pad"><h2 class="h" style="font-size:16px;margin-bottom:12px">Управление сообществом</h2>
+      <form class="form" data-form="clubedit">
+        <div class="row">${groupAvatar({ ...g, photo, cover }, 64, false)}<div class="row" style="flex-wrap:wrap;gap:8px">
+          <button type="button" class="btn sec" data-act="gphoto">Загрузить фото</button>${photo ? `<button type="button" class="btn ghost" data-act="nogphoto">Убрать</button>` : ''}</div></div>
+        <div class="field"><label>Обложка</label><div class="swatches covers">${Object.entries(COVERS).map(([k, c]) => `<button type="button" class="${k === cover ? 'on' : ''}" style="background:${c}" data-act="gcover" data-c="${k}" aria-label="Обложка ${k}"></button>`).join('')}</div></div>
+        <div class="field"><label for="geName">Название</label><input id="geName" required maxlength="60" value="${esc(g.name)}"></div>
+        <div class="field"><label for="geAbout">Описание</label><textarea id="geAbout" rows="3" maxlength="600">${esc(g.about || '')}</textarea></div>
+        <div class="row"><button class="btn" type="submit">Сохранить</button><button type="button" class="btn ghost" data-act="clubedit">Закрыть</button></div>
+      </form>
+      ${owner ? `<div class="set" style="margin-top:16px"><b>Администраторы</b>
+        ${admins.map(u => `<div class="row">${avatar(u, 32)}<span class="grow">${nameLink(u)}</span>${u.id !== me.id ? `<button class="btn ghost small" data-act="gunadmin" data-id="${esc(u.id)}">Убрать</button>` : '<span class="muted small">владелец</span>'}</div>`).join('')}
+        <form class="row" data-form="gadmin"><input id="gaNick" class="grow inp" placeholder="Короткое имя, например ivan.petrov" maxlength="30" autocomplete="off"><button class="btn sec">Добавить</button></form></div>` : ''}
+    </div>` : '';
+  return `<div class="card">
+    <div class="cover" style="--cover:${COVERS[g.cover] || COVERS.blue}"></div>
+    <div class="prof">${groupAvatar(g, 110, false)}
+      <div class="prof-info"><h1 class="prof-name">${esc(g.name)}</h1><div class="muted">${memberWord(g.membersCount || 0)}</div></div>
+      <div class="prof-btns">
+        <button class="btn ${sub ? 'sec' : ''}" data-act="${sub ? 'unsub' : 'sub'}" data-id="${esc(g.id)}">${sub ? 'Вы подписаны ✓' : 'Подписаться'}</button>
+        ${admin ? `<button class="btn ghost" data-act="clubedit">Управление</button>` : ''}
+        ${canDel ? `<button class="btn ${S.confirm === 'club:' + g.id ? 'danger' : 'ghost'}" data-act="delclub" data-id="${esc(g.id)}">${S.confirm === 'club:' + g.id ? 'Удалить вместе с записями?' : 'Удалить'}</button>` : ''}
+      </div>
+    </div>
+    ${g.about ? `<dl class="facts"><dt>Описание</dt><dd>${linkify(g.about)}</dd></dl>` : ''}
+  </div>
+  ${manage}
+  ${admin ? composer(g.id, 'Написать от имени сообщества', g) : ''}
+  <div class="card pad" style="padding-block:12px"><b>Записи сообщества</b> <span class="muted">${cache.groupWall.length}</span></div>
+  ${S.loading ? loadingBox() : cache.groupWall.length ? cache.groupWall.map(p => postCard(p)).join('') : `<div class="card empty">${admin ? 'Напишите первую запись — её увидят подписчики в новостях.' : 'Здесь пока нет записей'}</div>`}`;
 }
 
 /* Уведомления */
@@ -989,7 +1126,9 @@ function viewNotifs() {
 
 /* Новости */
 function viewFeed() {
-  const posts = [...cache.feed.values()].flat().sort((a, b) => ms(b.createdAt) - ms(a.createdAt)).slice(0, 100);
+  const seen = new Set();
+  const posts = [...cache.feed.values()].flat().filter(p => !seen.has(p.id) && seen.add(p.id))
+    .sort((a, b) => ms(b.createdAt) - ms(a.createdAt)).slice(0, 100);
   const tab = (t, l) => `<button class="${S.feedTab === t ? 'on' : ''}" data-act="feedtab" data-tab="${t}">${l}</button>`;
   return `${composer(S.me.id, 'Что у вас нового?')}
   <div class="card"><div class="tabs">${tab('friends', 'Друзья')}${tab('all', 'Все записи')}</div></div>
@@ -1003,10 +1142,10 @@ const emojiPanel = target => S.emoji === target
   ? `<div class="emoji" role="group" aria-label="Смайлики">${EMOJI.map(e => `<button type="button" data-act="emoji" data-t="${target}" data-e="${e}">${e}</button>`).join('')}</div>` : '';
 const emojiBtn = (target, cls = 'icon-btn') => `<button type="button" class="${cls}" data-act="emojis" data-t="${target}" aria-label="Смайлики" aria-expanded="${S.emoji === target}">😊</button>`;
 
-function composer(wallId, ph) {
+function composer(wallId, ph, g = null) {
   const d = S.draft;
-  return `<div class="card pad composer"><form data-form="post" data-wall="${esc(wallId)}">
-    <div class="row" style="align-items:flex-start">${avatar(S.me, 40, false)}
+  return `<div class="card pad composer"><form data-form="post" data-wall="${esc(wallId)}" ${g ? 'data-group="1"' : ''}>
+    <div class="row" style="align-items:flex-start">${g ? groupAvatar(g, 40, false) : avatar(S.me, 40, false)}
       <textarea id="postText" rows="2" placeholder="${esc(ph)}" maxlength="4000"></textarea></div>
     ${d.image ? `<div class="preview"><img src="${d.image}" alt="Прикреплённое фото"><button type="button" data-act="unattach" aria-label="Убрать фото">×</button></div>` : ''}
     ${d.poll ? `<div class="poll-form">
@@ -1037,17 +1176,19 @@ function pollHtml(p) {
 
 function postCard(p, pinned = false) {
   const a = U(p.authorId); if (!a) return '';
-  const me = S.me, wall = p.wallId !== p.authorId ? U(p.wallId) : null;
+  const g = p.groupId ? G(p.groupId) : null; if (p.groupId && !g) return '';
+  const me = S.me, wall = !g && p.wallId !== p.authorId ? U(p.wallId) : null;
   const likes = p.likes || [], liked = likes.includes(me.id);
   const open = S.openComments.has(p.id), comments = cache.comments.get(p.id);
-  const canDel = p.authorId === me.id || p.wallId === me.id, canEdit = p.authorId === me.id, editing = canEdit && S.editPost === p.id;
-  const canPin = p.wallId === me.id, isPinned = canPin && me.pinned === p.id;
+  const gAdmin = g && (g.admins || []).includes(me.id);
+  const canDel = p.authorId === me.id || p.wallId === me.id || gAdmin || isSiteAdmin(), canEdit = p.authorId === me.id, editing = canEdit && S.editPost === p.id;
+  const canPin = !g && p.wallId === me.id, isPinned = canPin && me.pinned === p.id;
   const n = p.commentCount || 0;
   const confirmKey = 'post:' + p.id, menu = S.postMenu === p.id;
   return `<article class="card pad post">
     ${pinned ? `<div class="pin-label small">📌 Закреплённая запись</div>` : ''}
-    <div class="row post-head">${avatar(a, 44)}
-      <div class="grow">${nameLink(a)}${wall ? ` <span class="muted">→</span> ${nameLink(wall)}` : ''}
+    <div class="row post-head">${g ? groupAvatar(g, 44) : avatar(a, 44)}
+      <div class="grow">${g ? `<a class="name" href="#club/${esc(g.id)}" style="color:var(--fg);font-weight:600">${esc(g.name)}</a>` : nameLink(a)}${wall ? ` <span class="muted">→</span> ${nameLink(wall)}` : ''}
         <div class="muted small"><a href="#post/${esc(p.id)}" style="color:inherit">${ago(p.createdAt)}</a>${p.editedAt ? ' · изменено' : ''}</div></div>
       ${canDel || canPin ? `<button class="icon-btn" data-act="postmenu" data-id="${esc(p.id)}" aria-label="Действия с записью" aria-expanded="${menu}">${I.more}</button>` : ''}
     </div>
@@ -1110,15 +1251,18 @@ function viewProfile() {
   const posts = cache.wall;
   const likes = posts.reduce((s, p) => s + (p.likes || []).length, 0);
   const since = u.createdAt ? new Date(ms(u.createdAt)) : null;
-  return `<div class="card">
-    <div class="cover" ${COVERS[u.cover] ? `style="--cover:${COVERS[u.cover]}"` : ''}></div>
-    <div class="prof">${avatar(u, 120, false)}
-      <div class="prof-info"><h1 class="prof-name">${esc(u.name)}</h1><div class="muted">${u.status ? esc(u.status) : own ? 'Добавьте статус в «Редактировать»' : '@' + esc(u.nick)}</div>
+  const adm = u.admin === true;
+  return `<div class="card ${adm ? 'admin-card' : ''}">
+    ${adm ? `<div class="cover admin-cover"><div class="aurora"></div><span class="adm-tag">👑 Администратор VСмске</span></div>`
+      : `<div class="cover" ${COVERS[u.cover] ? `style="--cover:${COVERS[u.cover]}"` : ''}></div>`}
+    <div class="prof">${adm ? `<span class="adm-ring">${avatar(u, 120, false)}</span>` : avatar(u, 120, false)}
+      <div class="prof-info"><h1 class="prof-name">${esc(u.name)}${admBadge(u)}</h1><div class="muted">${u.status ? esc(u.status) : own ? 'Добавьте статус в «Редактировать»' : '@' + esc(u.nick)}</div>
         ${!own && seenText(u) ? `<div class="seen small ${isOnline(u) ? 'on' : ''}">${seenText(u)}</div>` : ''}</div>
       <div class="prof-btns">${own ? `<a class="btn sec" href="#edit">Редактировать</a>` : `<a class="btn" href="#im/${esc(u.id)}">Написать</a>${relButtons(u.id)}`}</div>
     </div>
     <dl class="facts">
       <dt>Короткое имя</dt><dd>@${esc(u.nick)}</dd>
+      ${adm ? `<dt>Роль</dt><dd><b class="adm-role">Администратор сайта</b></dd>` : ''}
       ${u.city ? `<dt>Город</dt><dd>${esc(u.city)}</dd>` : ''}
       ${u.about ? `<dt>О себе</dt><dd>${esc(u.about)}</dd>` : ''}
       ${since ? `<dt>На VСмске</dt><dd>с ${since.getDate()} ${MONTHS[since.getMonth()]} ${since.getFullYear()}</dd>` : ''}
@@ -1225,7 +1369,7 @@ function msgHtml(m, id, peerRead) {
   const mine = m.from === id, img = safeImg(m.image), sel = S.msgSel === m.id, rp = m.replyTo;
   const ticks = mine && peerRead !== null ? `<span class="ticks ${ms(m.createdAt) <= peerRead ? 'read' : ''}" aria-label="${ms(m.createdAt) <= peerRead ? 'Прочитано' : 'Отправлено'}">${ms(m.createdAt) <= peerRead ? '✓✓' : '✓'}</span>` : '';
   const quote = rp ? `<div class="msg-quote"><b>${esc(rp.from === id ? 'Вы' : (U(rp.from)?.name || '').split(' ')[0])}</b>${esc(rp.text || '')}</div>` : '';
-  return `<div class="msg ${mine ? 'me' : ''} ${img ? 'has-img' : ''} ${sel ? 'sel' : ''}" data-act="selmsg" data-id="${esc(m.id)}">${quote}${img ? `<img class="msg-img" src="${esc(img)}" alt="Фото" data-act="viewimg" data-kind="msg" data-id="${esc(m.id)}">` : ''}${m.text ? `<span>${linkify(m.text)}</span>` : ''}<time>${hm(new Date(ms(m.createdAt)))}${ticks}</time>${sel ? `<div class="msg-acts"><button data-act="replymsg" data-id="${esc(m.id)}">${I.reply}Ответить</button>${mine ? `<button data-act="delmsg" data-id="${esc(m.id)}">${S.confirm === 'msg:' + m.id ? 'Удалить у всех?' : 'Удалить'}</button>` : ''}</div>` : ''}</div>`;
+  return `<div class="msg ${mine ? 'me' : ''} ${img ? 'has-img' : ''} ${sel ? 'sel' : ''}" data-act="selmsg" data-id="${esc(m.id)}">${quote}${img ? `<img class="msg-img" src="${esc(img)}" alt="Фото" data-act="viewimg" data-kind="msg" data-id="${esc(m.id)}">` : ''}${typeof m.audio === 'string' && m.audio.startsWith('data:audio/') ? voiceHtml(m) : ''}${m.text ? `<span>${linkify(m.text)}</span>` : ''}<time>${hm(new Date(ms(m.createdAt)))}${ticks}</time>${sel ? `<div class="msg-acts"><button data-act="replymsg" data-id="${esc(m.id)}">${I.reply}Ответить</button>${mine ? `<button data-act="delmsg" data-id="${esc(m.id)}">${S.confirm === 'msg:' + m.id ? 'Удалить у всех?' : 'Удалить'}</button>` : ''}</div>` : ''}</div>`;
 }
 function viewMessages() {
   const id = S.me.id;
@@ -1249,7 +1393,9 @@ function viewMessages() {
       ${rp ? `<div class="reply-bar">${I.reply}<div class="grow" style="min-width:0"><b>${esc(rp.from === id ? 'Вы' : o.name.split(' ')[0])}</b><div class="muted small" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(rp.text)}</div></div><button class="icon-btn" data-act="noreply" aria-label="Не отвечать">✕</button></div>` : ''}
       ${emojiPanel('msgInput')}
       ${o.deleted ? '' : !self && o.privacy?.messages === 'friends' && !(S.me.friends || []).includes(o.id) && !cache.messages.length
-        ? `<div class="chat-form muted small" style="justify-content:center">${esc(o.name.split(' ')[0])} принимает сообщения только от друзей</div>` : `<form class="chat-form" data-form="msg" data-to="${esc(o.id)}"><button type="button" class="icon-btn" data-act="msgphoto" aria-label="Отправить фото" ${S.busy ? 'disabled' : ''}>${I.photo}</button>${emojiBtn('msgInput')}<input id="msgInput" placeholder="Сообщение" maxlength="2000" autocomplete="off"><button class="btn" aria-label="Отправить">${I.send}</button></form>`}`;
+        ? `<div class="chat-form muted small" style="justify-content:center">${esc(o.name.split(' ')[0])} принимает сообщения только от друзей</div>` : S.rec ? `<div class="chat-form rec-bar"><span class="rec-dot"></span><b id="recTime" class="tnum">${fmtDur((Date.now() - S.rec.started) / 1000)}</b><span class="grow muted small">Идёт запись, до 1 минуты</span>
+          <button type="button" class="btn ghost" data-act="reccancel">Отмена</button><button type="button" class="btn" data-act="recsend">${I.send}</button></div>`
+        : `<form class="chat-form" data-form="msg" data-to="${esc(o.id)}"><button type="button" class="icon-btn" data-act="msgphoto" aria-label="Отправить фото" ${S.busy ? 'disabled' : ''}>${I.photo}</button>${emojiBtn('msgInput')}<input id="msgInput" placeholder="Сообщение" maxlength="2000" autocomplete="off"><button type="button" class="icon-btn" data-act="mic" aria-label="Записать голосовое">${I.mic}</button><button class="btn" aria-label="Отправить">${I.send}</button></form>`}`;
   }
   const q = S.dq.trim().toLowerCase();
   const items = list.map(c => {
@@ -1278,7 +1424,7 @@ document.addEventListener('click', async e => {
   const { act, id } = b.dataset;
   const twoStep = key => { if (S.confirm === key) { S.confirm = null; return true; } S.confirm = key; render(); return false; };
   if (!['delpost', 'unfriend', 'delvideo', 'delalbum', 'delfile', 'delphoto', 'delmsg', 'postmenu'].includes(act)) S.confirm = null;
-  if (!['selmsg', 'delmsg', 'replymsg'].includes(act)) S.msgSel = null;
+  if (!['selmsg', 'delmsg', 'replymsg', 'playvoice'].includes(act)) S.msgSel = null;
   if (!['postmenu', 'delpost', 'pinpost'].includes(act)) S.postMenu = null;
   if (!['emoji', 'emojis'].includes(act)) S.emoji = null;
   try {
@@ -1430,11 +1576,40 @@ document.addEventListener('click', async e => {
         await deleteMessage(id); S.msgSel = null; render(); break;
       }
       case 'msgphoto': pick('msgphoto', 'image/*', false); break;
+      case 'mic': await recStart(); break;
+      case 'install': if (installPrompt) { installPrompt.prompt(); await installPrompt.userChoice; installPrompt = null; render(); } break;
+      case 'recsend': recStop(true); break;
+      case 'reccancel': recStop(false); break;
+      case 'playvoice': { const m = cache.messages.find(x => x.id === id); if (m?.audio) playVoice(m); break; }
       case 'editpost': S.editPost = id || null; render(); if (id) document.getElementById('ep_' + id)?.focus(); break;
       case 'unattach': S.draft.image = ''; render(); break;
       case 'noavatar': S.editPhoto = ''; render(); break;
       case 'color': S.editColor = b.dataset.c; render(); break;
       case 'cover': S.editCover = b.dataset.c; render(); break;
+      case 'newclub': S.newClub = !S.newClub; render(); if (S.newClub) document.getElementById('clName')?.focus(); break;
+      case 'sub': case 'unsub': {
+        const on = act === 'sub', mine = (S.me.groups || []).includes(id);
+        if (on === mine) break;
+        const bt = writeBatch(db);
+        bt.update(doc(db, 'users', uid()), { groups: on ? arrayUnion(id) : arrayRemove(id) });
+        bt.update(doc(db, 'groups', id), { membersCount: increment(on ? 1 : -1) });
+        await bt.commit();
+        const g = G(id); if (g) g.membersCount = (g.membersCount || 0) + (on ? 1 : -1);
+        toast(on ? 'Вы подписались' : 'Вы отписались'); break;
+      }
+      case 'clubedit': S.clubEdit = !S.clubEdit; S.editGroupPhoto = undefined; S.editGroupCover = null; render(); break;
+      case 'gphoto': pick('gphoto', 'image/*', false); break;
+      case 'nogphoto': S.editGroupPhoto = ''; render(); break;
+      case 'gcover': S.editGroupCover = b.dataset.c; render(); break;
+      case 'gunadmin': await updateDoc(doc(db, 'groups', S.clubId), { admins: arrayRemove(id) }); toast('Больше не администратор'); break;
+      case 'delclub': {
+        if (!twoStep('club:' + id)) return;
+        const ps = await getDocs(query(collection(db, 'posts'), where('wallId', '==', id), limit(400)));
+        for (const c of chunk(ps.docs.map(d => d.ref), 400)) { const bt = writeBatch(db); c.forEach(r => bt.delete(r)); await bt.commit(); }
+        const bt = writeBatch(db); bt.delete(doc(db, 'groups', id));
+        if ((S.me.groups || []).includes(id)) bt.update(doc(db, 'users', uid()), { groups: arrayRemove(id) });
+        await bt.commit(); cache.groups.delete(id); toast('Сообщество удалено'); go('clubs'); break;
+      }
       case 'addfriend': await friendAdd(id); break;
       case 'cancelreq': await friendCancel(id); break;
       case 'accept': await friendAccept(id); break;
@@ -1445,13 +1620,13 @@ document.addEventListener('click', async e => {
 });
 
 /* Сообщения */
-async function sendMessage(to, text, image = '') {
+async function sendMessage(to, text, image = '', extra = {}) {
   const me = uid(), cid = chatId(me, to), bt = writeBatch(db);
-  const msg = { from: me, text, createdAt: serverTimestamp() };
+  const msg = { from: me, text, createdAt: serverTimestamp(), ...extra };
   if (image) msg.image = image;
   if (S.replyTo && S.chatWith === to) { msg.replyTo = S.replyTo; S.replyTo = null; }
   bt.set(doc(collection(db, 'chats', cid, 'messages')), msg);
-  bt.set(doc(db, 'chats', cid), { members: [me, to].sort(), lastText: (text || '📷 Фото').slice(0, 200), lastFrom: me, lastAt: serverTimestamp(), read: { [me]: serverTimestamp() } }, { merge: true });
+  bt.set(doc(db, 'chats', cid), { members: [me, to].sort(), lastText: (text || (extra.audio ? '🎤 Голосовое' : '📷 Фото')).slice(0, 200), lastFrom: me, lastAt: serverTimestamp(), read: { [me]: serverTimestamp() } }, { merge: true });
   await bt.commit();
   const box = app.querySelector('.msgs'); if (box) box.scrollTop = box.scrollHeight;
 }
@@ -1462,6 +1637,68 @@ async function deleteMessage(mid) {
   const chat = cache.chats.find(c => c.id === cid);
   if (list.length && list[list.length - 1].id === mid && chat?.lastFrom === uid()) bt.update(doc(db, 'chats', cid), { lastText: 'Сообщение удалено' });
   await bt.commit(); toast('Сообщение удалено');
+}
+
+/* Голосовые сообщения: запись до 1 минуты, хранится в самом сообщении (dataURL) */
+const VOICE_MAX = 60, VOICE_BYTES = 500000;
+let recorder = null, recChunks = [], recTimer = null, recSend = false;
+async function recStart() {
+  if (!navigator.mediaDevices?.getUserMedia || !window.MediaRecorder) { toast('Этот браузер не умеет записывать звук'); return; }
+  let stream;
+  try { stream = await navigator.mediaDevices.getUserMedia({ audio: true }); }
+  catch (e) { toast('Нет доступа к микрофону. Разрешите его в настройках браузера.'); return; }
+  const type = ['audio/webm;codecs=opus', 'audio/mp4', 'audio/webm', 'audio/ogg;codecs=opus'].find(t => MediaRecorder.isTypeSupported?.(t)) || '';
+  recorder = new MediaRecorder(stream, { ...(type ? { mimeType: type } : {}), audioBitsPerSecond: 32000 });
+  recChunks = []; recSend = false;
+  const to = S.chatWith, started = Date.now();
+  recorder.ondataavailable = e => { if (e.data.size) recChunks.push(e.data); };
+  recorder.onstop = async () => {
+    stream.getTracks().forEach(t => t.stop()); clearInterval(recTimer);
+    const dur = Math.min(VOICE_MAX, (Date.now() - started) / 1000);
+    S.rec = null; render();
+    if (!recSend) return;
+    if (dur < 0.7) { toast('Слишком коротко'); return; }
+    const blob = new Blob(recChunks, { type: recorder.mimeType || type || 'audio/webm' });
+    if (blob.size > VOICE_BYTES) { toast('Запись получилась слишком большой'); return; }
+    const audio = await new Promise(res => { const r = new FileReader(); r.onload = () => res(String(r.result)); r.readAsDataURL(blob); });
+    try { await sendMessage(to, '', '', { audio: audio.replace(/^data:[^;,]*/, 'data:' + (blob.type.split(';')[0] || 'audio/webm')), dur: Math.round(dur * 10) / 10 }); }
+    catch (e) { console.error(e); toast(errText(e)); }
+  };
+  recorder.start();
+  S.rec = { started }; render();
+  recTimer = setInterval(() => {
+    const sec = (Date.now() - started) / 1000, el = document.getElementById('recTime');
+    if (el) el.textContent = fmtDur(sec);
+    if (sec >= VOICE_MAX) recStop(true);
+  }, 250);
+}
+function recStop(send) { if (recorder && recorder.state !== 'inactive') { recSend = send; recorder.stop(); } }
+
+// Плеер голосовых живёт вне DOM, поэтому перерисовка страницы его не прерывает
+const players = new Map();
+function voiceHtml(m) {
+  const pl = players.get(m.id), playing = pl && !pl.paused;
+  const pct = pl && pl.duration && isFinite(pl.duration) ? pl.currentTime / pl.duration * 100 : 0;
+  return `<div class="voice"><button class="voice-btn" data-act="playvoice" data-id="${esc(m.id)}" aria-label="${playing ? 'Пауза' : 'Слушать'}">${playing ? I.pause : I.play}</button>
+    <div class="voice-bar"><i data-vbar="${esc(m.id)}" style="width:${pct}%"></i></div><span class="small tnum" data-vtime="${esc(m.id)}">${fmtDur(pl && pct ? pl.currentTime : m.dur)}</span></div>`;
+}
+function playVoice(m) {
+  let pl = players.get(m.id);
+  if (!pl) {
+    pl = new Audio(m.audio); players.set(m.id, pl);
+    const sync = () => {
+      const bar = document.querySelector(`[data-vbar="${m.id}"]`), t = document.querySelector(`[data-vtime="${m.id}"]`);
+      const d = isFinite(pl.duration) && pl.duration ? pl.duration : m.dur;
+      if (bar) bar.style.width = (pl.currentTime / d * 100) + '%';
+      if (t) t.textContent = fmtDur(pl.currentTime || m.dur);
+    };
+    pl.ontimeupdate = sync;
+    pl.onplay = pl.onpause = render;
+    pl.onended = () => { pl.currentTime = 0; render(); };
+    pl.onerror = () => toast('Не получилось воспроизвести запись в этом браузере');
+  }
+  players.forEach((p, id) => { if (id !== m.id && !p.paused) p.pause(); });
+  if (pl.paused) pl.play().catch(e => console.error(e)); else pl.pause();
 }
 
 /* Дружба: заявка → принять / отклонить */
@@ -1540,6 +1777,7 @@ document.getElementById('filePick').addEventListener('change', async e => {
     if (pickTarget === 'avatar') { S.editPhoto = await compress(f, 256, MAX_AVATAR, true); render(); }
     else if (pickTarget === 'post') { S.draft.image = await compress(f, 1280, MAX_POST_IMG); render(); }
     else if (pickTarget === 'photos') await uploadPhotos(files);
+    else if (pickTarget === 'gphoto') { S.editGroupPhoto = await compress(f, 256, MAX_AVATAR, true); render(); }
     else if (pickTarget === 'msgphoto') {
       if (!S.chatWith || S.busy) return;
       S.busy = true; render();
@@ -1633,8 +1871,9 @@ document.addEventListener('submit', async e => {
         try {
           const post = { authorId: uid(), wallId: wall, text, image: d.image || '', likes: [], commentCount: 0, createdAt: serverTimestamp() };
           if (poll) post.poll = poll;
+          if (f.dataset.group) post.groupId = wall;
           const ref = await addDoc(collection(db, 'posts'), post);
-          if (wall !== uid()) notify(wall, 'wall', ref.id, text || (poll ? poll.q : 'Фото'));
+          if (wall !== uid() && !f.dataset.group) notify(wall, 'wall', ref.id, text || (poll ? poll.q : 'Фото'));
           S.draft = { text: '', image: '', poll: false, pollN: 2 }; S.emoji = null;
           ['postText', 'pollQ', 'pollO0', 'pollO1', 'pollO2', 'pollO3', 'pollO4', 'pollO5'].forEach(clear); toast('Опубликовано');
         } finally { S.busy = false; render(); }
@@ -1655,6 +1894,30 @@ document.addEventListener('submit', async e => {
         clear('msgInput'); S.emoji = null;
         await sendMessage(f.dataset.to, text);
         break;
+      }
+      case 'club': {
+        const name = v('clName'); if (!name || S.busy) return;
+        S.busy = true; render();
+        try {
+          const ref = doc(collection(db, 'groups')), bt = writeBatch(db);
+          bt.set(ref, { name, about: v('clAbout'), photo: '', cover: Object.keys(COVERS)[Math.floor(Math.random() * 6)], ownerId: uid(), admins: [uid()], membersCount: 1, createdAt: serverTimestamp() });
+          bt.update(doc(db, 'users', uid()), { groups: arrayUnion(ref.id) });
+          await bt.commit(); S.newClub = false; toast('Сообщество создано'); go('club/' + ref.id);
+        } finally { S.busy = false; render(); }
+        break;
+      }
+      case 'clubedit': {
+        const g = G(S.clubId); if (!g) return;
+        await updateDoc(doc(db, 'groups', g.id), { name: v('geName'), about: v('geAbout'),
+          photo: S.editGroupPhoto === undefined ? (g.photo || '') : S.editGroupPhoto, cover: S.editGroupCover || g.cover || 'blue' });
+        S.clubEdit = false; S.editGroupPhoto = undefined; S.editGroupCover = null; toast('Сохранено'); render(); break;
+      }
+      case 'gadmin': {
+        const nick = v('gaNick').toLowerCase().replace(/^@/, ''); if (!nick) return;
+        const s2 = await getDoc(doc(db, 'usernames', nick));
+        if (!s2.exists()) { toast('Нет человека с таким коротким именем'); return; }
+        await updateDoc(doc(db, 'groups', S.clubId), { admins: arrayUnion(s2.data().uid) });
+        clear('gaNick'); toast('Администратор добавлен'); break;
       }
       case 'editpost': {
         const pid = f.dataset.id, text = v('ep_' + pid);
