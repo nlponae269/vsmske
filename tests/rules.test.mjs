@@ -402,3 +402,75 @@ test('репост: запись со ссылкой + счётчик +1', async
   await assertFails(updateDoc(doc(f, 'posts', 'p1'), { reposts: 50 }));
   await assertFails(setDoc(doc(collection(f, 'posts')), post(C, C, { text: '', repostOf: 'nope' })));
 });
+
+/* ---------- 1.8: беседы, пересылка, лайки комментариев, фото, теги, ДР, гости, истории ---------- */
+async function makeRoom(owner, members) {
+  const f = db(owner), ref = doc(f, 'chats', 'g_room1');
+  await setDoc(ref, { members, group: true, name: 'Друзья', ownerId: owner, lastText: 'Беседа создана', lastFrom: owner, lastAt: serverTimestamp(), read: { [owner]: serverTimestamp() } });
+  return ref;
+}
+async function sendRoom(from, text, extra = {}) {
+  const f = db(from), b = writeBatch(f);
+  b.set(doc(collection(f, 'chats', 'g_room1', 'messages')), { from, text, createdAt: serverTimestamp(), ...extra });
+  b.set(doc(f, 'chats', 'g_room1'), { lastText: text, lastFrom: from, lastAt: serverTimestamp(), read: { [from]: serverTimestamp() } }, { merge: true });
+  await b.commit();
+}
+test('беседа: создать, писать, читать; чужой не может', async () => {
+  await assertSucceeds(makeRoom(A, [A, B]));
+  await assertSucceeds(sendRoom(B, 'привет всем'));
+  await assertSucceeds(getDoc(doc(db(B), 'chats', 'g_room1')));
+  await assertFails(getDoc(doc(db(C), 'chats', 'g_room1')));
+  await assertFails(sendRoom(C, 'я тоже'));
+  await assertFails(updateDoc(doc(db(B), 'chats', 'g_room1'), { members: [A, B, C] }));
+  await assertSucceeds(updateDoc(doc(db(A), 'chats', 'g_room1'), { members: [A, B, C], name: 'Все' }));
+  await assertSucceeds(sendRoom(C, 'я тоже'));
+  await assertSucceeds(updateDoc(doc(db(C), 'chats', 'g_room1'), { members: arrayRemove(C) }));
+  await assertFails(sendRoom(C, 'вернулся?'));
+  await assertFails(updateDoc(doc(db(B), 'chats', 'g_room1'), { members: [B] }));
+  await assertFails(deleteDoc(doc(db(B), 'chats', 'g_room1')));
+  await assertSucceeds(deleteDoc(doc(db(A), 'chats', 'g_room1')));
+});
+test('беседу не создать без себя или больше 50', async () => {
+  await assertFails(makeRoom(A, [B, C]));
+  await assertFails(makeRoom(A, Array.from({ length: 51 }, (_, i) => i ? 'u' + i : A)));
+});
+test('пересылка сообщения', async () => {
+  const f = db(B), cid = [A, B].sort().join('_'), b = writeBatch(f);
+  b.set(doc(collection(f, 'chats', cid, 'messages')), { from: B, text: '', fwd: { from: C, name: 'Вера', text: 'смешная шутка' }, createdAt: serverTimestamp() });
+  b.set(doc(f, 'chats', cid), { members: [A, B].sort(), lastText: '↪ Пересланное', lastFrom: B, lastAt: serverTimestamp(), read: { [B]: serverTimestamp() } }, { merge: true });
+  await assertSucceeds(b.commit());
+});
+test('лайк комментария: только свой', async () => {
+  await assertSucceeds(updateDoc(doc(db(C), 'posts', 'p1', 'comments', 'c1'), { likes: arrayUnion(C) }));
+  await assertFails(updateDoc(doc(db(C), 'posts', 'p1', 'comments', 'c1'), { likes: [A, C] }));
+  await assertFails(updateDoc(doc(db(C), 'posts', 'p1', 'comments', 'c1'), { text: 'подмена' }));
+});
+test('несколько фото и теги', async () => {
+  await assertSucceeds(setDoc(doc(collection(db(A), 'posts')), post(A, A, { text: '', images: ['data:image/jpeg;base64,A', 'data:image/jpeg;base64,B'], tags: ['лето'] })));
+  await assertFails(setDoc(doc(collection(db(A), 'posts')), post(A, A, { images: ['a', 'b', 'c', 'd', 'e'] })));
+  await assertFails(setDoc(doc(collection(db(A), 'posts')), post(A, A, { tags: Array.from({ length: 11 }, (_, i) => 't' + i) })));
+  await assertSucceeds(updateDoc(doc(db(A), 'posts', 'p1'), { text: 'новый #тег', tags: ['тег'], editedAt: serverTimestamp() }));
+});
+test('день рождения', async () => {
+  await assertSucceeds(updateDoc(doc(db(A), 'users', A), { bday: '2001-03-05' }));
+  await assertSucceeds(updateDoc(doc(db(A), 'users', A), { bday: '' }));
+  await assertFails(updateDoc(doc(db(A), 'users', A), { bday: '<script>' }));
+});
+test('гости: отмечаюсь только собой, видит только хозяин', async () => {
+  await assertSucceeds(setDoc(doc(db(B), 'users', A, 'guests', B), { at: serverTimestamp() }));
+  await assertSucceeds(setDoc(doc(db(B), 'users', A, 'guests', B), { at: serverTimestamp() }));
+  await assertFails(setDoc(doc(db(B), 'users', A, 'guests', C), { at: serverTimestamp() }));
+  await assertFails(setDoc(doc(db(A), 'users', A, 'guests', A), { at: serverTimestamp() }));
+  await assertSucceeds(getDoc(doc(db(A), 'users', A, 'guests', B)));
+  await assertFails(getDoc(doc(db(C), 'users', A, 'guests', B)));
+});
+test('истории: создать, отметить просмотр, удалить', async () => {
+  const ref = doc(collection(db(A), 'stories'));
+  await assertSucceeds(setDoc(ref, { ownerId: A, image: 'data:image/jpeg;base64,AAA', text: 'утро', views: {}, createdAt: serverTimestamp() }));
+  await assertFails(setDoc(doc(collection(db(A), 'stories')), { ownerId: A, image: 'javascript:1', text: '', views: {}, createdAt: serverTimestamp() }));
+  await assertSucceeds(updateDoc(doc(db(B), 'stories', ref.id), { [`views.${B}`]: serverTimestamp() }));
+  await assertFails(updateDoc(doc(db(B), 'stories', ref.id), { [`views.${C}`]: serverTimestamp() }));
+  await assertFails(updateDoc(doc(db(A), 'stories', ref.id), { [`views.${A}`]: serverTimestamp() }));
+  await assertFails(deleteDoc(doc(db(B), 'stories', ref.id)));
+  await assertSucceeds(deleteDoc(doc(db(A), 'stories', ref.id)));
+});

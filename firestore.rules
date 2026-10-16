@@ -56,7 +56,8 @@ service cloud.firestore {
         && str(u.get('pinned', ''), 0, 40)
         && u.get('cover', 'blue') in ['blue', 'sunset', 'sea', 'night', 'rose', 'gold']
         && u.get('groups', []) is list && u.get('groups', []).size() <= 500
-        && u.get('blocked', []) is list && u.get('blocked', []).size() <= 500;
+        && u.get('blocked', []) is list && u.get('blocked', []).size() <= 500
+        && (u.get('bday', '') == '' || (u.bday is string && u.bday.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$')));
     }
     // Ник в профиле должен принадлежать владельцу профиля (после пачки)
     function nickOwned(u) { return getAfter(path('usernames', u.nick)).data.uid == me(); }
@@ -77,6 +78,11 @@ service cloud.firestore {
         && !changed().hasAny(['createdAt', 'admin', 'ban'])
         && (!changed().hasAny(['nick']) || nickOwned(d()))
         && (!changed().hasAny(['friends']) || friendsOk(resource.data.get('friends', []), d().friends));
+      // Гости страницы: users/{uid}/guests/{кто заходил} = {at}. Видит только хозяин.
+      match /guests/{gid} {
+        allow read, delete: if signed() && uid == me();
+        allow create, update: if signed() && gid == me() && uid != me() && d().keys().hasOnly(['at']) && now(d().at);
+      }
       // админ банит и разбанивает (других админов — нельзя)
       allow update: if signed() && uid != me() && isAdmin() && onlyChanged(['ban'])
         && !(resource.data.get('admin', false) in [true, 'true'])
@@ -112,11 +118,13 @@ service cloud.firestore {
     match /posts/{pid} {
       allow read: if signed();
       allow create: if signed() && notBanned()
-        && d().keys().hasOnly(['authorId', 'wallId', 'groupId', 'text', 'image', 'poll', 'repostOf', 'likes', 'commentCount', 'createdAt'])
+        && d().keys().hasOnly(['authorId', 'wallId', 'groupId', 'text', 'image', 'images', 'tags', 'poll', 'repostOf', 'likes', 'commentCount', 'createdAt'])
+        && (!('images' in d()) || (d().images is list && d().images.size() >= 2 && d().images.size() <= 4))
+        && (!('tags' in d()) || (d().tags is list && d().tags.size() <= 10))
         && d().authorId == me() && d().wallId is string
         && (!('repostOf' in d()) || (str(d().repostOf, 1, 40) && exists(path('posts', d().repostOf))))
         && (('groupId' in d()) ? (d().groupId == d().wallId && groupAdmin(d().groupId)) : canWriteWall(d().wallId))
-        && str(d().text, 0, 4000) && str(d().image, 0, 750000) && (d().text.size() > 0 || d().image.size() > 0 || 'poll' in d() || 'repostOf' in d())
+        && str(d().text, 0, 4000) && str(d().image, 0, 750000) && (d().text.size() > 0 || d().image.size() > 0 || 'images' in d() || 'poll' in d() || 'repostOf' in d())
         && (!('poll' in d()) || validPoll(d().poll))
         && d().likes == [] && d().commentCount == 0 && now(d().createdAt);
       // голос в опросе: меняется только мой голос, номер варианта в пределах списка
@@ -133,8 +141,10 @@ service cloud.firestore {
       allow update: if signed() && onlyChanged(['commentCount'])
         && (d().commentCount == resource.data.commentCount + 1 || d().commentCount == resource.data.commentCount - 1);
       // автор правит текст
-      allow update: if signed() && resource.data.authorId == me() && onlyChanged(['text', 'editedAt'])
-        && str(d().text, 0, 4000) && (d().text.size() > 0 || resource.data.image.size() > 0) && now(d().editedAt);
+      allow update: if signed() && resource.data.authorId == me() && onlyChanged(['text', 'editedAt', 'tags'])
+        && str(d().text, 0, 4000) && (!('tags' in d()) || (d().tags is list && d().tags.size() <= 10))
+        && (d().text.size() > 0 || resource.data.image.size() > 0 || 'images' in resource.data || 'poll' in resource.data || 'repostOf' in resource.data)
+        && now(d().editedAt);
       allow delete: if signed() && (resource.data.authorId == me() || resource.data.wallId == me()
         || (('groupId' in resource.data) && groupAdmin(resource.data.groupId)) || isAdmin());
 
@@ -143,6 +153,8 @@ service cloud.firestore {
         allow create: if signed() && notBanned() && d().keys().hasOnly(['authorId', 'text', 'createdAt'])
           && d().authorId == me() && str(d().text, 1, 1000) && now(d().createdAt)
           && !blockedBy(get(path('posts', pid)).data.authorId);
+        allow update: if signed() && notBanned() && onlyChanged(['likes'])
+          && toggledMe(resource.data.get('likes', []), d().likes);
         allow delete: if signed() && (resource.data.authorId == me()
           || get(path('posts', pid)).data.authorId == me()
           || get(path('posts', pid)).data.wallId == me()
@@ -150,41 +162,67 @@ service cloud.firestore {
       }
     }
 
-    // ---------- Личные сообщения: id чата = uid1_uid2 по алфавиту ----------
-    function inChat(cid) { return me() in cid.split('_'); }
+    // ---------- Сообщения ----------
+    // Личный диалог: id = uid1_uid2 по алфавиту. Беседа: id = g_<случайный>, участники в members (до 50).
+    function isGroupChat(cid) { return cid.matches('^g_.*'); }
+    function inDM(cid) { return !isGroupChat(cid) && me() in cid.split('_'); }
+    function inChat(cid) { return isGroupChat(cid) ? me() in get(path('chats', cid)).data.members : inDM(cid); }
     function peer(cid) { return cid.split('_')[0] == me() ? cid.split('_')[1] : cid.split('_')[0]; }
     function readOk(before, after) {
       return after is map && after.diff(before).affectedKeys().hasOnly([me()]) && after.get(me(), request.time) == request.time;
     }
+    function lastOk() {
+      return (!changed().hasAny(['lastText', 'lastFrom', 'lastAt']) || (d().lastFrom == me() && str(d().lastText, 0, 200)))
+        && (!changed().hasAny(['lastAt']) || now(d().lastAt))
+        && (!changed().hasAny(['read']) || readOk(resource.data.get('read', {}), d().read));
+    }
 
     match /chats/{cid} {
       allow read: if signed() && me() in resource.data.members;
-      allow create: if signed() && inChat(cid) && cid.split('_').size() == 2
+      // личный диалог
+      allow create: if signed() && inDM(cid) && cid.split('_').size() == 2
         && d().keys().hasOnly(['members', 'lastText', 'lastFrom', 'lastAt', 'read'])
         && d().members == cid.split('_') && d().lastFrom == me() && str(d().lastText, 0, 200) && now(d().lastAt)
         && readOk({}, d().read);
-      allow update: if signed() && inChat(cid)
-        && onlyChanged(['lastText', 'lastFrom', 'lastAt', 'read'])
-        && (!changed().hasAny(['lastText', 'lastFrom', 'lastAt']) || (d().lastFrom == me() && str(d().lastText, 0, 200)))
-        && (!changed().hasAny(['lastAt']) || now(d().lastAt))
-        && (!changed().hasAny(['read']) || readOk(resource.data.get('read', {}), d().read));
+      allow update: if signed() && inDM(cid) && onlyChanged(['lastText', 'lastFrom', 'lastAt', 'read']) && lastOk();
+      // беседа: создаёт кто угодно (не забаненный), сам — владелец и участник
+      allow create: if signed() && isGroupChat(cid) && notBanned()
+        && d().keys().hasOnly(['members', 'group', 'name', 'ownerId', 'lastText', 'lastFrom', 'lastAt', 'read'])
+        && d().group == true && str(d().name, 1, 60) && d().ownerId == me()
+        && d().members is list && me() in d().members && d().members.size() >= 2 && d().members.size() <= 50
+        && d().lastFrom == me() && str(d().lastText, 0, 200) && now(d().lastAt) && readOk({}, d().read);
+      // участник беседы: последнее сообщение и прочтение
+      allow update: if signed() && isGroupChat(cid) && me() in resource.data.members
+        && onlyChanged(['lastText', 'lastFrom', 'lastAt', 'read']) && lastOk();
+      // владелец: название и состав (сам остаётся)
+      allow update: if signed() && isGroupChat(cid) && resource.data.ownerId == me()
+        && onlyChanged(['name', 'members', 'lastText', 'lastFrom', 'lastAt', 'read']) && lastOk()
+        && str(d().name, 1, 60) && d().members is list && me() in d().members && d().members.size() <= 50;
+      // участник выходит из беседы
+      allow update: if signed() && isGroupChat(cid) && resource.data.ownerId != me() && onlyChanged(['members'])
+        && toggledMe(resource.data.members, d().members) && !(me() in d().members);
+      allow delete: if signed() && isGroupChat(cid) && resource.data.ownerId == me();
 
       // Если человек принимает сообщения только от друзей, начать новый диалог с ним может только друг
       function canStart() {
-        return peer(cid) == me()
+        return isGroupChat(cid) || peer(cid) == me()
           || user(peer(cid)).get('privacy', {}).get('messages', 'all') != 'friends'
           || me() in user(peer(cid)).get('friends', [])
           || exists(path('chats', cid));
       }
+      function fwdOk(f) {
+        return f is map && f.keys().hasOnly(['from', 'name', 'text']) && str(f.from, 0, 40) && str(f.name, 0, 60) && str(f.text, 0, 2000);
+      }
       match /messages/{mid} {
         allow read: if signed() && inChat(cid);
-        allow create: if signed() && inChat(cid) && canStart() && notBanned() && !blockedBy(peer(cid))
-          && d().keys().hasOnly(['from', 'text', 'image', 'audio', 'dur', 'replyTo', 'createdAt'])
+        allow create: if signed() && inChat(cid) && canStart() && notBanned() && (isGroupChat(cid) || !blockedBy(peer(cid)))
+          && d().keys().hasOnly(['from', 'text', 'image', 'audio', 'dur', 'replyTo', 'fwd', 'createdAt'])
           && (!('audio' in d()) || (str(d().audio, 1, 700000) && d().audio.matches('^data:audio/.*') && d().dur is number && d().dur <= 61))
           && d().from == me() && str(d().text, 0, 2000) && str(d().get('image', ''), 0, 400000)
           && (!('replyTo' in d()) || (d().replyTo is map && d().replyTo.keys().hasOnly(['id', 'from', 'text'])
             && str(d().replyTo.text, 0, 120) && str(d().replyTo.id, 1, 40)))
-          && (d().text.size() > 0 || d().get('image', '').size() > 0 || 'audio' in d()) && now(d().createdAt);
+          && (!('fwd' in d()) || fwdOk(d().fwd))
+          && (d().text.size() > 0 || d().get('image', '').size() > 0 || 'audio' in d() || 'fwd' in d()) && now(d().createdAt);
         allow delete: if signed() && resource.data.from == me();
         // реакция: каждый участник ставит или снимает только свою
         allow update: if signed() && inChat(cid) && onlyChanged(['reacts'])
@@ -226,6 +264,18 @@ service cloud.firestore {
         && d().type in ['like', 'comment', 'wall', 'friend', 'repost']
         && str(d().postId, 0, 40) && str(d().text, 0, 120) && now(d().createdAt);
       allow delete: if signed() && (resource.data.to == me() || resource.data.from == me());
+    }
+
+    // ---------- Истории на 24 часа ----------
+    match /stories/{sid} {
+      allow read: if signed();
+      allow create: if signed() && notBanned() && d().keys().hasOnly(['ownerId', 'image', 'text', 'views', 'createdAt'])
+        && d().ownerId == me() && str(d().image, 1, 450000) && d().image.matches('^data:image/.*')
+        && str(d().text, 0, 200) && d().views == {} && now(d().createdAt);
+      // отметка «посмотрел»: только своя, чужая история
+      allow update: if signed() && resource.data.ownerId != me() && onlyChanged(['views'])
+        && d().views.diff(resource.data.views).affectedKeys().hasOnly([me()]) && d().views[me()] == request.time;
+      allow delete: if signed() && (resource.data.ownerId == me() || isAdmin());
     }
 
     // ---------- Жалобы: id = тип_цель_автор (одна жалоба на цель от человека). Видит и разбирает только админ ----------
