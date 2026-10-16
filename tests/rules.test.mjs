@@ -287,7 +287,7 @@ test('закреплённая запись, обложка, отметка пр
 test('админом себя не сделать; админ удаляет чужое', async () => {
   await assertFails(updateDoc(doc(db(B), 'users', B), { admin: true }));
   await assertFails(deleteDoc(doc(db(B), 'posts', 'p1')));
-  await env.withSecurityRulesDisabled(ctx => updateDoc(doc(ctx.firestore(), 'users', B), { admin: true }));
+  await env.withSecurityRulesDisabled(ctx => updateDoc(doc(ctx.firestore(), 'users', B), { admin: 'true' }));
   await assertSucceeds(updateDoc(doc(db(B), 'users', B), { status: 'я админ' }));
   await assertFails(updateDoc(doc(db(B), 'users', B), { admin: false }));
   await assertSucceeds(deleteDoc(doc(db(B), 'posts', 'p1', 'comments', 'c1')));

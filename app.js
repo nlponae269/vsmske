@@ -44,7 +44,7 @@ const MAX_POST_IMG = 700000;   // символов dataURL (~520 КБ), лими
 const MAX_AVATAR = 120000;
 const CHUNK = 700000;                                   // символов base64 в одном куске (кратно 4)
 const LIMITS = { disk: 10 * 1024 * 1024, video: 20 * 1024 * 1024 };
-const VERSION = '1.5';
+const VERSION = '1.6';
 const MAX_MSG_IMG = 380000;    // фото в сообщении
 const ONLINE_MS = 5 * 60 * 1000; // «в сети», если заходил не раньше 5 минут назад
 
@@ -657,8 +657,10 @@ const avatar = (u, size = 40, link = true) => {
     : `<span class="av" style="${st}">${inner}</span>`;
 };
 // Значок администратора у имени (admin ставится только в консоли Firestore)
-const admBadge = u => u?.admin === true ? `<span class="adm-badge" title="Администратор VСмске" aria-label="Администратор">✓</span>` : '';
-const isSiteAdmin = () => S.me?.admin === true;
+// admin можно поставить в консоли как boolean true или как строку "true"
+const isAdm = u => u?.admin === true || u?.admin === 'true';
+const admBadge = u => isAdm(u) ? `<span class="adm-badge" title="Администратор VСмске" aria-label="Администратор">✓</span>` : '';
+const isSiteAdmin = () => isAdm(S.me);
 const nameLink = u => u && !u.deleted ? `<a class="name" href="#id/${esc(u.id)}" style="color:var(--fg);font-weight:600">${esc(u.name)}</a>${admBadge(u)}` : `<span class="name">${esc(u?.name || '…')}</span>`;
 const loadingBox = () => `<div class="card loading"><div class="spin"></div></div>`;
 
@@ -1251,7 +1253,7 @@ function viewProfile() {
   const posts = cache.wall;
   const likes = posts.reduce((s, p) => s + (p.likes || []).length, 0);
   const since = u.createdAt ? new Date(ms(u.createdAt)) : null;
-  const adm = u.admin === true;
+  const adm = isAdm(u);
   return `<div class="card ${adm ? 'admin-card' : ''}">
     ${adm ? `<div class="cover admin-cover"><div class="aurora"></div><span class="adm-tag">👑 Администратор VСмске</span></div>`
       : `<div class="cover" ${COVERS[u.cover] ? `style="--cover:${COVERS[u.cover]}"` : ''}></div>`}

@@ -12,8 +12,8 @@ service cloud.firestore {
     function now(v) { return v == request.time; }
     function path(c, id) { return /databases/$(database)/documents/$(c)/$(id); }
     function user(id) { return get(path('users', id)).data; }
-    // Админ назначается только вручную в консоли Firestore: users/{uid}.admin = true
-    function isAdmin() { return user(me()).get('admin', false) == true; }
+    // Админ назначается только вручную в консоли Firestore: users/{uid}.admin = true (boolean или строка "true")
+    function isAdmin() { return user(me()).get('admin', false) in [true, 'true']; }
     function group(id) { return get(path('groups', id)).data; }
     function groupAdmin(id) { return me() in group(id).admins; }
 
