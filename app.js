@@ -11,7 +11,7 @@ import {
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 import {
   getFirestore, doc, collection, query, where, orderBy, limit, limitToLast,
-  getDoc, getDocs, addDoc, setDoc, updateDoc, onSnapshot, writeBatch,
+  getDoc, getDocs, addDoc, setDoc, updateDoc, deleteDoc, onSnapshot, writeBatch,
   serverTimestamp, arrayUnion, arrayRemove, increment
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
@@ -32,13 +32,19 @@ auth.languageCode = "ru";
 const db = getFirestore(fbApp);
 
 /* ---------- Константы и утилиты ---------- */
+// Обложки профиля: ключ хранится в users.cover
+const COVERS = {
+  blue: 'linear-gradient(135deg,#2F44D0,#6A47C9)', sunset: 'linear-gradient(135deg,#F2994A,#D0462F 55%,#B4398F)',
+  sea: 'linear-gradient(135deg,#1F8A5B,#2B8BB5)', night: 'linear-gradient(135deg,#141A33,#4E5B76)',
+  rose: 'linear-gradient(135deg,#B4398F,#F06C9B)', gold: 'linear-gradient(135deg,#C98A12,#F2C94C)',
+};
 const COLORS = ['#2F44D0','#D0462F','#1F8A5B','#B4398F','#C98A12','#2B8BB5','#6A47C9','#4E5B76'];
 const NICK_RE = /^[a-z0-9._]{3,30}$/;
 const MAX_POST_IMG = 700000;   // символов dataURL (~520 КБ), лимит документа Firestore — 1 МБ
 const MAX_AVATAR = 120000;
 const CHUNK = 700000;                                   // символов base64 в одном куске (кратно 4)
 const LIMITS = { disk: 10 * 1024 * 1024, video: 20 * 1024 * 1024 };
-const VERSION = '1.3';
+const VERSION = '1.4';
 const MAX_MSG_IMG = 380000;    // фото в сообщении
 const ONLINE_MS = 5 * 60 * 1000; // «в сети», если заходил не раньше 5 минут назад
 
@@ -235,6 +241,9 @@ const I = {
   disk:'<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M7 18h10a4 4 0 0 0 .5-8 6 6 0 0 0-11.5 1.5A3.3 3.3 0 0 0 7 18z"/></svg>',
   vid:'<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M12 3l8 3v6c0 4.5-3.4 8-8 9-4.6-1-8-4.5-8-9V6z"/><path d="M8.5 12l2.5 2.5 4.5-5" stroke-linecap="round"/></svg>',
   gear:'<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>',
+  poll:'<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M5 20V10M12 20V4M19 20v-7"/></svg>',
+  bell:'<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 16V11a6 6 0 0 1 12 0v5l2 2H4z"/><path d="M10 20a2 2 0 0 0 4 0"/></svg>',
+  reply:'<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 14L4 9l5-5"/><path d="M4 9h11a5 5 0 0 1 5 5v5"/></svg>',
   more:'<svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="19" cy="12" r="2"/></svg>',
   play:'<svg width="34" height="34" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>',
   file:'<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M14 3H6v18h12V7z"/><path d="M14 3v4h4"/></svg>',
@@ -264,15 +273,15 @@ const S = {
   view: 'feed', profileId: null, chatWith: null, feedTab: 'friends', query: '',
   loading: false, viewError: null,
   openComments: new Set(), confirm: null,
-  draft: { text: '', image: '' }, editColor: null, editPhoto: undefined, busy: false,
+  draft: { text: '', image: '', poll: false, pollN: 2 }, editColor: null, editCover: null, editPhoto: undefined, busy: false,
   upload: null, videoDraft: null, linkForm: false, videoOwner: null, watchId: null, videoSrc: null, videoErr: null,
   albumsOwner: null, albumId: null, lightbox: null, lightboxImg: null, preview: null, newAlbum: false,
-  editPost: null, msgSel: null,
+  editPost: null, msgSel: null, postMenu: null, emoji: null, replyTo: null, viewImg: null, dq: '', postId: null,
 };
 const cache = {
   users: new Map(), feed: new Map(), wall: [], comments: new Map(),
   chats: [], messages: [], incoming: [], outgoing: [], people: [],
-  videos: [], video: null, albums: [], album: null, photos: [], files: [],
+  videos: [], video: null, albums: [], album: null, photos: [], files: [], post: null, notifs: [],
 };
 let globalUnsubs = [], viewUnsubs = [], commentUnsubs = new Map(), routedOnce = false;
 const uid = () => S.authUser?.uid;
@@ -282,13 +291,26 @@ function stopAll() {
   globalUnsubs.forEach(u => u()); globalUnsubs = [];
   clearView(); routedOnce = false;
   Object.assign(cache, { users: new Map(), feed: new Map(), wall: [], comments: new Map(), chats: [], messages: [], incoming: [], outgoing: [], people: [],
-    videos: [], video: null, albums: [], album: null, photos: [], files: [] });
+    videos: [], video: null, albums: [], album: null, photos: [], files: [], post: null, notifs: [] });
 }
 function clearView() {
   viewUnsubs.forEach(u => u()); viewUnsubs = [];
   commentUnsubs.forEach(u => u()); commentUnsubs = new Map();
   S.openComments = new Set(); S.viewError = null;
 }
+
+const findPost = id => [...cache.feed.values()].flat().concat(cache.wall, cache.post ? [cache.post] : []).find(x => x.id === id);
+
+/* ---------- Уведомления (лайки, комментарии, записи на стене, дружба) ----------
+   Пишутся отдельно и «по возможности»: если не получилось, основное действие всё равно выполнено. */
+const NOTIF_KEEP = 100;
+function notify(to, type, postId = '', text = '', id = null) {
+  if (!to || to === uid()) return;
+  const n = { to, from: uid(), type, postId, text: String(text || '').slice(0, 120), createdAt: serverTimestamp() };
+  setDoc(id ? doc(db, 'notifs', id) : doc(collection(db, 'notifs')), n).catch(console.error);
+}
+const unnotify = id => deleteDoc(doc(db, 'notifs', id)).catch(() => {});
+const unseenNotifs = () => { const seen = ms(S.me?.notifSeenAt || 0); return cache.notifs.filter(n => n.from !== uid() && ms(n.createdAt) > seen).length; };
 
 /* ---------- Пользователи (кэш) ---------- */
 const pendingUsers = new Set();
@@ -395,6 +417,15 @@ function startSession() {
   globalUnsubs.push(onSnapshot(query(collection(db, 'friendRequests'), where('to', '==', id)), s => {
     cache.incoming = s.docs.map(data); ensureUsers(cache.incoming.map(r => r.from)); render();
   }, console.error));
+  globalUnsubs.push(onSnapshot(query(collection(db, 'notifs'), where('to', '==', id), limit(NOTIF_KEEP + 50)), s => {
+    cache.notifs = s.docs.map(data).sort((a, b) => ms(b.createdAt) - ms(a.createdAt));
+    ensureUsers(cache.notifs.map(n => n.from));
+    if (S.view === 'notif' && unseenNotifs()) updateDoc(doc(db, 'users', id), { notifSeenAt: serverTimestamp() }).catch(console.error);
+    render();
+    // старые уведомления удаляем, чтобы коллекция не росла
+    const old = cache.notifs.slice(NOTIF_KEEP);
+    if (old.length) { const bt = writeBatch(db); old.forEach(n => bt.delete(doc(db, 'notifs', n.id))); bt.commit().catch(console.error); }
+  }, console.error));
   globalUnsubs.push(onSnapshot(query(collection(db, 'friendRequests'), where('from', '==', id)), s => {
     cache.outgoing = s.docs.map(data); render();
   }, console.error));
@@ -412,11 +443,14 @@ function route() {
   else if (v === 'videos') { S.view = 'video'; S.videoOwner = arg || uid(); }
   else if (v === 'albums') { S.view = 'albums'; S.albumsOwner = arg || uid(); }
   else if (v === 'album' && arg) { S.view = 'album'; S.albumId = arg; }
-  else if (['feed', 'friends', 'people', 'edit', 'disk', 'vid', 'settings', 'more'].includes(v)) S.view = v;
+  else if (v === 'post' && arg) { S.view = 'post'; S.postId = arg; }
+  else if (['feed', 'friends', 'people', 'edit', 'disk', 'vid', 'settings', 'more', 'notif'].includes(v)) S.view = v;
   else S.view = 'feed';
-  if (S.view !== 'edit') { S.editColor = null; S.editPhoto = undefined; }
+  if (S.view !== 'edit') { S.editColor = null; S.editCover = null; S.editPhoto = undefined; }
   if (S.view !== 'watch') { S.videoSrc = null; S.videoErr = null; }
   S.lightbox = null; S.lightboxImg = null; S.preview = null; S.linkForm = false; S.newAlbum = false;
+  S.viewImg = null; S.postMenu = null; S.emoji = null; S.msgSel = null;
+  if (S.view !== 'messages') S.replyTo = null;
   if (S.view !== 'video') S.videoDraft = null;
   attachView();
   window.scrollTo(0, 0);
@@ -516,6 +550,20 @@ function attachView() {
     viewUnsubs.push(onSnapshot(query(collection(db, 'photos'), where('albumId', '==', aid), limit(500)), s => {
       cache.photos = s.docs.map(data).sort((a, b) => ms(b.createdAt) - ms(a.createdAt)); S.loading = false; render();
     }, onViewErr));
+  } else if (S.view === 'post') {
+    cache.post = null; const pid = S.postId;
+    viewUnsubs.push(onSnapshot(doc(db, 'posts', pid), s => {
+      cache.post = s.exists() ? data(s) : { id: pid, missing: true }; S.loading = false;
+      if (!cache.post.missing) ensureUsers([cache.post.authorId, cache.post.wallId]); render();
+    }, onViewErr));
+  } else if (S.view === 'notif') {
+    S.loading = false;
+    if (unseenNotifs()) updateDoc(doc(db, 'users', id), { notifSeenAt: serverTimestamp() }).catch(console.error);
+  } else if (S.view === 'friends') {
+    S.loading = false;
+    // свежие данные друзей (не больше 100), чтобы «Возможные друзья» учитывали новые дружбы
+    (S.me.friends || []).slice(0, 100).forEach(f => { if (!pendingUsers.has(f)) cache.users.delete(f); });
+    ensureUsers(S.me.friends || []);
   } else if (S.view === 'disk') {
     cache.files = [];
     viewUnsubs.push(onSnapshot(query(collection(db, 'files'), where('ownerId', '==', id), where('kind', '==', 'disk'), limit(500)), s => {
@@ -572,7 +620,11 @@ function render() {
   for (const [k, v] of Object.entries(kept)) { const el = document.getElementById(k); if (el && !resetIds.has(k)) el.value = v; }
   resetIds.clear();
   if (focusId) { const el = document.getElementById(focusId); if (el) { el.focus(); try { el.setSelectionRange(sel, sel); } catch (e) {} } }
-  const box = app.querySelector('.msgs'); if (box && atBottom) box.scrollTop = box.scrollHeight;
+  const box = app.querySelector('.msgs');
+  if (box && atBottom) {
+    box.scrollTop = box.scrollHeight;
+    box.querySelectorAll('img').forEach(im => { if (!im.complete) im.addEventListener('load', () => { box.scrollTop = box.scrollHeight; }, { once: true }); });
+  }
 }
 const resetIds = new Set();
 
@@ -628,12 +680,13 @@ function navHtml() {
   const groups = { video: ['video', 'watch'], albums: ['albums', 'album'] };
   const on = v => (groups[v] ? groups[v].includes(S.view) : S.view === v) && (v !== 'profile' || S.profileId === me.id) ? 'on' : '';
   const nav = (v, href, icon, label, badge = 0, cls = '') => `<a class="navlink ${on(v)} ${cls}" href="#${href}">${icon}<span>${label}</span>${badge ? `<span class="badge">${badge}</span>` : ''}</a>`;
-  const moreOn = ['more', 'profile', 'people', 'albums', 'album', 'disk', 'vid', 'settings', 'edit'].includes(S.view) ? 'on' : '';
+  const moreOn = ['more', 'profile', 'people', 'albums', 'album', 'disk', 'vid', 'settings', 'edit', 'notif', 'post'].includes(S.view) ? 'on' : '';
   return `<nav class="nav">
       ${nav('profile', 'id/' + me.id, I.home, 'Моя страница', 0, 'm-hide')}
       ${nav('feed', 'feed', I.feed, 'Новости')}
       ${nav('messages', 'im', I.msg, 'Сообщения', unread)}
       ${nav('friends', 'friends', I.friends, 'Друзья', reqs)}
+      ${nav('notif', 'notif', I.bell, 'Уведомления', unseenNotifs(), 'm-hide')}
       ${nav('people', 'people', I.people, 'Люди', 0, 'm-hide')}
       ${nav('video', 'video', I.video, 'Видео')}
       ${nav('albums', 'albums', I.album, 'Альбомы', 0, 'm-hide')}
@@ -663,12 +716,15 @@ function shell() {
   else if (S.view === 'vid') main = viewVID();
   else if (S.view === 'settings') main = viewSettings();
   else if (S.view === 'more') main = viewMore();
+  else if (S.view === 'post') main = viewPost();
+  else if (S.view === 'notif') main = viewNotifs();
   else main = viewFeed();
   const up = S.upload ? `<div class="card pad upbar" role="status"><div class="row"><span class="grow">${esc(S.upload.label)}</span><b class="tnum">${Math.round(S.upload.pct * 100)}%</b></div><div class="bar"><i style="width:${Math.round(S.upload.pct * 100)}%"></i></div><div class="hint">Не закрывайте страницу до конца загрузки</div></div>` : '';
   return `
   <header class="top"><div class="top-in">
     <a class="logo" href="#feed" aria-label="VСмске, новости"><span class="logo-mark">VС</span><span class="logo-word" style="color:var(--fg)">VСмске</span></a>
     <form class="search" data-form="search">${I.search}<input id="q" type="search" placeholder="Поиск людей" autocomplete="off" value="${esc(S.view === 'people' ? S.query : '')}"></form>
+    <a class="top-bell icon-btn ${S.view === 'notif' ? 'on' : ''}" href="#notif" aria-label="Уведомления">${I.bell}${unseenNotifs() ? `<span class="badge">${unseenNotifs()}</span>` : ''}</a>
     <a class="top-me" href="#id/${esc(me.id)}" style="color:var(--fg)">${avatar(me, 32, false)}<span>${esc(me.name.split(' ')[0])}</span></a>
   </div></header>
   <div class="wrap">
@@ -680,6 +736,9 @@ function shell() {
 
 /* ---------- Окна поверх страницы: просмотр фото и файлов ---------- */
 function overlay() {
+  if (S.viewImg) return `<div class="ov" data-act="ovclose"><div class="ov-in" data-stop="1">
+      <div class="ov-top"><span class="grow"></span><button class="btn ghost light" data-act="ovclose" aria-label="Закрыть">✕</button></div>
+      <div class="ov-img"><img src="${esc(safeImg(S.viewImg))}" alt="Фото"></div></div></div>`;
   if (S.view === 'album' && S.lightbox !== null) {
     const p = cache.photos[S.lightbox]; if (!p) return '';
     const own = cache.album?.ownerId === S.me.id, n = cache.photos.length;
@@ -893,6 +952,7 @@ function viewMore() {
   const item = (href, icon, label, sub = '') => `<a class="uitem setlink" href="#${href}"><span class="ficon">${icon}</span><span class="grow"><b>${label}</b>${sub ? `<br><span class="muted small">${sub}</span>` : ''}</span>›</a>`;
   return `<a class="card pad row" href="#id/${esc(me.id)}" style="color:var(--fg)">${avatar(me, 52, false)}<div class="grow"><b>${esc(me.name)}</b><div class="muted small">Моя страница</div></div>›</a>
     <div class="card ulist">
+      ${item('notif', I.bell, 'Уведомления' + (unseenNotifs() ? ` <span class="badge">${unseenNotifs()}</span>` : ''), 'Лайки, комментарии, записи на стене')}
       ${item('people', I.people, 'Люди', 'Поиск и новые пользователи')}
       ${item('albums', I.album, 'ВС Альбомы', 'Ваши фотографии')}
       ${item('disk', I.disk, 'ВС Диск', 'Личные файлы')}
@@ -902,6 +962,29 @@ function viewMore() {
       ${item('vid', I.vid, 'VС ID', 'Вход, почта, пароль')}
       ${item('settings', I.gear, 'Настройки', 'Тема и приватность')}
     </div>`;
+}
+
+/* Одна запись (#post/<id>) */
+function viewPost() {
+  const p = cache.post;
+  if (!p) return loadingBox();
+  if (p.missing) return `<div class="card empty"><b>Запись удалена или не найдена</b><a class="btn sec" href="#feed">К новостям</a></div>`;
+  return `<div class="card pad row"><a class="icon-btn" href="#id/${esc(p.wallId)}" aria-label="На стену">${I.back}</a><b class="grow">Запись</b></div>${postCard(p)}`;
+}
+
+/* Уведомления */
+const NOTIF_TEXT = { like: 'оценил(а) вашу запись', comment: 'прокомментировал(а) вашу запись', wall: 'написал(а) у вас на стене', friend: 'принял(а) вашу заявку в друзья' };
+function viewNotifs() {
+  const list = cache.notifs.filter(n => n.from !== S.me.id);
+  return `<div class="card"><div class="pad" style="padding-bottom:4px"><h1 class="h">Уведомления <span class="muted">${list.length}</span></h1></div>
+    <div class="ulist">${list.length ? list.map(n => {
+      const u = U(n.from); if (!u) return '';
+      const href = n.type === 'friend' ? '#id/' + n.from : n.postId ? '#post/' + n.postId : '#id/' + n.from;
+      return `<a class="uitem notif" href="${esc(href)}" style="color:var(--fg)">${avatar(u, 46, false)}
+        <div class="grow" style="min-width:0"><b>${esc(u.name)}</b> ${NOTIF_TEXT[n.type] || ''}
+          ${n.text ? `<div class="muted small notif-text">«${esc(n.text)}»</div>` : ''}<div class="muted small">${ago(n.createdAt)}</div></div>
+        <span class="notif-ico" data-t="${esc(n.type)}">${n.type === 'like' ? I.heart : n.type === 'comment' ? I.comment : n.type === 'friend' ? I.friends : I.feed}</span></a>`;
+    }).join('') : `<div class="empty">Пока тихо<span class="small">Здесь появятся лайки, комментарии и записи на вашей стене</span></div>`}</div></div>`;
 }
 
 /* Новости */
@@ -915,40 +998,75 @@ function viewFeed() {
      <span>Напишите первую запись или найдите знакомых.</span><a class="btn sec" href="#people">Найти людей</a></div>`}`;
 }
 
+const EMOJI = '😀 😂 🥲 😍 😘 😎 🤔 😴 😭 😡 🥳 😇 🙃 😉 🤗 🤯 👍 👎 👏 🙏 💪 🤝 👋 ✌️ ❤️ 🧡 💛 💚 💙 💜 🔥 ✨ 🎉 🎂 🎁 ⚽ 🎮 🎵 📷 🌞 🌙 ⭐ 🌈 🍕 🍔 ☕ 🐱 🐶'.split(' ');
+const emojiPanel = target => S.emoji === target
+  ? `<div class="emoji" role="group" aria-label="Смайлики">${EMOJI.map(e => `<button type="button" data-act="emoji" data-t="${target}" data-e="${e}">${e}</button>`).join('')}</div>` : '';
+const emojiBtn = (target, cls = 'icon-btn') => `<button type="button" class="${cls}" data-act="emojis" data-t="${target}" aria-label="Смайлики" aria-expanded="${S.emoji === target}">😊</button>`;
+
 function composer(wallId, ph) {
   const d = S.draft;
   return `<div class="card pad composer"><form data-form="post" data-wall="${esc(wallId)}">
     <div class="row" style="align-items:flex-start">${avatar(S.me, 40, false)}
       <textarea id="postText" rows="2" placeholder="${esc(ph)}" maxlength="4000"></textarea></div>
     ${d.image ? `<div class="preview"><img src="${d.image}" alt="Прикреплённое фото"><button type="button" data-act="unattach" aria-label="Убрать фото">×</button></div>` : ''}
+    ${d.poll ? `<div class="poll-form">
+      <div class="field"><label for="pollQ">Вопрос опроса</label><input id="pollQ" maxlength="200" placeholder="Куда пойдём в субботу?"></div>
+      ${Array.from({ length: d.pollN }, (_, i) => `<input id="pollO${i}" maxlength="80" placeholder="Вариант ${i + 1}">`).join('')}
+      <div class="row">${d.pollN < 6 ? `<button type="button" class="btn ghost small" data-act="polladd">+ Вариант</button>` : ''}<span class="grow"></span>
+        <button type="button" class="btn ghost small" data-act="polltoggle">Убрать опрос</button></div></div>` : ''}
+    ${emojiPanel('postText')}
     <div class="composer-bar"><button type="button" class="icon-btn" data-act="attach">${I.photo}<span class="small">Фото</span></button>
+      ${d.poll ? '' : `<button type="button" class="icon-btn" data-act="polltoggle">${I.poll}<span class="small">Опрос</span></button>`}
+      ${emojiBtn('postText')}
       <span class="grow"></span><button class="btn" type="submit" ${S.busy ? 'disabled' : ''}>${S.busy ? 'Публикуем…' : 'Опубликовать'}</button></div>
   </form></div>`;
 }
 
-function postCard(p) {
+function pollHtml(p) {
+  const poll = p.poll; if (!poll || !Array.isArray(poll.options)) return '';
+  const votes = poll.votes || {}, all = Object.values(votes), total = all.length, mine = votes[S.me.id];
+  const voted = mine !== undefined;
+  return `<div class="poll"><b>${esc(poll.q || 'Опрос')}</b>
+    ${poll.options.map((o, i) => {
+      const n = all.filter(v => v === i).length, pct = total ? Math.round(n * 100 / total) : 0;
+      return `<button class="poll-opt ${mine === i ? 'on' : ''}" data-act="vote" data-id="${esc(p.id)}" data-i="${i}">
+        ${voted ? `<i style="width:${pct}%"></i>` : ''}<span class="grow">${esc(o)}</span>${voted ? `<span class="tnum">${pct}%</span>` : ''}</button>`;
+    }).join('')}
+    <div class="muted small">${total} ${plural(total, 'голос', 'голоса', 'голосов')}${voted ? ' · нажмите на другой вариант, чтобы переголосовать' : ''}</div></div>`;
+}
+
+function postCard(p, pinned = false) {
   const a = U(p.authorId); if (!a) return '';
   const me = S.me, wall = p.wallId !== p.authorId ? U(p.wallId) : null;
   const likes = p.likes || [], liked = likes.includes(me.id);
   const open = S.openComments.has(p.id), comments = cache.comments.get(p.id);
   const canDel = p.authorId === me.id || p.wallId === me.id, canEdit = p.authorId === me.id, editing = canEdit && S.editPost === p.id;
+  const canPin = p.wallId === me.id, isPinned = canPin && me.pinned === p.id;
   const n = p.commentCount || 0;
-  const confirmKey = 'post:' + p.id;
+  const confirmKey = 'post:' + p.id, menu = S.postMenu === p.id;
   return `<article class="card pad post">
+    ${pinned ? `<div class="pin-label small">📌 Закреплённая запись</div>` : ''}
     <div class="row post-head">${avatar(a, 44)}
       <div class="grow">${nameLink(a)}${wall ? ` <span class="muted">→</span> ${nameLink(wall)}` : ''}
-        <div class="muted small">${ago(p.createdAt)}${p.editedAt ? ' · изменено' : ''}</div></div>
-      ${canEdit && !editing ? `<button class="btn ghost small" data-act="editpost" data-id="${esc(p.id)}">Изменить</button>` : ''}
-      ${canDel ? `<button class="btn ${S.confirm === confirmKey ? 'danger' : 'ghost'} small" data-act="delpost" data-id="${esc(p.id)}">${S.confirm === confirmKey ? 'Удалить?' : 'Удалить'}</button>` : ''}
+        <div class="muted small"><a href="#post/${esc(p.id)}" style="color:inherit">${ago(p.createdAt)}</a>${p.editedAt ? ' · изменено' : ''}</div></div>
+      ${canDel || canPin ? `<button class="icon-btn" data-act="postmenu" data-id="${esc(p.id)}" aria-label="Действия с записью" aria-expanded="${menu}">${I.more}</button>` : ''}
     </div>
+    ${menu ? `<div class="post-menu">
+      ${canEdit && !editing ? `<button class="btn ghost small" data-act="editpost" data-id="${esc(p.id)}">Изменить</button>` : ''}
+      ${canPin ? `<button class="btn ghost small" data-act="pinpost" data-id="${isPinned ? '' : esc(p.id)}">${isPinned ? 'Открепить' : 'Закрепить'}</button>` : ''}
+      ${canDel ? `<button class="btn ${S.confirm === confirmKey ? 'danger' : 'ghost'} small" data-act="delpost" data-id="${esc(p.id)}">${S.confirm === confirmKey ? 'Точно удалить?' : 'Удалить'}</button>` : ''}
+    </div>` : ''}
     ${editing ? `<form class="form" data-form="editpost" data-id="${esc(p.id)}">
         <textarea id="ep_${esc(p.id)}" rows="3" maxlength="4000">${esc(p.text)}</textarea>
         <div class="row"><button class="btn" type="submit">Сохранить</button><button type="button" class="btn ghost" data-act="editpost" data-id="">Отмена</button></div></form>`
       : p.text ? `<div class="post-text">${linkify(p.text)}</div>` : ''}
-    ${p.image ? `<img class="post-img" src="${esc(p.image)}" alt="Фото к записи" loading="lazy">` : ''}
+    ${p.image ? `<img class="post-img" src="${esc(p.image)}" alt="Фото к записи" loading="lazy" data-act="viewimg" data-kind="post" data-id="${esc(p.id)}">` : ''}
+    ${pollHtml(p)}
     <div class="post-actions">
       <button class="pill ${liked ? 'liked' : ''}" data-act="like" data-id="${esc(p.id)}" aria-pressed="${liked}" aria-label="Нравится">${liked ? I.heart : I.heartO}${likes.length || ''}</button>
       <button class="pill" data-act="togglec" data-id="${esc(p.id)}" aria-label="Комментарии">${I.comment}${n || ''}</button>
+      <span class="grow"></span>
+      <button class="pill" data-act="copy" data-text="${esc(location.origin + location.pathname + '#post/' + p.id)}" aria-label="Скопировать ссылку на запись">${I.link}</button>
     </div>
     ${open ? `<div class="comments">
       ${!comments ? '<div class="muted small">Загружаем…</div>' : comments.map(c => {
@@ -993,7 +1111,7 @@ function viewProfile() {
   const likes = posts.reduce((s, p) => s + (p.likes || []).length, 0);
   const since = u.createdAt ? new Date(ms(u.createdAt)) : null;
   return `<div class="card">
-    <div class="cover"></div>
+    <div class="cover" ${COVERS[u.cover] ? `style="--cover:${COVERS[u.cover]}"` : ''}></div>
     <div class="prof">${avatar(u, 120, false)}
       <div class="prof-info"><h1 class="prof-name">${esc(u.name)}</h1><div class="muted">${u.status ? esc(u.status) : own ? 'Добавьте статус в «Редактировать»' : '@' + esc(u.nick)}</div>
         ${!own && seenText(u) ? `<div class="seen small ${isOnline(u) ? 'on' : ''}">${seenText(u)}</div>` : ''}</div>
@@ -1015,7 +1133,7 @@ function viewProfile() {
     <div>
       ${own || (isFriend && (u.privacy?.wall || 'friends') !== 'me') ? composer(u.id, own ? 'Что у вас нового?' : 'Написать на стене у ' + u.name.split(' ')[0]) : ''}
       <div class="card pad" style="padding-block:12px"><b>${own ? 'Мои записи' : 'Стена'}</b> <span class="muted">${posts.length}</span></div>
-      ${S.loading ? loadingBox() : posts.length ? posts.map(postCard).join('') : `<div class="card empty">${own ? 'Напишите первую запись: её увидят ваши друзья.' : 'На стене пока нет записей'}</div>`}
+      ${S.loading ? loadingBox() : posts.length ? wallPosts(u, posts) : `<div class="card empty">${own ? 'Напишите первую запись: её увидят ваши друзья.' : 'На стене пока нет записей'}</div>`}
     </div>
     <div>
       <div class="card pad"><div class="row"><b class="grow">Друзья</b><span class="muted small">${friendIds.length}</span></div>
@@ -1030,6 +1148,11 @@ function viewProfile() {
   </div>`;
 }
 
+function wallPosts(u, posts) {
+  const pin = u.pinned && posts.find(p => p.id === u.pinned);
+  return (pin ? postCard(pin, true) : '') + posts.filter(p => p !== pin).map(p => postCard(p)).join('');
+}
+
 function viewEdit() {
   const me = S.me, color = S.editColor || me.color, photo = S.editPhoto === undefined ? me.photo : S.editPhoto;
   return `<div class="card pad"><h1 class="h" style="margin-bottom:16px">Редактирование страницы</h1>
@@ -1037,6 +1160,7 @@ function viewEdit() {
     <div class="row">${avatar({ ...me, color, photo }, 72, false)}
       <div class="row" style="flex-wrap:wrap;gap:8px"><button type="button" class="btn sec" data-act="avatar">Загрузить фото</button>
       ${photo ? `<button type="button" class="btn ghost" data-act="noavatar">Убрать фото</button>` : ''}</div></div>
+    <div class="field"><label>Обложка страницы</label><div class="swatches covers">${Object.entries(COVERS).map(([k, g]) => `<button type="button" class="${k === (S.editCover || me.cover || 'blue') ? 'on' : ''}" style="background:${g}" data-act="cover" data-c="${k}" aria-label="Обложка ${k}"></button>`).join('')}</div></div>
     <div class="field"><label>Цвет аватара</label><div class="swatches">${COLORS.map(c => `<button type="button" class="${c === color ? 'on' : ''}" style="background:${c}" data-act="color" data-c="${c}" aria-label="Цвет ${c}"></button>`).join('')}</div></div>
     <div class="field"><label for="eName">Имя и фамилия</label><input id="eName" required maxlength="60" value="${esc(me.name)}"></div>
     <div class="field"><label for="eNick">Короткое имя</label><input id="eNick" required minlength="3" maxlength="30" pattern="[a-zA-Z0-9._]+" value="${esc(me.nick)}"></div>
@@ -1058,8 +1182,19 @@ function userRow(u, extra = '') {
   </div>`;
 }
 
+// Друзья друзей, отсортированные по числу общих друзей
+function suggestions() {
+  const me = S.me, mine = new Set(me.friends || []), count = new Map();
+  const skip = new Set([me.id, ...mine, ...cache.incoming.map(r => r.from), ...cache.outgoing.map(r => r.to)]);
+  mine.forEach(f => (U(f)?.friends || []).forEach(x => { if (!skip.has(x)) count.set(x, (count.get(x) || 0) + 1); }));
+  const top = [...count.entries()].sort((a, b) => b[1] - a[1]).slice(0, 8);
+  ensureUsers(top.map(([x]) => x));
+  return top.map(([x, n]) => ({ u: U(x), n })).filter(s => s.u && !s.u.deleted);
+}
+
 function viewFriends() {
   const ids = S.me.friends || [];
+  const sug = suggestions();
   ensureUsers([...ids, ...cache.incoming.map(r => r.from), ...cache.outgoing.map(r => r.to)]);
   const fr = ids.map(U).filter(Boolean);
   const inc = cache.incoming.map(r => U(r.from)).filter(Boolean);
@@ -1068,6 +1203,8 @@ function viewFriends() {
       <div class="ulist">${inc.map(u => userRow(u, '<div class="req">Хочет добавить вас в друзья</div>')).join('')}</div></div>` : ''}
     <div class="card"><div class="pad" style="padding-bottom:4px"><h1 class="h">Друзья <span class="muted">${ids.length}</span></h1></div>
     <div class="ulist">${fr.length ? fr.map(u => userRow(u)).join('') : ids.length ? '<div class="loading"><div class="spin"></div></div>' : `<div class="empty">У вас пока нет друзей<a class="btn sec" href="#people">Найти людей</a></div>`}</div></div>
+    ${sug.length ? `<div class="card"><div class="pad" style="padding-bottom:4px"><h2 class="h" style="font-size:16px">Возможные друзья</h2></div>
+      <div class="ulist">${sug.map(x => userRow(x.u, `<div class="muted small">${x.n} ${plural(x.n, 'общий друг', 'общих друга', 'общих друзей')}</div>`)).join('')}</div></div>` : ''}
     ${out.length ? `<div class="card"><div class="pad" style="padding-bottom:4px"><h2 class="h" style="font-size:16px">Исходящие заявки <span class="muted">${out.length}</span></h2></div>
       <div class="ulist">${out.map(u => userRow(u)).join('')}</div></div>` : ''}`;
 }
@@ -1083,37 +1220,55 @@ function viewPeople() {
 }
 
 /* Сообщения */
+const dialogName = (u, self) => self ? 'Избранное' : u.name;
+function msgHtml(m, id, peerRead) {
+  const mine = m.from === id, img = safeImg(m.image), sel = S.msgSel === m.id, rp = m.replyTo;
+  const ticks = mine && peerRead !== null ? `<span class="ticks ${ms(m.createdAt) <= peerRead ? 'read' : ''}" aria-label="${ms(m.createdAt) <= peerRead ? 'Прочитано' : 'Отправлено'}">${ms(m.createdAt) <= peerRead ? '✓✓' : '✓'}</span>` : '';
+  const quote = rp ? `<div class="msg-quote"><b>${esc(rp.from === id ? 'Вы' : (U(rp.from)?.name || '').split(' ')[0])}</b>${esc(rp.text || '')}</div>` : '';
+  return `<div class="msg ${mine ? 'me' : ''} ${img ? 'has-img' : ''} ${sel ? 'sel' : ''}" data-act="selmsg" data-id="${esc(m.id)}">${quote}${img ? `<img class="msg-img" src="${esc(img)}" alt="Фото" data-act="viewimg" data-kind="msg" data-id="${esc(m.id)}">` : ''}${m.text ? `<span>${linkify(m.text)}</span>` : ''}<time>${hm(new Date(ms(m.createdAt)))}${ticks}</time>${sel ? `<div class="msg-acts"><button data-act="replymsg" data-id="${esc(m.id)}">${I.reply}Ответить</button>${mine ? `<button data-act="delmsg" data-id="${esc(m.id)}">${S.confirm === 'msg:' + m.id ? 'Удалить у всех?' : 'Удалить'}</button>` : ''}</div>` : ''}</div>`;
+}
 function viewMessages() {
   const id = S.me.id;
   const list = [...cache.chats];
   if (S.chatWith && !list.some(c => c.id === chatId(id, S.chatWith))) list.unshift({ id: chatId(id, S.chatWith), members: [id, S.chatWith], fresh: true });
   let chatHtml = `<div class="empty" style="height:100%">Выберите диалог<br><span class="small">или напишите человеку с его страницы</span></div>`;
-  const o = S.chatWith && U(S.chatWith);
+  const o = S.chatWith && U(S.chatWith), self = S.chatWith === id;
   if (S.chatWith && !o) chatHtml = '<div class="loading"><div class="spin"></div></div>';
   if (o) {
     let lastDay = '';
+    const chat = cache.chats.find(c => c.id === chatId(id, S.chatWith));
+    const peerRead = self ? null : chat?.read?.[S.chatWith] ? ms(chat.read[S.chatWith]) : 0;
     const body = S.loading ? '<div class="loading"><div class="spin"></div></div>' : cache.messages.map(m => {
       const dl = dayLabel(m.createdAt), sep = dl !== lastDay ? `<div class="daysep">${dl}</div>` : ''; lastDay = dl;
-      const mine = m.from === id, img = safeImg(m.image), sel = mine && S.msgSel === m.id;
-      return sep + `<div class="msg ${mine ? 'me' : ''} ${img ? 'has-img' : ''} ${sel ? 'sel' : ''}" ${mine ? `data-act="selmsg" data-id="${esc(m.id)}"` : ''}>${img ? `<img class="msg-img" src="${esc(img)}" alt="Фото" loading="lazy">` : ''}${m.text ? `<span>${linkify(m.text)}</span>` : ''}<time>${hm(new Date(ms(m.createdAt)))}</time>${sel ? `<button class="msg-del" data-act="delmsg" data-id="${esc(m.id)}">${S.confirm === 'msg:' + m.id ? 'Удалить у всех?' : 'Удалить'}</button>` : ''}</div>`;
-    }).join('') || `<div class="empty">Напишите ${esc(o.name.split(' ')[0])} первым</div>`;
-    chatHtml = `<div class="chat-head"><a class="icon-btn back" href="#im" aria-label="К диалогам">${I.back}</a>${avatar(o, 38)}
-      <div class="grow">${nameLink(o)}<div class="small seen ${isOnline(o) ? 'on' : ''}">${esc(seenText(o) || o.city || '@' + (o.nick || ''))}</div></div></div>
+      return sep + msgHtml(m, id, peerRead);
+    }).join('') || `<div class="empty">${self ? 'Сохраняйте сюда заметки, ссылки и фото — их видите только вы' : 'Напишите ' + esc(o.name.split(' ')[0]) + ' первым'}</div>`;
+    const rp = S.replyTo;
+    chatHtml = `<div class="chat-head"><a class="icon-btn back" href="#im" aria-label="К диалогам">${I.back}</a>${self ? `<span class="av fav" style="width:38px;height:38px">★</span>` : avatar(o, 38)}
+      <div class="grow">${self ? '<b>Избранное</b>' : nameLink(o)}<div class="small seen ${!self && isOnline(o) ? 'on' : ''}">${self ? 'Только для вас' : esc(seenText(o) || o.city || '@' + (o.nick || ''))}</div></div></div>
       <div class="msgs">${body}</div>
-      ${o.deleted ? '' : o.privacy?.messages === 'friends' && !(S.me.friends || []).includes(o.id) && !cache.messages.length
-        ? `<div class="chat-form muted small" style="justify-content:center">${esc(o.name.split(' ')[0])} принимает сообщения только от друзей</div>` : `<form class="chat-form" data-form="msg" data-to="${esc(o.id)}"><button type="button" class="icon-btn" data-act="msgphoto" aria-label="Отправить фото" ${S.busy ? 'disabled' : ''}>${I.photo}</button><input id="msgInput" placeholder="Сообщение" maxlength="2000" autocomplete="off"><button class="btn" aria-label="Отправить">${I.send}</button></form>`}`;
+      ${rp ? `<div class="reply-bar">${I.reply}<div class="grow" style="min-width:0"><b>${esc(rp.from === id ? 'Вы' : o.name.split(' ')[0])}</b><div class="muted small" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(rp.text)}</div></div><button class="icon-btn" data-act="noreply" aria-label="Не отвечать">✕</button></div>` : ''}
+      ${emojiPanel('msgInput')}
+      ${o.deleted ? '' : !self && o.privacy?.messages === 'friends' && !(S.me.friends || []).includes(o.id) && !cache.messages.length
+        ? `<div class="chat-form muted small" style="justify-content:center">${esc(o.name.split(' ')[0])} принимает сообщения только от друзей</div>` : `<form class="chat-form" data-form="msg" data-to="${esc(o.id)}"><button type="button" class="icon-btn" data-act="msgphoto" aria-label="Отправить фото" ${S.busy ? 'disabled' : ''}>${I.photo}</button>${emojiBtn('msgInput')}<input id="msgInput" placeholder="Сообщение" maxlength="2000" autocomplete="off"><button class="btn" aria-label="Отправить">${I.send}</button></form>`}`;
   }
+  const q = S.dq.trim().toLowerCase();
+  const items = list.map(c => {
+    const oid = c.members.find(m => m !== id) || id, ou = U(oid), me1 = oid === id;
+    if (!ou) return '';
+    if (q && !dialogName(ou, me1).toLowerCase().includes(q) && !(c.lastText || '').toLowerCase().includes(q)) return '';
+    const unread = !c.fresh && isUnread(c);
+    return `<a class="ditem ${S.chatWith === oid ? 'on' : ''}" href="#im/${esc(oid)}">${me1 ? `<span class="av fav" style="width:46px;height:46px">★</span>` : avatar(ou, 46, false)}
+      <div class="grow"><div class="row" style="gap:6px"><b class="grow" style="font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(dialogName(ou, me1))}</b>${c.lastAt ? `<span class="muted small">${ms(c.lastAt) >= startOfDay() ? hm(new Date(ms(c.lastAt))) : dayLabel(c.lastAt)}</span>` : ''}</div>
+      <div class="last">${c.fresh ? 'Новый диалог' : (c.lastFrom === id && !me1 ? 'Вы: ' : '') + esc(c.lastText || '')}</div></div>${unread ? '<span class="dot" aria-label="Непрочитано"></span>' : ''}</a>`;
+  }).join('');
   return `${S.chatsError ? errBox(S.chatsError) : ''}<div class="card im ${S.chatWith ? 'open' : ''}">
-    <div class="dlist">${list.length ? list.map(c => {
-      const oid = c.members.find(m => m !== id) || id, ou = U(oid);
-      if (!ou) return '';
-      const unread = !c.fresh && isUnread(c);
-      return `<a class="ditem ${S.chatWith === oid ? 'on' : ''}" href="#im/${esc(oid)}">${avatar(ou, 46, false)}
-        <div class="grow"><div class="row" style="gap:6px"><b class="grow" style="font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(ou.name)}</b>${c.lastAt ? `<span class="muted small">${ms(c.lastAt) >= startOfDay() ? hm(new Date(ms(c.lastAt))) : dayLabel(c.lastAt)}</span>` : ''}</div>
-        <div class="last">${c.fresh ? 'Новый диалог' : (c.lastFrom === id ? 'Вы: ' : '') + esc(c.lastText || '')}</div></div>${unread ? '<span class="dot" aria-label="Непрочитано"></span>' : ''}</a>`;
-    }).join('') : `<div class="empty">Диалогов пока нет</div>`}</div>
+    <div class="dlist"><div class="dsearch">${I.search}<input id="dq" type="search" placeholder="Поиск по диалогам" autocomplete="off" value="${esc(S.dq)}">
+        ${cache.chats.some(c => c.id === chatId(id, id)) ? '' : `<a class="icon-btn" href="#im/${esc(id)}" aria-label="Избранное" title="Избранное">★</a>`}</div>
+      ${items || `<div class="empty">${q ? 'Ничего не нашли' : 'Диалогов пока нет'}</div>`}</div>
     <div class="chat">${chatHtml}</div></div>`;
 }
+
+document.addEventListener('input', e => { if (e.target.id === 'dq') { S.dq = e.target.value; render(); } });
 
 /* ---------- Действия ---------- */
 let pickTarget = null;
@@ -1122,8 +1277,10 @@ document.addEventListener('click', async e => {
   const stop = e.target.closest('[data-stop]'); if (stop && !stop.contains(b)) return;
   const { act, id } = b.dataset;
   const twoStep = key => { if (S.confirm === key) { S.confirm = null; return true; } S.confirm = key; render(); return false; };
-  if (!['delpost', 'unfriend', 'delvideo', 'delalbum', 'delfile', 'delphoto', 'delmsg'].includes(act)) S.confirm = null;
-  if (act !== 'selmsg' && act !== 'delmsg') S.msgSel = null;
+  if (!['delpost', 'unfriend', 'delvideo', 'delalbum', 'delfile', 'delphoto', 'delmsg', 'postmenu'].includes(act)) S.confirm = null;
+  if (!['selmsg', 'delmsg', 'replymsg'].includes(act)) S.msgSel = null;
+  if (!['postmenu', 'delpost', 'pinpost'].includes(act)) S.postMenu = null;
+  if (!['emoji', 'emojis'].includes(act)) S.emoji = null;
   try {
     switch (act) {
       case 'authtab': S.authTab = b.dataset.tab; S.authError = ''; S.fatal = null; render(); break;
@@ -1144,8 +1301,10 @@ document.addEventListener('click', async e => {
       case 'logout': await signOut(auth); location.hash = ''; break;
       case 'feedtab': S.feedTab = b.dataset.tab; attachView(); break;
       case 'like': {
-        const p = [...cache.feed.values()].flat().concat(cache.wall).find(x => x.id === id); if (!p) return;
-        await updateDoc(doc(db, 'posts', id), { likes: (p.likes || []).includes(uid()) ? arrayRemove(uid()) : arrayUnion(uid()) });
+        const p = findPost(id); if (!p) return;
+        const had = (p.likes || []).includes(uid()), nid = `like_${id}_${uid()}`;
+        await updateDoc(doc(db, 'posts', id), { likes: had ? arrayRemove(uid()) : arrayUnion(uid()) });
+        if (p.authorId !== uid()) { if (had) unnotify(nid); else notify(p.authorId, 'like', id, p.text || (p.poll ? p.poll.q : 'Фото'), nid); }
         break;
       }
       case 'togglec':
@@ -1198,7 +1357,7 @@ document.addEventListener('click', async e => {
       }
       case 'lightbox': openLightbox(+b.dataset.i); break;
       case 'lbstep': { const n = cache.photos.length; if (n) openLightbox((S.lightbox + Number(b.dataset.d) + n) % n); break; }
-      case 'ovclose': S.lightbox = null; S.lightboxImg = null; S.preview = null; render(); break;
+      case 'ovclose': S.lightbox = null; S.lightboxImg = null; S.preview = null; S.viewImg = null; render(); break;
       case 'delphoto': {
         if (!twoStep('photo:' + id)) return;
         const a = cache.album, bt = writeBatch(db);
@@ -1238,6 +1397,34 @@ document.addEventListener('click', async e => {
       case 'selmsg':
         if (e.target.closest('a')) return;
         S.msgSel = S.msgSel === id ? null : id; S.confirm = null; render(); break;
+      case 'replymsg': {
+        const m = cache.messages.find(x => x.id === id); if (!m) return;
+        S.replyTo = { id: m.id, from: m.from, text: (m.text || (m.image ? '📷 Фото' : '')).slice(0, 100) };
+        S.msgSel = null; render(); document.getElementById('msgInput')?.focus(); break;
+      }
+      case 'noreply': S.replyTo = null; render(); break;
+      case 'postmenu': S.postMenu = S.postMenu === id ? null : id; S.confirm = null; render(); break;
+      case 'pinpost':
+        await updateDoc(doc(db, 'users', uid()), { pinned: id || '' });
+        S.postMenu = null; toast(id ? 'Запись закреплена' : 'Запись откреплена'); break;
+      case 'vote': {
+        const p = findPost(id), i = Number(b.dataset.i); if (!p?.poll) return;
+        await updateDoc(doc(db, 'posts', id), { [`poll.votes.${uid()}`]: i }); break;
+      }
+      case 'polltoggle': S.draft.poll = !S.draft.poll; S.draft.pollN = 2; render(); if (S.draft.poll) document.getElementById('pollQ')?.focus(); break;
+      case 'polladd': S.draft.pollN = Math.min(6, S.draft.pollN + 1); render(); document.getElementById('pollO' + (S.draft.pollN - 1))?.focus(); break;
+      case 'emojis': S.emoji = S.emoji === b.dataset.t ? null : b.dataset.t; render(); break;
+      case 'emoji': {
+        const el = document.getElementById(b.dataset.t); if (!el) return;
+        const at = el.selectionStart ?? el.value.length, end = el.selectionEnd ?? at, em = b.dataset.e;
+        el.value = el.value.slice(0, at) + em + el.value.slice(end);
+        el.focus(); el.setSelectionRange(at + em.length, at + em.length); break;
+      }
+      case 'viewimg': {
+        const src = b.dataset.kind === 'post' ? findPost(id)?.image : cache.messages.find(m => m.id === id)?.image;
+        if (safeImg(src)) { S.viewImg = src; render(); }
+        break;
+      }
       case 'delmsg': {
         if (!twoStep('msg:' + id)) return;
         await deleteMessage(id); S.msgSel = null; render(); break;
@@ -1247,6 +1434,7 @@ document.addEventListener('click', async e => {
       case 'unattach': S.draft.image = ''; render(); break;
       case 'noavatar': S.editPhoto = ''; render(); break;
       case 'color': S.editColor = b.dataset.c; render(); break;
+      case 'cover': S.editCover = b.dataset.c; render(); break;
       case 'addfriend': await friendAdd(id); break;
       case 'cancelreq': await friendCancel(id); break;
       case 'accept': await friendAccept(id); break;
@@ -1261,6 +1449,7 @@ async function sendMessage(to, text, image = '') {
   const me = uid(), cid = chatId(me, to), bt = writeBatch(db);
   const msg = { from: me, text, createdAt: serverTimestamp() };
   if (image) msg.image = image;
+  if (S.replyTo && S.chatWith === to) { msg.replyTo = S.replyTo; S.replyTo = null; }
   bt.set(doc(collection(db, 'chats', cid, 'messages')), msg);
   bt.set(doc(db, 'chats', cid), { members: [me, to].sort(), lastText: (text || '📷 Фото').slice(0, 200), lastFrom: me, lastAt: serverTimestamp(), read: { [me]: serverTimestamp() } }, { merge: true });
   await bt.commit();
@@ -1292,6 +1481,7 @@ async function friendAccept(from) {
   bt.delete(doc(db, 'friendRequests', from + '_' + uid()));
   if (cache.outgoing.some(r => r.to === from)) bt.delete(doc(db, 'friendRequests', uid() + '_' + from));
   await bt.commit(); cache.users.delete(from); toast('Теперь вы друзья');
+  notify(from, 'friend');
 }
 async function friendDecline(from) {
   const bt = writeBatch(db); bt.delete(doc(db, 'friendRequests', from + '_' + uid())); await bt.commit(); toast('Заявка отклонена');
@@ -1316,8 +1506,8 @@ async function openLightbox(i) {
   catch (e) { console.error(e); }
 }
 document.addEventListener('keydown', e => {
-  if (S.lightbox === null && !S.preview) return;
-  if (e.key === 'Escape') { S.lightbox = null; S.lightboxImg = null; S.preview = null; render(); }
+  if (S.lightbox === null && !S.preview && !S.viewImg) return;
+  if (e.key === 'Escape') { S.lightbox = null; S.lightboxImg = null; S.preview = null; S.viewImg = null; render(); }
   else if (S.lightbox !== null && (e.key === 'ArrowRight' || e.key === 'ArrowLeft')) {
     const n = cache.photos.length; openLightbox((S.lightbox + (e.key === 'ArrowRight' ? 1 : -1) + n) % n);
   }
@@ -1430,13 +1620,23 @@ document.addEventListener('submit', async e => {
         await u.reload(); S.authUser = auth.currentUser; toast('Пароль установлен. Теперь можно входить и по почте.'); render(); break;
       }
       case 'post': {
-        const text = v('postText');
-        if (!text && !S.draft.image) { toast('Напишите текст или прикрепите фото'); return; }
+        const text = v('postText'), d = S.draft, wall = f.dataset.wall;
+        let poll = null;
+        if (d.poll) {
+          const options = Array.from({ length: d.pollN }, (_, i) => v('pollO' + i)).filter(Boolean);
+          if (options.length < 2) { toast('В опросе нужно хотя бы два варианта'); return; }
+          poll = { q: v('pollQ') || 'Опрос', options, votes: {} };
+        }
+        if (!text && !d.image && !poll) { toast('Напишите текст или прикрепите фото'); return; }
         if (S.busy) return;
         S.busy = true; render();
         try {
-          await addDoc(collection(db, 'posts'), { authorId: uid(), wallId: f.dataset.wall, text, image: S.draft.image || '', likes: [], commentCount: 0, createdAt: serverTimestamp() });
-          S.draft = { text: '', image: '' }; clear('postText'); toast('Опубликовано');
+          const post = { authorId: uid(), wallId: wall, text, image: d.image || '', likes: [], commentCount: 0, createdAt: serverTimestamp() };
+          if (poll) post.poll = poll;
+          const ref = await addDoc(collection(db, 'posts'), post);
+          if (wall !== uid()) notify(wall, 'wall', ref.id, text || (poll ? poll.q : 'Фото'));
+          S.draft = { text: '', image: '', poll: false, pollN: 2 }; S.emoji = null;
+          ['postText', 'pollQ', 'pollO0', 'pollO1', 'pollO2', 'pollO3', 'pollO4', 'pollO5'].forEach(clear); toast('Опубликовано');
         } finally { S.busy = false; render(); }
         break;
       }
@@ -1446,17 +1646,19 @@ document.addEventListener('submit', async e => {
         const bt = writeBatch(db);
         bt.set(doc(collection(db, 'posts', pid, 'comments')), { authorId: uid(), text, createdAt: serverTimestamp() });
         bt.update(doc(db, 'posts', pid), { commentCount: increment(1) });
-        await bt.commit(); break;
+        await bt.commit();
+        const p = findPost(pid); if (p) notify(p.authorId, 'comment', pid, text);
+        break;
       }
       case 'msg': {
         const text = v('msgInput'); if (!text) return;
-        clear('msgInput');
+        clear('msgInput'); S.emoji = null;
         await sendMessage(f.dataset.to, text);
         break;
       }
       case 'editpost': {
         const pid = f.dataset.id, text = v('ep_' + pid);
-        const p = [...cache.feed.values()].flat().concat(cache.wall).find(x => x.id === pid);
+        const p = findPost(pid);
         if (!text && !p?.image) { toast('Запись не может быть пустой'); return; }
         await updateDoc(doc(db, 'posts', pid), { text, editedAt: serverTimestamp() });
         S.editPost = null; render(); toast('Запись изменена'); break;
@@ -1474,10 +1676,10 @@ document.addEventListener('submit', async e => {
             bt.delete(doc(db, 'usernames', me.nick));
           }
           bt.update(doc(db, 'users', me.id), {
-            name, nick, city, status: v('eStatus'), about: v('eAbout'), color: S.editColor || me.color,
+            name, nick, city, status: v('eStatus'), about: v('eAbout'), color: S.editColor || me.color, cover: S.editCover || me.cover || 'blue',
             photo: S.editPhoto === undefined ? (me.photo || '') : S.editPhoto, search: buildSearch(name, nick, city),
           });
-          await bt.commit(); S.editColor = null; S.editPhoto = undefined; toast('Сохранено'); go('id/' + me.id);
+          await bt.commit(); S.editColor = null; S.editCover = null; S.editPhoto = undefined; toast('Сохранено'); go('id/' + me.id);
         } finally { S.busy = false; render(); }
         break;
       }

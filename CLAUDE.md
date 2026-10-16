@@ -13,17 +13,23 @@
   - фото сжимаются в браузере в dataURL JPEG (документ Firestore должен быть меньше 1 МБ);
   - файлы Диска и видео режутся на куски по 700 000 символов base64 в `files/{id}/chunks/{0000..}`.
 - Маршрутизация через hash: `#feed`, `#id/<uid>`, `#im/<uid>`, `#friends`, `#people`, `#edit`,
-  `#video`, `#video/<id>`, `#videos/<uid>`, `#albums/<uid>`, `#album/<id>`, `#disk`, `#vid`, `#settings`, `#more`.
+  `#video`, `#video/<id>`, `#videos/<uid>`, `#albums/<uid>`, `#album/<id>`, `#disk`, `#vid`, `#settings`, `#more`,
+  `#post/<id>` (одна запись), `#notif` (уведомления). `#im/<свой uid>` — «Избранное» (чат с самим собой, id `uid_uid`).
 - Рендер: функция `render()` целиком перерисовывает `#app` через innerHTML, а значения полей ввода сохраняются между перерисовками.
   Исключение — страница видео: там обновляются только части страницы, чтобы плеер не перезапускался (см. `playerKey`).
 
 ## Коллекции Firestore
 `users`, `usernames` (уникальные короткие имена), `friendRequests` (id = `от_кому`), `posts` + `posts/{id}/comments`,
 `chats` (id = `uid1_uid2` по алфавиту) + `chats/{id}/messages`, `videos`, `files` + `files/{id}/chunks`,
-`albums`, `photos` (миниатюры), `photoFull` (полные фото).
+`albums`, `photos` (миниатюры), `photoFull` (полные фото), `notifs` (уведомления: `to`, `from`, `type`, `postId`, `text`).
 
 Поля, добавленные в 1.3: `users.lastSeen` (статус «в сети», пишется не чаще раза в 4 минуты),
 `posts.editedAt` (запись изменена автором), `chats/{id}/messages.image` (фото в сообщении, dataURL до `MAX_MSG_IMG`).
+
+Поля, добавленные в 1.4: `posts.poll` (`{q, options[2..6], votes: {uid: номер}}`), `messages.replyTo` (`{id, from, text}`),
+`users.pinned` (закреплённая запись), `users.cover` (ключ из `COVERS`), `users.notifSeenAt` (когда смотрел уведомления).
+Уведомления пишутся «по возможности» отдельной записью (`notify()`), лайк — с id `like_<post>_<uid>`, снимается при снятии лайка.
+Хранится не больше `NOTIF_KEEP` уведомлений на человека: лишние удаляет клиент получателя (запрос без orderBy, чтобы не нужен был индекс).
 
 Составные индексы (созданы в консоли):
 - `posts`: authorId ASC + createdAt DESC;

@@ -245,3 +245,40 @@ test('удаление файла с кусками и фото из альбо�
   await assertSucceeds(del.commit());
   await assertSucceeds(deleteDoc(doc(f, 'albums', 'al1')));
 });
+
+/* ---------- 1.4: опросы, ответы, уведомления, закрепление, обложка, Избранное ---------- */
+test('опрос: создать, проголосовать за себя, нельзя за другого и вне списка', async () => {
+  const f = db(A), ref = doc(collection(f, 'posts'));
+  await assertSucceeds(setDoc(ref, post(A, A, { text: '', poll: { q: 'Куда?', options: ['кино', 'парк'], votes: {} } })));
+  await assertFails(setDoc(doc(collection(f, 'posts')), post(A, A, { poll: { q: 'Куда?', options: ['кино', 'парк'], votes: { [B]: 0 } } })));
+  await assertSucceeds(updateDoc(doc(db(B), 'posts', ref.id), { [`poll.votes.${B}`]: 1 }));
+  await assertSucceeds(updateDoc(doc(db(B), 'posts', ref.id), { [`poll.votes.${B}`]: 0 }));
+  await assertFails(updateDoc(doc(db(B), 'posts', ref.id), { [`poll.votes.${C}`]: 0 }));
+  await assertFails(updateDoc(doc(db(B), 'posts', ref.id), { [`poll.votes.${B}`]: 5 }));
+  await assertFails(updateDoc(doc(db(B), 'posts', ref.id), { 'poll.options': ['взлом', 'x'] }));
+});
+test('ответ на сообщение и чат с самим собой', async () => {
+  await assertSucceeds(send(B, A, 'привет'));
+  const f = db(A), cid = [A, B].sort().join('_'), b = writeBatch(f);
+  b.set(doc(collection(f, 'chats', cid, 'messages')), { from: A, text: 'да', replyTo: { id: 'm1', from: B, text: 'привет' }, createdAt: serverTimestamp() });
+  b.set(doc(f, 'chats', cid), { members: [A, B].sort(), lastText: 'да', lastFrom: A, lastAt: serverTimestamp(), read: { [A]: serverTimestamp() } }, { merge: true });
+  await assertSucceeds(b.commit());
+  await env.withSecurityRulesDisabled(ctx => updateDoc(doc(ctx.firestore(), 'users', A), { 'privacy.messages': 'friends' }));
+  await assertSucceeds(send(A, A, 'заметка себе'));
+});
+test('уведомления: читает только получатель, от чужого имени нельзя', async () => {
+  const ref = doc(collection(db(B), 'notifs'));
+  await assertSucceeds(setDoc(ref, { to: A, from: B, type: 'like', postId: 'p1', text: 'привет', createdAt: serverTimestamp() }));
+  await assertSucceeds(setDoc(doc(db(B), 'notifs', 'like_p1_' + B), { to: A, from: B, type: 'like', postId: 'p1', text: '', createdAt: serverTimestamp() }));
+  await assertSucceeds(deleteDoc(doc(db(B), 'notifs', 'like_p1_' + B)));
+  await assertFails(setDoc(doc(collection(db(B), 'notifs')), { to: A, from: C, type: 'like', postId: '', text: '', createdAt: serverTimestamp() }));
+  await assertFails(setDoc(doc(collection(db(B), 'notifs')), { to: A, from: B, type: 'spam', postId: '', text: '', createdAt: serverTimestamp() }));
+  await assertSucceeds(getDoc(doc(db(A), 'notifs', ref.id)));
+  await assertFails(getDoc(doc(db(C), 'notifs', ref.id)));
+  await assertSucceeds(deleteDoc(doc(db(A), 'notifs', ref.id)));
+});
+test('закреплённая запись, обложка, отметка просмотра уведомлений', async () => {
+  const f = db(A);
+  await assertSucceeds(updateDoc(doc(f, 'users', A), { pinned: 'p1', cover: 'sunset', notifSeenAt: serverTimestamp() }));
+  await assertFails(updateDoc(doc(f, 'users', A), { cover: 'url(evil)' }));
+});
