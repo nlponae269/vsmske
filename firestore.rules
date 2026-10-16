@@ -40,7 +40,10 @@ service cloud.firestore {
         && u.get('privacy', {}) is map && u.get('privacy', {}).keys().hasOnly(['messages', 'wall'])
         && u.get('privacy', {}).get('messages', 'all') in ['all', 'friends']
         && u.get('privacy', {}).get('wall', 'friends') in ['friends', 'me']
-        && (!('lastSeen' in u) || u.lastSeen is timestamp);
+        && (!('lastSeen' in u) || u.lastSeen is timestamp)
+        && (!('notifSeenAt' in u) || u.notifSeenAt is timestamp)
+        && str(u.get('pinned', ''), 0, 40)
+        && u.get('cover', 'blue') in ['blue', 'sunset', 'sea', 'night', 'rose', 'gold'];
     }
     // Ник в профиле должен принадлежать владельцу профиля (после пачки)
     function nickOwned(u) { return getAfter(path('usernames', u.nick)).data.uid == me(); }
@@ -83,12 +86,23 @@ service cloud.firestore {
       return wallId == me() || (me() in user(wallId).get('friends', [])
         && user(wallId).get('privacy', {}).get('wall', 'friends') != 'me');
     }
+    function validPoll(p) {
+      return p is map && p.keys().hasOnly(['q', 'options', 'votes']) && str(p.q, 1, 200)
+        && p.options is list && p.options.size() >= 2 && p.options.size() <= 6 && p.votes == {};
+    }
     match /posts/{pid} {
       allow read: if signed();
-      allow create: if signed() && d().keys().hasOnly(['authorId', 'wallId', 'text', 'image', 'likes', 'commentCount', 'createdAt'])
+      allow create: if signed() && d().keys().hasOnly(['authorId', 'wallId', 'text', 'image', 'poll', 'likes', 'commentCount', 'createdAt'])
         && d().authorId == me() && d().wallId is string && canWriteWall(d().wallId)
-        && str(d().text, 0, 4000) && str(d().image, 0, 750000) && (d().text.size() > 0 || d().image.size() > 0)
+        && str(d().text, 0, 4000) && str(d().image, 0, 750000) && (d().text.size() > 0 || d().image.size() > 0 || 'poll' in d())
+        && (!('poll' in d()) || validPoll(d().poll))
         && d().likes == [] && d().commentCount == 0 && now(d().createdAt);
+      // голос в опросе: меняется только мой голос, номер варианта в пределах списка
+      allow update: if signed() && onlyChanged(['poll'])
+        && d().poll.diff(resource.data.poll).affectedKeys().hasOnly(['votes'])
+        && d().poll.votes.diff(resource.data.poll.votes).affectedKeys().hasOnly([me()])
+        && (!(me() in d().poll.votes) || (d().poll.votes[me()] is int && d().poll.votes[me()] >= 0
+          && d().poll.votes[me()] < resource.data.poll.options.size()));
       // лайк: добавить или убрать только себя
       allow update: if signed() && onlyChanged(['likes']) && toggledMe(resource.data.likes, d().likes);
       // счётчик комментариев: ровно ±1
@@ -130,18 +144,31 @@ service cloud.firestore {
 
       // Если человек принимает сообщения только от друзей, начать новый диалог с ним может только друг
       function canStart() {
-        return user(peer(cid)).get('privacy', {}).get('messages', 'all') != 'friends'
+        return peer(cid) == me()
+          || user(peer(cid)).get('privacy', {}).get('messages', 'all') != 'friends'
           || me() in user(peer(cid)).get('friends', [])
           || exists(path('chats', cid));
       }
       match /messages/{mid} {
         allow read: if signed() && inChat(cid);
         allow create: if signed() && inChat(cid) && canStart()
-          && d().keys().hasOnly(['from', 'text', 'image', 'createdAt'])
+          && d().keys().hasOnly(['from', 'text', 'image', 'replyTo', 'createdAt'])
           && d().from == me() && str(d().text, 0, 2000) && str(d().get('image', ''), 0, 400000)
+          && (!('replyTo' in d()) || (d().replyTo is map && d().replyTo.keys().hasOnly(['id', 'from', 'text'])
+            && str(d().replyTo.text, 0, 120) && str(d().replyTo.id, 1, 40)))
           && (d().text.size() > 0 || d().get('image', '').size() > 0) && now(d().createdAt);
         allow delete: if signed() && resource.data.from == me();
       }
+    }
+
+    // ---------- Уведомления: лайк, комментарий, запись на стене, принятая дружба ----------
+    match /notifs/{nid} {
+      allow read: if signed() && resource.data.to == me();
+      allow create: if signed() && d().keys().hasOnly(['to', 'from', 'type', 'postId', 'text', 'createdAt'])
+        && d().from == me() && d().to is string && d().to != me()
+        && d().type in ['like', 'comment', 'wall', 'friend']
+        && str(d().postId, 0, 40) && str(d().text, 0, 120) && now(d().createdAt);
+      allow delete: if signed() && (resource.data.to == me() || resource.data.from == me());
     }
 
     // ---------- ВС Видео ----------
