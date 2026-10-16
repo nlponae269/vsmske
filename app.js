@@ -6,11 +6,12 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/fireba
 import { getAnalytics, isSupported } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-analytics.js";
 import {
   getAuth, onAuthStateChanged, GoogleAuthProvider, signInWithPopup, signInWithRedirect,
-  createUserWithEmailAndPassword, signInWithEmailAndPassword, sendPasswordResetEmail, signOut
+  createUserWithEmailAndPassword, signInWithEmailAndPassword, sendPasswordResetEmail, signOut,
+  linkWithPopup, linkWithCredential, EmailAuthProvider, sendEmailVerification
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 import {
   getFirestore, doc, collection, query, where, orderBy, limit, limitToLast,
-  getDoc, getDocs, addDoc, updateDoc, onSnapshot, writeBatch,
+  getDoc, getDocs, addDoc, setDoc, updateDoc, onSnapshot, writeBatch,
   serverTimestamp, arrayUnion, arrayRemove, increment
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
@@ -35,6 +36,18 @@ const COLORS = ['#2F44D0','#D0462F','#1F8A5B','#B4398F','#C98A12','#2B8BB5','#6A
 const NICK_RE = /^[a-z0-9._]{3,30}$/;
 const MAX_POST_IMG = 700000;   // символов dataURL (~520 КБ), лимит документа Firestore — 1 МБ
 const MAX_AVATAR = 120000;
+const CHUNK = 700000;                                   // символов base64 в одном куске (кратно 4)
+const LIMITS = { disk: 10 * 1024 * 1024, video: 20 * 1024 * 1024 };
+const VERSION = '1.2';
+
+/* ---------- Тема ---------- */
+const lsGet = k => { try { return localStorage.getItem(k); } catch (e) { return null; } };
+const lsSet = (k, v) => { try { localStorage.setItem(k, v); } catch (e) {} };
+function applyTheme(t) {
+  if (t === 'light' || t === 'dark') document.documentElement.dataset.theme = t;
+  else delete document.documentElement.dataset.theme;
+}
+applyTheme(lsGet('vs_theme'));
 
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const ms = t => t && typeof t.toMillis === 'function' ? t.toMillis() : (typeof t === 'number' ? t : Date.now());
@@ -100,6 +113,83 @@ async function compress(file, maxSide, maxLen, square = false) {
   throw new Error('too-big');
 }
 
+/* ---------- Файлы в Firestore (кусками) ---------- */
+const fmtSize = n => n < 1024 ? n + ' Б' : n < 1048576 ? (n / 1024).toFixed(0) + ' КБ' : (n / 1048576).toFixed(1).replace('.', ',') + ' МБ';
+const fmtDur = s => { s = Math.round(s || 0); return Math.floor(s / 60) + ':' + pad2(s % 60); };
+function fileToBase64(file) {
+  return new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(String(r.result).split(',')[1] || ''); r.onerror = rej; r.readAsDataURL(file); });
+}
+function b64ToBytes(b64) { const bin = atob(b64), out = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i); return out; }
+function setUpload(label, pct) { S.upload = label ? { label, pct } : null; render(); }
+async function putFile(file, kind, label) {
+  const b64 = await fileToBase64(file);
+  const n = Math.max(1, Math.ceil(b64.length / CHUNK));
+  const ref = doc(collection(db, 'files'));
+  setUpload(label, 0);
+  await setDoc(ref, { ownerId: uid(), kind, name: file.name.slice(0, 200), size: file.size, type: file.type || 'application/octet-stream', chunks: n, status: 'uploading', createdAt: serverTimestamp() });
+  for (let i = 0; i < n; i++) {
+    await setDoc(doc(db, 'files', ref.id, 'chunks', String(i).padStart(4, '0')), { i, data: b64.slice(i * CHUNK, (i + 1) * CHUNK) });
+    setUpload(label, (i + 1) / n);
+  }
+  await updateDoc(ref, { status: 'ready' });
+  setUpload(null);
+  return ref.id;
+}
+const blobCache = new Map();
+async function getFileUrl(fid, type) {
+  if (blobCache.has(fid)) return blobCache.get(fid);
+  const s = await getDocs(query(collection(db, 'files', fid, 'chunks'), orderBy('i', 'asc')));
+  const url = URL.createObjectURL(new Blob(s.docs.map(d => b64ToBytes(d.data().data)), { type: type || 'application/octet-stream' }));
+  blobCache.set(fid, url);
+  return url;
+}
+async function deleteFile(fid) {
+  const s = await getDocs(collection(db, 'files', fid, 'chunks'));
+  const bt = writeBatch(db); s.docs.forEach(d => bt.delete(d.ref)); bt.delete(doc(db, 'files', fid)); await bt.commit();
+}
+function videoMeta(file) {
+  return new Promise(res => {
+    const v = document.createElement('video'), url = URL.createObjectURL(file);
+    let done = false; const finish = r => { if (done) return; done = true; URL.revokeObjectURL(url); res(r); };
+    v.muted = true; v.playsInline = true; v.preload = 'auto'; v.src = url;
+    v.onloadeddata = () => { try { v.currentTime = Math.min(1, (v.duration || 2) / 2); } catch (e) { finish({ thumb: '', duration: v.duration || 0 }); } };
+    v.onseeked = () => {
+      try {
+        const k = Math.min(1, 480 / (v.videoWidth || 480)), c = document.createElement('canvas');
+        c.width = Math.round((v.videoWidth || 480) * k); c.height = Math.round((v.videoHeight || 270) * k);
+        c.getContext('2d').drawImage(v, 0, 0, c.width, c.height);
+        finish({ thumb: c.toDataURL('image/jpeg', 0.7), duration: v.duration || 0 });
+      } catch (e) { finish({ thumb: '', duration: v.duration || 0 }); }
+    };
+    v.onerror = () => finish({ thumb: '', duration: 0 });
+    setTimeout(() => finish({ thumb: '', duration: 0 }), 8000);
+  });
+}
+function parseVideoLink(raw) {
+  const u = raw.trim(); let m;
+  if ((m = u.match(/(?:youtube\.com\/(?:watch\?(?:.*&)?v=|shorts\/|embed\/|live\/)|youtu\.be\/)([\w-]{11})/))) return { provider: 'youtube', vid: m[1] };
+  if ((m = u.match(/rutube\.ru\/(?:video|play\/embed|shorts)\/([a-f0-9]{32})/i))) return { provider: 'rutube', vid: m[1].toLowerCase() };
+  if ((m = u.match(/(?:vk\.com|vk\.ru|vkvideo\.ru)\/(?:.*[?&]z=)?video(-?\d+)_(\d+)/))) return { provider: 'vk', vid: m[1] + '_' + m[2] };
+  if (/^https:\/\/\S+\.(mp4|webm|mov)(\?\S*)?$/i.test(u)) return { provider: 'direct', vid: u };
+  return null;
+}
+function embedSrc(v) {
+  if (v.provider === 'youtube' && /^[\w-]{11}$/.test(v.vid)) return 'https://www.youtube.com/embed/' + v.vid;
+  if (v.provider === 'rutube' && /^[a-f0-9]{32}$/.test(v.vid)) return 'https://rutube.ru/play/embed/' + v.vid;
+  if (v.provider === 'vk' && /^-?\d+_\d+$/.test(v.vid)) { const [o, i] = v.vid.split('_'); return `https://vk.com/video_ext.php?oid=${o}&id=${i}&hd=2`; }
+  return '';
+}
+const safeImg = s => typeof s === 'string' && (s.startsWith('data:image/') || s.startsWith('https://')) ? s : '';
+function videoThumb(v) {
+  if (v.thumb) return safeImg(v.thumb);
+  if (v.provider === 'youtube' && /^[\w-]{11}$/.test(v.vid)) return `https://i.ytimg.com/vi/${v.vid}/hqdefault.jpg`;
+  return '';
+}
+async function copyText(t, okMsg) {
+  try { await navigator.clipboard.writeText(t); toast(okMsg || 'Скопировано'); }
+  catch (e) { toast('Не получилось скопировать: ' + t); }
+}
+
 function errText(e) {
   const code = e?.code || '';
   const map = {
@@ -117,7 +207,11 @@ function errText(e) {
     'auth/unauthorized-domain': 'Этот адрес сайта не разрешён: Firebase → Authentication → Settings → Authorized domains.',
     'auth/popup-blocked': 'Браузер заблокировал окно входа. Разрешите всплывающие окна.',
     'auth/account-exists-with-different-credential': 'Эта почта уже привязана к другому способу входа.',
-    'permission-denied': 'Нет доступа. Проверьте, что правила Firestore опубликованы (firebase deploy).',
+    'auth/credential-already-in-use': 'Этот аккаунт Google уже привязан к другой странице VСмске.',
+    'auth/provider-already-linked': 'Этот способ входа уже подключён.',
+    'auth/requires-recent-login': 'Для этого действия выйдите и войдите заново.',
+    'auth/email-already-exists': 'Эта почта уже занята другим аккаунтом.',
+    'permission-denied':'Нет доступа. Проверьте, что правила Firestore опубликованы (firebase deploy).',
     'unavailable': 'Сервер недоступен. Проверьте интернет.',
   };
   if (map[code]) return map[code];
@@ -131,6 +225,16 @@ function errBox(e) {
 }
 
 const I = {
+  video:'<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="3"/><path d="M10 9.5v5l4.5-2.5z" fill="currentColor"/></svg>',
+  album:'<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="3"/><circle cx="9" cy="9" r="1.8"/><path d="M21 15l-5-5L5 21"/></svg>',
+  disk:'<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M7 18h10a4 4 0 0 0 .5-8 6 6 0 0 0-11.5 1.5A3.3 3.3 0 0 0 7 18z"/></svg>',
+  vid:'<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M12 3l8 3v6c0 4.5-3.4 8-8 9-4.6-1-8-4.5-8-9V6z"/><path d="M8.5 12l2.5 2.5 4.5-5" stroke-linecap="round"/></svg>',
+  gear:'<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>',
+  more:'<svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="19" cy="12" r="2"/></svg>',
+  play:'<svg width="34" height="34" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>',
+  file:'<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M14 3H6v18h12V7z"/><path d="M14 3v4h4"/></svg>',
+  link:'<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1"/><path d="M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"/></svg>',
+  upload:'<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 16V4M7 9l5-5 5 5M4 20h16"/></svg>',
   home:'<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 4-6 8-6s8 2 8 6"/></svg>',
   feed:'<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="3" y="4" width="18" height="16" rx="3"/><path d="M7 9h10M7 13h10M7 17h6"/></svg>',
   msg:'<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M4 5h16v11H9l-5 4z"/></svg>',
@@ -156,10 +260,13 @@ const S = {
   loading: false, viewError: null,
   openComments: new Set(), confirm: null,
   draft: { text: '', image: '' }, editColor: null, editPhoto: undefined, busy: false,
+  upload: null, videoDraft: null, linkForm: false, videoOwner: null, watchId: null, videoSrc: null, videoErr: null,
+  albumsOwner: null, albumId: null, lightbox: null, lightboxImg: null, preview: null, newAlbum: false,
 };
 const cache = {
   users: new Map(), feed: new Map(), wall: [], comments: new Map(),
   chats: [], messages: [], incoming: [], outgoing: [], people: [],
+  videos: [], video: null, albums: [], album: null, photos: [], files: [],
 };
 let globalUnsubs = [], viewUnsubs = [], commentUnsubs = new Map(), routedOnce = false;
 const uid = () => S.authUser?.uid;
@@ -168,7 +275,8 @@ const app = document.getElementById('app');
 function stopAll() {
   globalUnsubs.forEach(u => u()); globalUnsubs = [];
   clearView(); routedOnce = false;
-  Object.assign(cache, { users: new Map(), feed: new Map(), wall: [], comments: new Map(), chats: [], messages: [], incoming: [], outgoing: [], people: [] });
+  Object.assign(cache, { users: new Map(), feed: new Map(), wall: [], comments: new Map(), chats: [], messages: [], incoming: [], outgoing: [], people: [],
+    videos: [], video: null, albums: [], album: null, photos: [], files: [] });
 }
 function clearView() {
   viewUnsubs.forEach(u => u()); viewUnsubs = [];
@@ -255,9 +363,17 @@ function route() {
   S.confirm = null;
   if (v === 'id') { S.view = 'profile'; S.profileId = arg || uid(); }
   else if (v === 'im') { S.view = 'messages'; S.chatWith = arg || null; }
-  else if (['feed', 'friends', 'people', 'edit'].includes(v)) S.view = v;
+  else if (v === 'video' && arg) { S.view = 'watch'; S.watchId = arg; }
+  else if (v === 'video') { S.view = 'video'; S.videoOwner = null; }
+  else if (v === 'videos') { S.view = 'video'; S.videoOwner = arg || uid(); }
+  else if (v === 'albums') { S.view = 'albums'; S.albumsOwner = arg || uid(); }
+  else if (v === 'album' && arg) { S.view = 'album'; S.albumId = arg; }
+  else if (['feed', 'friends', 'people', 'edit', 'disk', 'vid', 'settings', 'more'].includes(v)) S.view = v;
   else S.view = 'feed';
   if (S.view !== 'edit') { S.editColor = null; S.editPhoto = undefined; }
+  if (S.view !== 'watch') { S.videoSrc = null; S.videoErr = null; }
+  S.lightbox = null; S.lightboxImg = null; S.preview = null; S.linkForm = false; S.newAlbum = false;
+  if (S.view !== 'video') S.videoDraft = null;
   attachView();
   window.scrollTo(0, 0);
 }
@@ -307,6 +423,57 @@ function attachView() {
       cache.people = s.docs.map(data).filter(u => rest.every(w => (u.search || []).includes(w.slice(0, 15))));
       S.loading = false; render();
     }).catch(onViewErr);
+  } else if (S.view === 'video') {
+    cache.videos = [];
+    const q = S.videoOwner
+      ? query(collection(db, 'videos'), where('ownerId', '==', S.videoOwner), limit(200))
+      : query(collection(db, 'videos'), orderBy('createdAt', 'desc'), limit(60));
+    if (S.videoOwner) ensureUsers([S.videoOwner]);
+    viewUnsubs.push(onSnapshot(q, s => {
+      cache.videos = s.docs.map(data).sort((a, b) => ms(b.createdAt) - ms(a.createdAt));
+      ensureUsers(cache.videos.map(v => v.ownerId)); S.loading = false; render();
+    }, onViewErr));
+  } else if (S.view === 'watch') {
+    cache.video = null; cache.videos = [];
+    const wid = S.watchId;
+    viewUnsubs.push(onSnapshot(doc(db, 'videos', wid), s => {
+      cache.video = s.exists() ? data(s) : { id: wid, missing: true }; S.loading = false;
+      const v = cache.video;
+      if (!v.missing) {
+        ensureUsers([v.ownerId]);
+        if (v.source === 'file' && !S.videoSrc && !S.videoErr && !S.videoLoading) {
+          S.videoLoading = true;
+          getFileUrl(v.fileId, v.type || 'video/mp4')
+            .then(u => { if (S.watchId === wid) S.videoSrc = u; })
+            .catch(e => { if (S.watchId === wid) S.videoErr = e; })
+            .finally(() => { S.videoLoading = false; render(); });
+        }
+      }
+      render();
+    }, onViewErr));
+    getDocs(query(collection(db, 'videos'), orderBy('createdAt', 'desc'), limit(12))).then(s => {
+      cache.videos = s.docs.map(data).filter(v => v.id !== wid); ensureUsers(cache.videos.map(v => v.ownerId)); render();
+    }).catch(console.error);
+  } else if (S.view === 'albums') {
+    cache.albums = []; ensureUsers([S.albumsOwner]);
+    viewUnsubs.push(onSnapshot(query(collection(db, 'albums'), where('ownerId', '==', S.albumsOwner), limit(200)), s => {
+      cache.albums = s.docs.map(data).sort((a, b) => ms(b.createdAt) - ms(a.createdAt)); S.loading = false; render();
+    }, onViewErr));
+  } else if (S.view === 'album') {
+    cache.album = null; cache.photos = [];
+    const aid = S.albumId;
+    viewUnsubs.push(onSnapshot(doc(db, 'albums', aid), s => {
+      cache.album = s.exists() ? data(s) : { id: aid, missing: true };
+      if (!cache.album.missing) ensureUsers([cache.album.ownerId]); render();
+    }, onViewErr));
+    viewUnsubs.push(onSnapshot(query(collection(db, 'photos'), where('albumId', '==', aid), limit(500)), s => {
+      cache.photos = s.docs.map(data).sort((a, b) => ms(b.createdAt) - ms(a.createdAt)); S.loading = false; render();
+    }, onViewErr));
+  } else if (S.view === 'disk') {
+    cache.files = [];
+    viewUnsubs.push(onSnapshot(query(collection(db, 'files'), where('ownerId', '==', id), where('kind', '==', 'disk'), limit(500)), s => {
+      cache.files = s.docs.map(data).sort((a, b) => ms(b.createdAt) - ms(a.createdAt)); S.loading = false; render();
+    }, onViewErr));
   } else S.loading = false;
   render();
 }
@@ -330,7 +497,17 @@ const avatar = (u, size = 40, link = true) => {
 const nameLink = u => u && !u.deleted ? `<a class="name" href="#id/${esc(u.id)}" style="color:var(--fg);font-weight:600">${esc(u.name)}</a>` : `<span class="name">${esc(u?.name || '…')}</span>`;
 const loadingBox = () => `<div class="card loading"><div class="spin"></div></div>`;
 
+const playerKey = () => { const v = cache.video; return `${S.watchId}:${v ? (v.missing ? 'x' : v.source) : '-'}:${S.videoSrc ? 1 : 0}:${S.videoErr ? 1 : 0}`; };
 function render() {
+  // на странице видео не пересоздаём плеер, чтобы ролик не перезапускался
+  if (S.phase === 'app' && S.view === 'watch' && !S.viewError) {
+    const pl = app.querySelector('#player');
+    if (pl && pl.dataset.key === playerKey()) {
+      const swap = (sel, html) => { const el = app.querySelector(sel); if (el) el.outerHTML = html; };
+      swap('nav.nav', navHtml()); swap('#watchInfo', watchInfo()); swap('#watchSide', watchSide());
+      return;
+    }
+  }
   // сохраняем то, что пользователь печатает, между перерисовками
   const active = document.activeElement, focusId = active?.id, sel = active?.selectionStart;
   const kept = {};
@@ -397,10 +574,31 @@ function viewOnboarding() {
     </div></div></div>`;
 }
 
-function shell() {
+function navHtml() {
   const me = S.me, unread = cache.chats.filter(isUnread).length, reqs = cache.incoming.length;
-  const on = v => S.view === v && (v !== 'profile' || S.profileId === me.id) ? 'on' : '';
-  const nav = (v, href, icon, label, badge = 0) => `<a class="navlink ${on(v)}" href="#${href}">${icon}<span>${label}</span>${badge ? `<span class="badge">${badge}</span>` : ''}</a>`;
+  const groups = { video: ['video', 'watch'], albums: ['albums', 'album'] };
+  const on = v => (groups[v] ? groups[v].includes(S.view) : S.view === v) && (v !== 'profile' || S.profileId === me.id) ? 'on' : '';
+  const nav = (v, href, icon, label, badge = 0, cls = '') => `<a class="navlink ${on(v)} ${cls}" href="#${href}">${icon}<span>${label}</span>${badge ? `<span class="badge">${badge}</span>` : ''}</a>`;
+  const moreOn = ['more', 'profile', 'people', 'albums', 'album', 'disk', 'vid', 'settings', 'edit'].includes(S.view) ? 'on' : '';
+  return `<nav class="nav">
+      ${nav('profile', 'id/' + me.id, I.home, 'Моя страница', 0, 'm-hide')}
+      ${nav('feed', 'feed', I.feed, 'Новости')}
+      ${nav('messages', 'im', I.msg, 'Сообщения', unread)}
+      ${nav('friends', 'friends', I.friends, 'Друзья', reqs)}
+      ${nav('people', 'people', I.people, 'Люди', 0, 'm-hide')}
+      ${nav('video', 'video', I.video, 'Видео')}
+      ${nav('albums', 'albums', I.album, 'Альбомы', 0, 'm-hide')}
+      ${nav('disk', 'disk', I.disk, 'Диск', 0, 'm-hide')}
+      <a class="navlink m-only ${moreOn}" href="#more">${I.more}<span>Ещё</span></a>
+      <hr>
+      ${nav('vid', 'vid', I.vid, 'VС ID', 0, 'm-hide sub')}
+      ${nav('settings', 'settings', I.gear, 'Настройки', 0, 'm-hide sub')}
+      <button class="sub desk" data-act="logout">${I.out}<span>Выйти</span></button>
+    </nav>`;
+}
+
+function shell() {
+  const me = S.me;
   let main;
   if (S.viewError) main = errBox(S.viewError);
   else if (S.view === 'profile') main = viewProfile();
@@ -408,7 +606,16 @@ function shell() {
   else if (S.view === 'friends') main = viewFriends();
   else if (S.view === 'people') main = viewPeople();
   else if (S.view === 'edit') main = viewEdit();
+  else if (S.view === 'video') main = viewVideo();
+  else if (S.view === 'watch') main = viewWatch();
+  else if (S.view === 'albums') main = viewAlbums();
+  else if (S.view === 'album') main = viewAlbum();
+  else if (S.view === 'disk') main = viewDisk();
+  else if (S.view === 'vid') main = viewVID();
+  else if (S.view === 'settings') main = viewSettings();
+  else if (S.view === 'more') main = viewMore();
   else main = viewFeed();
+  const up = S.upload ? `<div class="card pad upbar" role="status"><div class="row"><span class="grow">${esc(S.upload.label)}</span><b class="tnum">${Math.round(S.upload.pct * 100)}%</b></div><div class="bar"><i style="width:${Math.round(S.upload.pct * 100)}%"></i></div><div class="hint">Не закрывайте страницу до конца загрузки</div></div>` : '';
   return `
   <header class="top"><div class="top-in">
     <a class="logo" href="#feed" aria-label="VСмске, новости"><span class="logo-mark">VС</span><span class="logo-word" style="color:var(--fg)">VСмске</span></a>
@@ -416,17 +623,231 @@ function shell() {
     <a class="top-me" href="#id/${esc(me.id)}" style="color:var(--fg)">${avatar(me, 32, false)}<span>${esc(me.name.split(' ')[0])}</span></a>
   </div></header>
   <div class="wrap">
-    <nav class="nav">
-      ${nav('profile', 'id/' + me.id, I.home, 'Моя страница')}
-      ${nav('feed', 'feed', I.feed, 'Новости')}
-      ${nav('messages', 'im', I.msg, 'Сообщения', unread)}
-      ${nav('friends', 'friends', I.friends, 'Друзья', reqs)}
-      ${nav('people', 'people', I.people, 'Люди')}
-      <hr>
-      <button class="sub desk" data-act="logout">${I.out}<span>Выйти</span></button>
-    </nav>
-    <main>${main}</main>
+    ${navHtml()}
+    <main>${up}${main}</main>
+  </div>
+  ${overlay()}`;
+}
+
+/* ---------- Окна поверх страницы: просмотр фото и файлов ---------- */
+function overlay() {
+  if (S.view === 'album' && S.lightbox !== null) {
+    const p = cache.photos[S.lightbox]; if (!p) return '';
+    const own = cache.album?.ownerId === S.me.id, n = cache.photos.length;
+    return `<div class="ov" data-act="ovclose"><div class="ov-in" data-stop="1">
+      <div class="ov-top"><span class="tnum">${S.lightbox + 1} из ${n}</span><span class="grow"></span>
+        ${own ? `<button class="btn ${S.confirm === 'photo:' + p.id ? 'danger' : 'ghost'} light" data-act="delphoto" data-id="${esc(p.id)}">${S.confirm === 'photo:' + p.id ? 'Удалить фото?' : 'Удалить'}</button>` : ''}
+        <button class="btn ghost light" data-act="ovclose" aria-label="Закрыть">✕</button></div>
+      <div class="ov-img">${n > 1 ? `<button class="ov-nav l" data-act="lbstep" data-d="-1" aria-label="Предыдущее">‹</button>` : ''}
+        <img src="${esc(safeImg(S.lightboxImg) || safeImg(p.thumb))}" alt="Фото ${S.lightbox + 1}">
+        ${n > 1 ? `<button class="ov-nav r" data-act="lbstep" data-d="1" aria-label="Следующее">›</button>` : ''}</div>
+      <div class="ov-cap muted small">${ago(p.createdAt)}</div>
+    </div></div>`;
+  }
+  if (S.view === 'disk' && S.preview) {
+    const f = S.preview, t = f.type || '';
+    const body = !f.url ? '<div class="spin"></div>' : t.startsWith('image/') ? `<img src="${f.url}" alt="${esc(f.name)}">`
+      : t.startsWith('video/') ? `<video src="${f.url}" controls playsinline autoplay></video>`
+      : t.startsWith('audio/') ? `<audio src="${f.url}" controls autoplay></audio>` : '';
+    return `<div class="ov" data-act="ovclose"><div class="ov-in" data-stop="1">
+      <div class="ov-top"><span class="grow" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(f.name)}</span>
+        ${f.url ? `<a class="btn sec" href="${f.url}" download="${esc(f.name)}">Скачать</a>` : ''}
+        <button class="btn ghost light" data-act="ovclose" aria-label="Закрыть">✕</button></div>
+      <div class="ov-img">${body}</div></div></div>`;
+  }
+  return '';
+}
+
+/* ---------- ВС Видео ---------- */
+function videoCard(v) {
+  const o = U(v.ownerId), th = videoThumb(v);
+  return `<a class="vcard" href="#video/${esc(v.id)}">
+    <div class="vthumb">${th ? `<img src="${esc(th)}" alt="" loading="lazy" referrerpolicy="no-referrer">` : `<span class="vph">${I.play}</span>`}
+      ${v.duration ? `<span class="vdur tnum">${fmtDur(v.duration)}</span>` : v.source === 'link' ? `<span class="vdur">${v.provider === 'youtube' ? 'YouTube' : v.provider === 'rutube' ? 'Rutube' : v.provider === 'vk' ? 'VK Видео' : 'Ссылка'}</span>` : ''}</div>
+    <div class="vmeta"><b>${esc(v.title || 'Без названия')}</b><span class="muted small">${esc(o?.name || '')}${o ? ' · ' : ''}${ago(v.createdAt)}</span></div>
+  </a>`;
+}
+
+function viewVideo() {
+  const me = S.me, owner = S.videoOwner, ou = owner ? U(owner) : null, mine = owner === me.id;
+  const tab = (href, l, on) => `<a class="${on ? 'on' : ''}" href="#${href}">${l}</a>`;
+  const d = S.videoDraft;
+  const adder = !owner || mine ? `<div class="card pad form">
+      <div class="row" style="flex-wrap:wrap;gap:8px"><b class="grow">Добавить видео</b>
+        <button class="btn sec" data-act="pickvideo" ${S.upload ? 'disabled' : ''}>${I.upload}<span>Загрузить файл</span></button>
+        <button class="btn sec" data-act="linkform">${I.link}<span>По ссылке</span></button></div>
+      ${S.linkForm ? `<form class="form" data-form="videolink">
+        <div class="field"><label for="vlUrl">Ссылка на YouTube, Rutube или VK Видео</label><input id="vlUrl" type="url" required placeholder="https://youtu.be/…" autocomplete="off"></div>
+        <div class="field"><label for="vlTitle">Название</label><input id="vlTitle" required maxlength="120"></div>
+        <div class="row"><button class="btn" type="submit">Добавить</button><button type="button" class="btn ghost" data-act="linkform">Отмена</button></div>
+      </form>` : ''}
+      ${d ? `<form class="form" data-form="videofile">
+        <div class="vdraft">${d.thumb ? `<img src="${d.thumb}" alt="Кадр из видео">` : `<span class="vph">${I.play}</span>`}
+          <div class="small muted">${esc(d.file.name)}<br>${fmtSize(d.file.size)}${d.duration ? ' · ' + fmtDur(d.duration) : ''}</div></div>
+        <div class="field"><label for="vfTitle">Название</label><input id="vfTitle" required maxlength="120" value="${esc(d.title)}"></div>
+        <div class="field"><label for="vfDesc">Описание</label><textarea id="vfDesc" rows="2" maxlength="2000" placeholder="Необязательно"></textarea></div>
+        <div class="row"><button class="btn" type="submit" ${S.upload ? 'disabled' : ''}>Опубликовать</button><button type="button" class="btn ghost" data-act="canceldraft">Отмена</button></div>
+      </form>` : `<p class="hint" style="margin:0">Файл до ${fmtSize(LIMITS.video)}: примерно 20–40 секунд с телефона. Длинные ролики добавляйте ссылкой, они не занимают место.</p>`}
+    </div>` : '';
+  return `<div class="card"><div class="pad" style="padding-bottom:0"><h1 class="h brandh">ВС Видео</h1></div>
+      <div class="tabs">${tab('video', 'Все видео', !owner)}${tab('videos/' + me.id, 'Мои видео', mine)}${owner && !mine ? tab('videos/' + owner, esc(ou?.name || '…'), true) : ''}</div></div>
+    ${adder}
+    ${S.loading ? loadingBox() : cache.videos.length ? `<div class="vgrid">${cache.videos.map(videoCard).join('')}</div>`
+      : `<div class="card empty"><b>${mine ? 'Вы ещё не добавили видео' : owner ? 'Здесь пока нет видео' : 'Видео пока нет'}</b><span>Загрузите короткий ролик или добавьте ссылку.</span></div>`}`;
+}
+
+function viewWatch() {
+  const v = cache.video;
+  if (!v) return loadingBox();
+  if (v.missing) return `<div class="card empty"><b>Видео удалено или не найдено</b><a class="btn sec" href="#video">Все видео</a></div>`;
+  let player;
+  if (v.source === 'link' && v.provider === 'direct') player = `<video src="${esc(v.vid)}" controls playsinline></video>`;
+  else if (v.source === 'link') { const src = embedSrc(v); player = src ? `<iframe src="${esc(src)}" allow="autoplay; encrypted-media; fullscreen; picture-in-picture" allowfullscreen referrerpolicy="strict-origin-when-cross-origin" title="${esc(v.title)}"></iframe>` : '<div class="empty">Ссылка не поддерживается</div>'; }
+  else if (S.videoErr) player = `<div class="empty" style="color:#fff">Не удалось загрузить видео. ${esc(errText(S.videoErr))}</div>`;
+  else if (S.videoSrc) player = `<video src="${S.videoSrc}" controls playsinline ${safeImg(v.thumb) ? `poster="${esc(v.thumb)}"` : ''}></video>`;
+  else player = `<div class="loading" style="color:#fff"><div class="spin"></div><span class="small">Загружаем видео…</span></div>`;
+  return `<div class="watch">
+    <div class="watch-main">
+      <div class="player" id="player" data-key="${esc(playerKey())}">${player}</div>
+      ${watchInfo()}
+    </div>
+    ${watchSide()}
   </div>`;
+}
+function watchInfo() {
+  const v = cache.video; if (!v || v.missing) return '<div id="watchInfo"></div>';
+  const o = U(v.ownerId), me = S.me, likes = v.likes || [], liked = likes.includes(me.id), own = v.ownerId === me.id;
+  return `<div class="card pad" id="watchInfo" style="display:flex;flex-direction:column;gap:10px">
+    <h1 class="h" style="font-size:20px;text-wrap:balance">${esc(v.title || 'Без названия')}</h1>
+    <div class="row" style="flex-wrap:wrap">${avatar(o, 40)}<div class="grow">${nameLink(o)}<div class="muted small">${ago(v.createdAt)}</div></div>
+      <button class="pill ${liked ? 'liked' : ''}" data-act="likevideo" data-id="${esc(v.id)}" aria-pressed="${liked}">${liked ? I.heart : I.heartO}${likes.length || ''}</button>
+      <button class="pill" data-act="copylink" data-id="${esc(v.id)}">${I.link}Ссылка</button>
+      ${own ? `<button class="btn ${S.confirm === 'video:' + v.id ? 'danger' : 'ghost'} small" data-act="delvideo" data-id="${esc(v.id)}">${S.confirm === 'video:' + v.id ? 'Удалить видео?' : 'Удалить'}</button>` : ''}</div>
+    ${v.description ? `<div class="post-text">${esc(v.description)}</div>` : ''}
+  </div>`;
+}
+function watchSide() {
+  const list = cache.videos.slice(0, 10);
+  return `<aside class="watch-side" id="watchSide"><b>Ещё видео</b>${list.length ? list.map(videoCard).join('') : '<span class="muted small">Других видео пока нет</span>'}</aside>`;
+}
+
+/* ---------- ВС Альбомы ---------- */
+function viewAlbums() {
+  const me = S.me, owner = S.albumsOwner, ou = U(owner), own = owner === me.id;
+  return `<div class="card pad"><div class="row" style="flex-wrap:wrap"><div class="grow"><h1 class="h brandh">${own ? 'ВС Альбомы' : 'Альбомы'}</h1>
+      ${own ? '' : `<div class="muted small">${ou ? nameLink(ou) : '…'}</div>`}</div>
+      ${own ? `<button class="btn" data-act="newalbum">Создать альбом</button>` : ''}</div>
+      ${own && S.newAlbum ? `<form class="form" data-form="album" style="margin-top:14px">
+        <div class="field"><label for="alTitle">Название альбома</label><input id="alTitle" required maxlength="80" placeholder="Лето на Волге"></div>
+        <div class="row"><button class="btn" type="submit">Создать</button><button type="button" class="btn ghost" data-act="newalbum">Отмена</button></div></form>` : ''}
+    </div>
+    ${S.loading ? loadingBox() : cache.albums.length ? `<div class="agrid">${cache.albums.map(a => `<a class="acard" href="#album/${esc(a.id)}">
+        <div class="acover">${safeImg(a.cover) ? `<img src="${esc(a.cover)}" alt="" loading="lazy">` : `<span class="vph">${I.album}</span>`}</div>
+        <b>${esc(a.title)}</b><span class="muted small">${a.count || 0} ${plural(a.count || 0, 'фото', 'фото', 'фото')}</span></a>`).join('')}</div>`
+      : `<div class="card empty"><b>${own ? 'У вас пока нет альбомов' : 'Альбомов пока нет'}</b>${own ? '<span>Создайте альбом и добавьте в него фотографии.</span>' : ''}</div>`}`;
+}
+
+function viewAlbum() {
+  const a = cache.album, me = S.me;
+  if (!a) return loadingBox();
+  if (a.missing) return `<div class="card empty"><b>Альбом удалён или не найден</b><a class="btn sec" href="#albums">Мои альбомы</a></div>`;
+  const own = a.ownerId === me.id, o = U(a.ownerId);
+  return `<div class="card pad"><div class="row" style="flex-wrap:wrap">
+      <a class="icon-btn" href="#albums/${esc(a.ownerId)}" aria-label="Ко всем альбомам">${I.back}</a>
+      <div class="grow"><h1 class="h">${esc(a.title)}</h1><div class="muted small">${o ? esc(o.name) + ' · ' : ''}${cache.photos.length} ${plural(cache.photos.length, 'фотография', 'фотографии', 'фотографий')}</div></div>
+      ${own ? `<button class="btn" data-act="pickphotos" ${S.upload ? 'disabled' : ''}>${I.upload}<span>Добавить фото</span></button>
+        <button class="btn ${S.confirm === 'album:' + a.id ? 'danger' : 'ghost'}" data-act="delalbum" data-id="${esc(a.id)}">${S.confirm === 'album:' + a.id ? 'Удалить альбом со всеми фото?' : 'Удалить альбом'}</button>` : ''}
+    </div></div>
+    ${S.loading ? loadingBox() : cache.photos.length ? `<div class="pgrid">${cache.photos.map((p, i) => `<button class="pcell" data-act="lightbox" data-i="${i}" aria-label="Открыть фото ${i + 1}"><img src="${esc(safeImg(p.thumb))}" alt="" loading="lazy"></button>`).join('')}</div>`
+      : `<div class="card empty"><b>В альбоме пока нет фото</b>${own ? '<span>Можно выбрать сразу несколько.</span>' : ''}</div>`}`;
+}
+
+/* ---------- ВС Диск ---------- */
+function fileIcon(t = '') {
+  const k = t.startsWith('image/') ? 'Фото' : t.startsWith('video/') ? 'Видео' : t.startsWith('audio/') ? 'Аудио' : t.includes('pdf') ? 'PDF' : /zip|rar|7z|tar/.test(t) ? 'Архив' : /word|document|text/.test(t) ? 'Текст' : 'Файл';
+  return `<span class="ficon" data-k="${k}">${I.file}<i>${k}</i></span>`;
+}
+function viewDisk() {
+  const used = cache.files.reduce((s, f) => s + (f.size || 0), 0);
+  return `<div class="card pad"><div class="row" style="flex-wrap:wrap"><div class="grow"><h1 class="h brandh">ВС Диск</h1>
+      <div class="muted small">Видите только вы · занято ${fmtSize(used)} · до ${fmtSize(LIMITS.disk)} на файл</div></div>
+      <button class="btn" data-act="pickdisk" ${S.upload ? 'disabled' : ''}>${I.upload}<span>Загрузить файл</span></button></div></div>
+    ${S.loading ? loadingBox() : cache.files.length ? `<div class="card ulist">${cache.files.map(f => `<div class="uitem">${fileIcon(f.type)}
+        <div class="grow" style="min-width:0"><div style="font-weight:600;overflow-wrap:anywhere">${esc(f.name)}</div>
+          <div class="muted small tnum">${fmtSize(f.size || 0)} · ${ago(f.createdAt)}${f.status !== 'ready' ? ' · <span style="color:var(--like)">загрузка не завершена</span>' : ''}</div></div>
+        <div class="acts">${f.status === 'ready' ? `<button class="btn sec" data-act="openfile" data-id="${esc(f.id)}">${/^(image|video|audio)\//.test(f.type || '') ? 'Открыть' : 'Скачать'}</button>` : ''}
+          <button class="btn ${S.confirm === 'file:' + f.id ? 'danger' : 'ghost'}" data-act="delfile" data-id="${esc(f.id)}">${S.confirm === 'file:' + f.id ? 'Удалить?' : 'Удалить'}</button></div>
+      </div>`).join('')}</div>`
+      : `<div class="card empty"><b>На диске пока пусто</b><span>Загружайте документы, фото и архивы до ${fmtSize(LIMITS.disk)}. Их видите только вы.</span></div>`}`;
+}
+
+/* ---------- VС ID ---------- */
+function viewVID() {
+  const u = S.authUser, me = S.me, prov = (u.providerData || []).map(p => p.providerId);
+  const hasPass = prov.includes('password'), hasGoogle = prov.includes('google.com');
+  const fmtDate = s => { if (!s) return '—'; const d = new Date(s); return d.getDate() + ' ' + MONTHS[d.getMonth()] + ' ' + d.getFullYear() + ' в ' + hm(d); };
+  const link = location.origin + location.pathname + '#id/' + me.id;
+  return `<div class="vid-card">
+      <div class="vid-brand"><span class="logo-mark">VС</span><span>VС ID</span></div>
+      <div class="row">${avatar(me, 64, false)}<div class="grow" style="min-width:0"><div class="vid-name">${esc(me.name)}</div><div class="vid-sub">@${esc(me.nick)}</div></div></div>
+      <div class="vid-id"><span>Ваш VС ID</span><code>${esc(me.id)}</code><button class="btn sec small" data-act="copy" data-text="${esc(me.id)}">Скопировать</button></div>
+    </div>
+    <div class="card"><div class="pad" style="padding-bottom:4px"><h2 class="h" style="font-size:16px">Способы входа</h2></div>
+      <div class="ulist">
+        <div class="uitem"><span class="ficon">${I.google}</span><div class="grow"><b>Google</b><div class="muted small">${hasGoogle ? esc((u.providerData.find(p => p.providerId === 'google.com') || {}).email || 'Подключён') : 'Не подключён'}</div></div>
+          <div class="acts">${hasGoogle ? '<span class="ok-chip">Подключён</span>' : `<button class="btn sec" data-act="linkgoogle">Привязать Google</button>`}</div></div>
+        <div class="uitem"><span class="ficon">${I.msg}</span><div class="grow"><b>Почта и пароль</b><div class="muted small">${esc(u.email || '')}</div></div>
+          <div class="acts">${hasPass ? `<span class="ok-chip">Подключено</span><button class="btn ghost" data-act="resetpass">Сменить пароль</button>` : ''}</div></div>
+        ${!hasPass && u.email ? `<form class="form pad" data-form="setpass" style="padding-top:0">
+          <div class="field"><label for="spPass">Придумайте пароль, чтобы входить и по почте</label><input id="spPass" type="password" minlength="6" required autocomplete="new-password" placeholder="Не меньше 6 символов"></div>
+          <div><button class="btn" type="submit">Установить пароль</button></div></form>` : ''}
+      </div></div>
+    <div class="card pad"><h2 class="h" style="font-size:16px;margin-bottom:10px">Почта</h2>
+      <div class="row" style="flex-wrap:wrap"><span class="grow">${esc(u.email || 'Не указана')}</span>
+        ${u.emailVerified ? '<span class="ok-chip">Подтверждена</span>' : u.email ? `<button class="btn sec" data-act="verify">Подтвердить почту</button>` : ''}</div></div>
+    <div class="card pad"><h2 class="h" style="font-size:16px;margin-bottom:10px">Активность</h2>
+      <dl class="facts" style="padding:0;border:0">
+        <dt>Аккаунт создан</dt><dd>${fmtDate(u.metadata?.creationTime)}</dd>
+        <dt>Последний вход</dt><dd>${fmtDate(u.metadata?.lastSignInTime)}</dd>
+        <dt>Ссылка на страницу</dt><dd><button class="linkbtn" data-act="copy" data-text="${esc(link)}">Скопировать ссылку</button></dd>
+      </dl></div>
+    <div class="row"><a class="btn ghost" href="#settings">Настройки</a><span class="grow"></span><button class="btn danger" data-act="logout">Выйти из аккаунта</button></div>`;
+}
+
+/* ---------- Настройки ---------- */
+function viewSettings() {
+  const me = S.me, th = lsGet('vs_theme') || 'system', pr = me.privacy || {};
+  const seg = (act, cur, opts) => `<div class="seg" role="radiogroup">${opts.map(([v, l]) => `<button role="radio" aria-checked="${cur === v}" class="${cur === v ? 'on' : ''}" data-act="${act}" data-v="${v}">${l}</button>`).join('')}</div>`;
+  return `<div class="card pad"><h1 class="h brandh">Настройки</h1></div>
+    <div class="card pad set"><h2 class="h" style="font-size:16px">Оформление</h2>
+      <div class="set-row"><span class="grow">Тема</span>${seg('theme', th, [['system', 'Как в системе'], ['light', 'Светлая'], ['dark', 'Тёмная']])}</div>
+      <p class="hint" style="margin:0">Сохраняется на этом устройстве.</p></div>
+    <div class="card pad set"><h2 class="h" style="font-size:16px">Приватность</h2>
+      <div class="set-row"><span class="grow">Кто может писать мне сообщения</span>${seg('pmsg', pr.messages || 'all', [['all', 'Все'], ['friends', 'Только друзья']])}</div>
+      <div class="set-row"><span class="grow">Кто может писать на моей стене</span>${seg('pwall', pr.wall || 'friends', [['friends', 'Друзья'], ['me', 'Только я']])}</div></div>
+    <div class="card"><div class="ulist">
+      <a class="uitem setlink" href="#edit"><span class="ficon">${I.home}</span><span class="grow">Редактировать страницу</span>›</a>
+      <a class="uitem setlink" href="#vid"><span class="ficon">${I.vid}</span><span class="grow">VС ID: вход, почта, пароль</span>›</a>
+      <button class="uitem setlink" data-act="logout"><span class="ficon">${I.out}</span><span class="grow" style="text-align:left">Выйти из аккаунта</span></button>
+    </div></div>
+    <p class="hint" style="text-align:center">VСмске ${VERSION}</p>`;
+}
+
+/* ---------- Мобильное меню «Ещё» ---------- */
+function viewMore() {
+  const me = S.me;
+  const item = (href, icon, label, sub = '') => `<a class="uitem setlink" href="#${href}"><span class="ficon">${icon}</span><span class="grow"><b>${label}</b>${sub ? `<br><span class="muted small">${sub}</span>` : ''}</span>›</a>`;
+  return `<a class="card pad row" href="#id/${esc(me.id)}" style="color:var(--fg)">${avatar(me, 52, false)}<div class="grow"><b>${esc(me.name)}</b><div class="muted small">Моя страница</div></div>›</a>
+    <div class="card ulist">
+      ${item('people', I.people, 'Люди', 'Поиск и новые пользователи')}
+      ${item('albums', I.album, 'ВС Альбомы', 'Ваши фотографии')}
+      ${item('disk', I.disk, 'ВС Диск', 'Личные файлы')}
+      ${item('videos/' + me.id, I.video, 'Мои видео')}
+    </div>
+    <div class="card ulist">
+      ${item('vid', I.vid, 'VС ID', 'Вход, почта, пароль')}
+      ${item('settings', I.gear, 'Настройки', 'Тема и приватность')}
+    </div>`;
 }
 
 /* Новости */
@@ -533,7 +954,7 @@ function viewProfile() {
   </div>
   <div class="two">
     <div>
-      ${own || isFriend ? composer(u.id, own ? 'Что у вас нового?' : 'Написать на стене у ' + u.name.split(' ')[0]) : ''}
+      ${own || (isFriend && (u.privacy?.wall || 'friends') !== 'me') ? composer(u.id, own ? 'Что у вас нового?' : 'Написать на стене у ' + u.name.split(' ')[0]) : ''}
       <div class="card pad" style="padding-block:12px"><b>${own ? 'Мои записи' : 'Стена'}</b> <span class="muted">${posts.length}</span></div>
       ${S.loading ? loadingBox() : posts.length ? posts.map(postCard).join('') : `<div class="card empty">${own ? 'Напишите первую запись: её увидят ваши друзья.' : 'На стене пока нет записей'}</div>`}
     </div>
@@ -541,6 +962,10 @@ function viewProfile() {
       <div class="card pad"><div class="row"><b class="grow">Друзья</b><span class="muted small">${friendIds.length}</span></div>
         ${friends.length ? `<div class="fgrid">${friends.map(f => `<a href="#id/${esc(f.id)}" style="color:var(--fg);display:flex;flex-direction:column;align-items:center;gap:6px;font-size:13px;min-width:0">${avatar(f, 52, false)}<span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:100%">${esc(f.name.split(' ')[0])}</span></a>`).join('')}</div>`
           : `<p class="muted small" style="margin:8px 0 0">${own ? 'Найдите знакомых в разделе «Люди»' : 'Пока никого'}</p>`}
+      </div>
+      <div class="card ulist">
+        <a class="uitem setlink" href="#albums/${esc(u.id)}"><span class="ficon">${I.album}</span><span class="grow">Фотоальбомы</span>›</a>
+        <a class="uitem setlink" href="#videos/${esc(u.id)}"><span class="ficon">${I.video}</span><span class="grow">Видео</span>›</a>
       </div>
     </div>
   </div>`;
@@ -615,7 +1040,8 @@ function viewMessages() {
     chatHtml = `<div class="chat-head"><a class="icon-btn back" href="#im" aria-label="К диалогам">${I.back}</a>${avatar(o, 38)}
       <div class="grow">${nameLink(o)}<div class="muted small">${esc(o.city || '@' + (o.nick || ''))}</div></div></div>
       <div class="msgs">${body}</div>
-      ${o.deleted ? '' : `<form class="chat-form" data-form="msg" data-to="${esc(o.id)}"><input id="msgInput" placeholder="Сообщение" maxlength="2000" autocomplete="off"><button class="btn" aria-label="Отправить">${I.send}</button></form>`}`;
+      ${o.deleted ? '' : o.privacy?.messages === 'friends' && !(S.me.friends || []).includes(o.id) && !cache.messages.length
+        ? `<div class="chat-form muted small" style="justify-content:center">${esc(o.name.split(' ')[0])} принимает сообщения только от друзей</div>` : `<form class="chat-form" data-form="msg" data-to="${esc(o.id)}"><input id="msgInput" placeholder="Сообщение" maxlength="2000" autocomplete="off"><button class="btn" aria-label="Отправить">${I.send}</button></form>`}`;
   }
   return `${S.chatsError ? errBox(S.chatsError) : ''}<div class="card im ${S.chatWith ? 'open' : ''}">
     <div class="dlist">${list.length ? list.map(c => {
@@ -633,9 +1059,10 @@ function viewMessages() {
 let pickTarget = null;
 document.addEventListener('click', async e => {
   const b = e.target.closest('[data-act]'); if (!b) return;
+  const stop = e.target.closest('[data-stop]'); if (stop && !stop.contains(b)) return;
   const { act, id } = b.dataset;
   const twoStep = key => { if (S.confirm === key) { S.confirm = null; return true; } S.confirm = key; render(); return false; };
-  if (!['delpost', 'unfriend'].includes(act)) S.confirm = null;
+  if (!['delpost', 'unfriend', 'delvideo', 'delalbum', 'delfile', 'delphoto'].includes(act)) S.confirm = null;
   try {
     switch (act) {
       case 'authtab': S.authTab = b.dataset.tab; S.authError = ''; S.fatal = null; render(); break;
@@ -679,8 +1106,67 @@ document.addEventListener('click', async e => {
         bt.update(doc(db, 'posts', b.dataset.post), { commentCount: increment(-1) });
         await bt.commit(); break;
       }
-      case 'attach': pickTarget = 'post'; document.getElementById('filePick').click(); break;
-      case 'avatar': pickTarget = 'avatar'; document.getElementById('filePick').click(); break;
+      case 'attach': pick('post', 'image/*', false); break;
+      case 'avatar': pick('avatar', 'image/*', false); break;
+      case 'pickvideo': pick('video', 'video/*', false); break;
+      case 'pickdisk': pick('disk', '', false); break;
+      case 'pickphotos': pick('photos', 'image/*', true); break;
+      case 'canceldraft': S.videoDraft = null; render(); break;
+      case 'linkform': S.linkForm = !S.linkForm; render(); if (S.linkForm) document.getElementById('vlUrl')?.focus(); break;
+      case 'copy': await copyText(b.dataset.text); break;
+      case 'copylink': await copyText(location.origin + location.pathname + '#video/' + id, 'Ссылка на видео скопирована'); break;
+      case 'likevideo': {
+        const v = cache.video; if (!v) return;
+        await updateDoc(doc(db, 'videos', id), { likes: (v.likes || []).includes(uid()) ? arrayRemove(uid()) : arrayUnion(uid()) });
+        break;
+      }
+      case 'delvideo': {
+        if (!twoStep('video:' + id)) return;
+        const v = cache.video, bt = writeBatch(db); bt.delete(doc(db, 'videos', id)); await bt.commit();
+        if (v?.source === 'file' && v.fileId) await deleteFile(v.fileId).catch(console.error);
+        toast('Видео удалено'); go('videos/' + uid()); break;
+      }
+      case 'newalbum': S.newAlbum = !S.newAlbum; render(); if (S.newAlbum) document.getElementById('alTitle')?.focus(); break;
+      case 'delalbum': {
+        if (!twoStep('album:' + id)) return;
+        const ps = await getDocs(query(collection(db, 'photos'), where('albumId', '==', id)));
+        const refs = []; ps.docs.forEach(d => { refs.push(d.ref); refs.push(doc(db, 'photoFull', d.id)); });
+        for (const c of chunk(refs, 400)) { const bt = writeBatch(db); c.forEach(r => bt.delete(r)); await bt.commit(); }
+        const bt = writeBatch(db); bt.delete(doc(db, 'albums', id)); await bt.commit();
+        toast('Альбом удалён'); go('albums'); break;
+      }
+      case 'lightbox': openLightbox(+b.dataset.i); break;
+      case 'lbstep': { const n = cache.photos.length; if (n) openLightbox((S.lightbox + Number(b.dataset.d) + n) % n); break; }
+      case 'ovclose': S.lightbox = null; S.lightboxImg = null; S.preview = null; render(); break;
+      case 'delphoto': {
+        if (!twoStep('photo:' + id)) return;
+        const a = cache.album, bt = writeBatch(db);
+        bt.delete(doc(db, 'photos', id)); bt.delete(doc(db, 'photoFull', id));
+        const patch = { count: increment(-1), updatedAt: serverTimestamp() };
+        if (a.coverId === id) { const next = cache.photos.find(p => p.id !== id); patch.cover = next ? next.thumb : ''; patch.coverId = next ? next.id : ''; }
+        bt.update(doc(db, 'albums', a.id), patch);
+        await bt.commit(); S.lightbox = null; S.lightboxImg = null; render(); toast('Фото удалено'); break;
+      }
+      case 'openfile': {
+        const f = cache.files.find(x => x.id === id); if (!f) return;
+        const view = /^(image|video|audio)\//.test(f.type || '');
+        if (view) { S.preview = { id: f.id, name: f.name, type: f.type, url: null }; render(); }
+        else toast('Готовим файл…');
+        const url = await getFileUrl(f.id, f.type);
+        if (view) { if (S.preview?.id === f.id) { S.preview.url = url; render(); } }
+        else { const a = document.createElement('a'); a.href = url; a.download = f.name; document.body.appendChild(a); a.click(); a.remove(); }
+        break;
+      }
+      case 'delfile': if (!twoStep('file:' + id)) return; await deleteFile(id); toast('Файл удалён'); break;
+      case 'linkgoogle': {
+        await linkWithPopup(auth.currentUser, new GoogleAuthProvider());
+        await auth.currentUser.reload(); S.authUser = auth.currentUser; toast('Google привязан'); render(); break;
+      }
+      case 'resetpass': await sendPasswordResetEmail(auth, auth.currentUser.email); toast('Письмо для смены пароля отправлено на ' + auth.currentUser.email); break;
+      case 'verify': await sendEmailVerification(auth.currentUser); toast('Письмо отправлено на ' + auth.currentUser.email + '. Откройте ссылку и войдите заново.'); break;
+      case 'theme': lsSet('vs_theme', b.dataset.v); applyTheme(b.dataset.v); render(); break;
+      case 'pmsg': await updateDoc(doc(db, 'users', uid()), { 'privacy.messages': b.dataset.v }); toast('Сохранено'); break;
+      case 'pwall': await updateDoc(doc(db, 'users', uid()), { 'privacy.wall': b.dataset.v }); toast('Сохранено'); break;
       case 'unattach': S.draft.image = ''; render(); break;
       case 'noavatar': S.editPhoto = ''; render(); break;
       case 'color': S.editColor = b.dataset.c; render(); break;
@@ -721,13 +1207,69 @@ async function friendRemove(id) {
   await bt.commit(); cache.users.delete(id); toast('Удалено из друзей');
 }
 
+function pick(target, accept, multiple) {
+  pickTarget = target;
+  const el = document.getElementById('filePick');
+  el.accept = accept; el.multiple = multiple; el.click();
+}
+
+async function openLightbox(i) {
+  const p = cache.photos[i]; if (!p) return;
+  S.lightbox = i; S.lightboxImg = null; render();
+  try { const s = await getDoc(doc(db, 'photoFull', p.id)); if (S.lightbox === i && s.exists()) { S.lightboxImg = s.data().image; render(); } }
+  catch (e) { console.error(e); }
+}
+document.addEventListener('keydown', e => {
+  if (S.lightbox === null && !S.preview) return;
+  if (e.key === 'Escape') { S.lightbox = null; S.lightboxImg = null; S.preview = null; render(); }
+  else if (S.lightbox !== null && (e.key === 'ArrowRight' || e.key === 'ArrowLeft')) {
+    const n = cache.photos.length; openLightbox((S.lightbox + (e.key === 'ArrowRight' ? 1 : -1) + n) % n);
+  }
+});
+
+async function uploadPhotos(files) {
+  const a = cache.album; if (!a || a.ownerId !== uid() || S.upload) return;
+  let done = 0, coverSet = !!a.coverId;
+  for (const f of files) {
+    setUpload(`Загружаем фото ${done + 1} из ${files.length}`, done / files.length);
+    try {
+      const thumb = await compress(f, 400, 60000, true), image = await compress(f, 1600, MAX_POST_IMG);
+      const ref = doc(collection(db, 'photos')), bt = writeBatch(db);
+      bt.set(ref, { ownerId: uid(), albumId: a.id, thumb, createdAt: serverTimestamp() });
+      bt.set(doc(db, 'photoFull', ref.id), { ownerId: uid(), image });
+      const patch = { count: increment(1), updatedAt: serverTimestamp() };
+      if (!coverSet) { patch.cover = thumb; patch.coverId = ref.id; coverSet = true; }
+      bt.update(doc(db, 'albums', a.id), patch);
+      await bt.commit(); done++;
+    } catch (err) { console.error(err); toast('Не получилось загрузить ' + f.name); }
+  }
+  setUpload(null);
+  toast(`Загружено ${done} фото`);
+}
+
 document.getElementById('filePick').addEventListener('change', async e => {
-  const f = e.target.files[0]; e.target.value = ''; if (!f) return;
+  const files = [...e.target.files]; e.target.value = ''; if (!files.length) return;
+  const f = files[0];
   try {
-    if (pickTarget === 'avatar') S.editPhoto = await compress(f, 256, MAX_AVATAR, true);
-    else S.draft.image = await compress(f, 1280, MAX_POST_IMG);
-    render();
-  } catch (err) { toast(err.message === 'too-big' ? 'Фото слишком большое даже после сжатия. Выберите другое.' : 'Не получилось открыть картинку. Выберите JPG или PNG.'); }
+    if (pickTarget === 'avatar') { S.editPhoto = await compress(f, 256, MAX_AVATAR, true); render(); }
+    else if (pickTarget === 'post') { S.draft.image = await compress(f, 1280, MAX_POST_IMG); render(); }
+    else if (pickTarget === 'photos') await uploadPhotos(files);
+    else if (pickTarget === 'video') {
+      if (!(f.type || '').startsWith('video/')) { toast('Выберите видеофайл'); return; }
+      if (f.size > LIMITS.video) { toast(`Видео весит ${fmtSize(f.size)}, а можно до ${fmtSize(LIMITS.video)}. Добавьте его ссылкой с YouTube, Rutube или VK.`); return; }
+      toast('Готовим видео…');
+      const m = await videoMeta(f);
+      S.videoDraft = { file: f, thumb: m.thumb, duration: m.duration, title: f.name.replace(/\.[^.]+$/, '').slice(0, 120) };
+      S.linkForm = false; render();
+    } else if (pickTarget === 'disk') {
+      if (S.upload) return;
+      if (f.size > LIMITS.disk) { toast(`Файл весит ${fmtSize(f.size)}, а можно до ${fmtSize(LIMITS.disk)}`); return; }
+      await putFile(f, 'disk', `Загружаем «${f.name}»`); toast('Файл загружен');
+    }
+  } catch (err) {
+    console.error(err); setUpload(null);
+    toast(err.message === 'too-big' ? 'Фото слишком большое даже после сжатия. Выберите другое.' : err.code ? errText(err) : 'Не получилось открыть файл.');
+  }
 });
 
 document.addEventListener('submit', async e => {
@@ -764,6 +1306,28 @@ document.addEventListener('submit', async e => {
         break;
       }
       case 'search': S.query = v('q'); go('people'); break;
+      case 'videolink': {
+        const p = parseVideoLink(v('vlUrl'));
+        if (!p) { toast('Не узнали ссылку. Подходят YouTube, Rutube, VK Видео или прямая ссылка на .mp4'); return; }
+        const ref = await addDoc(collection(db, 'videos'), { ownerId: uid(), title: v('vlTitle'), description: '', source: 'link', provider: p.provider, vid: p.vid, likes: [], createdAt: serverTimestamp() });
+        S.linkForm = false; toast('Видео добавлено'); go('video/' + ref.id); break;
+      }
+      case 'videofile': {
+        const d = S.videoDraft; if (!d || S.upload) return;
+        const title = v('vfTitle'), description = v('vfDesc');
+        const fileId = await putFile(d.file, 'video', 'Загружаем видео');
+        const ref = await addDoc(collection(db, 'videos'), { ownerId: uid(), title, description, source: 'file', fileId, type: d.file.type || 'video/mp4', thumb: d.thumb, duration: d.duration, size: d.file.size, likes: [], createdAt: serverTimestamp() });
+        S.videoDraft = null; toast('Видео опубликовано'); go('video/' + ref.id); break;
+      }
+      case 'album': {
+        const ref = await addDoc(collection(db, 'albums'), { ownerId: uid(), title: v('alTitle'), count: 0, cover: '', coverId: '', createdAt: serverTimestamp(), updatedAt: serverTimestamp() });
+        S.newAlbum = false; go('album/' + ref.id); break;
+      }
+      case 'setpass': {
+        const u = auth.currentUser;
+        await linkWithCredential(u, EmailAuthProvider.credential(u.email, document.getElementById('spPass').value));
+        await u.reload(); S.authUser = auth.currentUser; toast('Пароль установлен. Теперь можно входить и по почте.'); render(); break;
+      }
       case 'post': {
         const text = v('postText');
         if (!text && !S.draft.image) { toast('Напишите текст или прикрепите фото'); return; }
