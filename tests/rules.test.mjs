@@ -282,3 +282,62 @@ test('закреплённая запись, обложка, отметка пр
   await assertSucceeds(updateDoc(doc(f, 'users', A), { pinned: 'p1', cover: 'sunset', notifSeenAt: serverTimestamp() }));
   await assertFails(updateDoc(doc(f, 'users', A), { cover: 'url(evil)' }));
 });
+
+/* ---------- 1.5: админ, сообщества, голосовые ---------- */
+test('админом себя не сделать; админ удаляет чужое', async () => {
+  await assertFails(updateDoc(doc(db(B), 'users', B), { admin: true }));
+  await assertFails(deleteDoc(doc(db(B), 'posts', 'p1')));
+  await env.withSecurityRulesDisabled(ctx => updateDoc(doc(ctx.firestore(), 'users', B), { admin: true }));
+  await assertSucceeds(updateDoc(doc(db(B), 'users', B), { status: 'я админ' }));
+  await assertFails(updateDoc(doc(db(B), 'users', B), { admin: false }));
+  await assertSucceeds(deleteDoc(doc(db(B), 'posts', 'p1', 'comments', 'c1')));
+  await assertSucceeds(deleteDoc(doc(db(B), 'posts', 'p1')));
+  await assertSucceeds(deleteDoc(doc(db(B), 'videos', 'v1')));
+});
+test('регистрация с admin: true запрещена', async () => {
+  const f = db('dddd'), b = writeBatch(f);
+  b.set(doc(f, 'usernames', 'dima'), { uid: 'dddd' });
+  b.set(doc(f, 'users', 'dddd'), { ...profile('dima'), admin: true, createdAt: serverTimestamp() });
+  await assertFails(b.commit());
+});
+async function makeGroup(owner) {
+  const f = db(owner), ref = doc(collection(f, 'groups')), b = writeBatch(f);
+  b.set(ref, { name: 'Клуб', about: '', photo: '', cover: 'blue', ownerId: owner, admins: [owner], membersCount: 1, createdAt: serverTimestamp() });
+  b.update(doc(f, 'users', owner), { groups: arrayUnion(ref.id) });
+  await b.commit();
+  return ref.id;
+}
+test('сообщество: создать, подписаться, отписаться, писать может только админ', async () => {
+  const gid = await assertSucceeds(makeGroup(A));
+  const fb = db(B), sub = writeBatch(fb);
+  sub.update(doc(fb, 'users', B), { groups: arrayUnion(gid) });
+  sub.update(doc(fb, 'groups', gid), { membersCount: increment(1) });
+  await assertSucceeds(sub.commit());
+  await assertFails(updateDoc(doc(fb, 'groups', gid), { membersCount: increment(1) }));
+  await assertFails(updateDoc(doc(fb, 'groups', gid), { name: 'Взлом' }));
+  await assertSucceeds(updateDoc(doc(db(A), 'groups', gid), { name: 'Клуб 2', about: 'о нас' }));
+  await assertSucceeds(setDoc(doc(collection(db(A), 'posts')), post(A, gid, { groupId: gid })));
+  await assertFails(setDoc(doc(collection(fb, 'posts')), post(B, gid, { groupId: gid })));
+  await assertFails(setDoc(doc(collection(fb, 'posts')), post(B, gid)));
+  const un = writeBatch(fb);
+  un.update(doc(fb, 'users', B), { groups: arrayRemove(gid) });
+  un.update(doc(fb, 'groups', gid), { membersCount: increment(-1) });
+  await assertSucceeds(un.commit());
+  await assertFails(deleteDoc(doc(fb, 'groups', gid)));
+  await assertSucceeds(updateDoc(doc(db(A), 'groups', gid), { admins: [A, B] }));
+  await assertSucceeds(setDoc(doc(collection(fb, 'posts')), post(B, gid, { groupId: gid })));
+  await assertSucceeds(deleteDoc(doc(db(A), 'groups', gid)));
+});
+test('нельзя создать сообщество от чужого имени или с накруткой', async () => {
+  const f = db(B), ref = doc(collection(f, 'groups')), b = writeBatch(f);
+  b.set(ref, { name: 'Клуб', about: '', photo: '', cover: 'blue', ownerId: B, admins: [B], membersCount: 999, createdAt: serverTimestamp() });
+  b.update(doc(f, 'users', B), { groups: arrayUnion(ref.id) });
+  await assertFails(b.commit());
+});
+test('голосовое сообщение', async () => {
+  const f = db(B), cid = [A, B].sort().join('_'), b = writeBatch(f);
+  b.set(doc(collection(f, 'chats', cid, 'messages')), { from: B, text: '', audio: 'data:audio/webm;base64,AAAA', dur: 3.5, createdAt: serverTimestamp() });
+  b.set(doc(f, 'chats', cid), { members: [A, B].sort(), lastText: '🎤 Голосовое', lastFrom: B, lastAt: serverTimestamp(), read: { [B]: serverTimestamp() } }, { merge: true });
+  await assertSucceeds(b.commit());
+  await assertFails(setDoc(doc(collection(f, 'chats', cid, 'messages')), { from: B, text: '', audio: 'javascript:alert(1)', dur: 3, createdAt: serverTimestamp() }));
+});
