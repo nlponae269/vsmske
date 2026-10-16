@@ -19,7 +19,7 @@ const profile = (nick, extra = {}) => ({
 });
 
 before(async () => {
-  env = await initializeTestEnvironment({ projectId: 'demo-vsmske', firestore: { rules: readFileSync(new URL('../firestore.rules', import.meta.url), 'utf8') } });
+  env = await initializeTestEnvironment({ projectId: 'demo-vsmske', firestore: { rules: readFileSync(new URL('../' + (process.env.RULES_FILE || 'firestore.rules'), import.meta.url), 'utf8') } });
 });
 after(() => env.cleanup());
 beforeEach(async () => {

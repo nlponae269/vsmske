@@ -1,0 +1,193 @@
+rules_version='2';
+service cloud.firestore{
+match /databases/{database}/documents{
+function rd(){return resource.data;}
+function qar(){return request.auth!=null;}
+function qbb(){return request.auth.uid;}
+function qbc(){return request.resource.data;}
+function qan(){return qbc().diff(rd()).affectedKeys();}
+function qac(keys){return qan().hasOnly(keys);}
+function qba(v,min,max){return v is string&&v.size()>=min&&v.size()<=max;}
+function qaz(v){return v==request.time;}
+function qav(c,id){return /databases/$(database)/documents/$(c)/$(id);}
+function qay(id){return get(qav('users',id)).data;}
+function qao(){return qay(qbb()).get('admin',false) in [true,'true'];}
+function qaj(){
+let b=qay(qbb()).get('ban',null);
+return b==null||(b.get('until',null)!=null&&b.until<=request.time);
+}
+function qag(id){return id!=qbb()&&qbb() in qay(id).get('blocked',[]);}
+function qau(id){return get(qav('groups',id)).data;}
+function qae(id){return qbb() in qau(id).admins;}
+function qai(before,after){
+return after.toSet().difference(before.toSet()).union(before.toSet().difference(after.toSet())).hasOnly([qbb()]);
+}
+match /usernames/{nick}{
+allow read: if true;
+allow create: if qar()&&nick.matches('^[a-z0-9._]{3,30}$')&&qbc().keys().hasOnly(['uid'])&&qbc().uid==qbb()&&getAfter(qav('users',qbb())).data.nick==nick;
+allow delete: if qar()&&rd().uid==qbb()&&getAfter(qav('users',qbb())).data.nick!=nick;
+}
+function qaa(u){
+return qba(u.name,1,60)&&u.nick is string&&u.nick.matches('^[a-z0-9._]{3,30}$')&&qba(u.get('city',''),0,40)&&qba(u.get('status',''),0,120)&&qba(u.get('about',''),0,600)&&qba(u.get('photo',''),0,130000)&&qba(u.get('color',''),0,20)&&u.get('search',[]) is list&&u.get('search',[]).size()<=150&&u.get('friends',[]) is list&&u.get('friends',[]).size()<=5000&&u.get('privacy',{}) is map&&u.get('privacy',{}).keys().hasOnly(['messages','wall'])&&u.get('privacy',{}).get('messages','all') in ['all','friends']&&u.get('privacy',{}).get('wall','friends') in ['friends','me']&&(!('lastSeen' in u)||u.lastSeen is timestamp)&&(!('notifSeenAt' in u)||u.notifSeenAt is timestamp)&&qba(u.get('pinned',''),0,40)&&u.get('cover','blue') in ['blue','sunset','sea','night','rose','gold']&&u.get('groups',[]) is list&&u.get('groups',[]).size()<=500&&u.get('blocked',[]) is list&&u.get('blocked',[]).size()<=500&&(u.get('bday','')==''||(u.bday is string&&u.bday.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$')));
+}
+function qal(u){return getAfter(qav('usernames',u.nick)).data.uid==qbb();}
+function qak(before,after){
+let added=after.toSet().difference(before.toSet());
+return added.size()==0||(added.size()==1&&added.hasOnly([after[after.size()-1]])&&exists(qav('friendRequests',after[after.size()-1]+'_'+qbb())));
+}
+match /users/{uid}{
+allow read: if qar();
+allow create: if qar()&&uid==qbb()&&qaa(qbc())&&qbc().friends.size()==0&&!('admin' in qbc())&&!('ban' in qbc())&&qaz(qbc().createdAt)&&qal(qbc());
+allow update: if qar()&&uid==qbb()&&qaa(qbc())&&!qan().hasAny(['createdAt','admin','ban'])&&(!qan().hasAny(['nick'])||qal(qbc()))&&(!qan().hasAny(['friends'])||qak(rd().get('friends',[]),qbc().friends));
+match /guests/{gid}{
+allow read,delete: if qar()&&uid==qbb();
+allow create,update: if qar()&&gid==qbb()&&uid!=qbb()&&qbc().keys().hasOnly(['at'])&&qaz(qbc().at);
+}
+allow update: if qar()&&uid!=qbb()&&qao()&&qac(['ban'])&&!(rd().get('admin',false) in [true,'true'])&&(!('ban' in qbc())||(qbc().ban is map&&qbc().ban.keys().hasOnly(['until','reason','by','at'])&&(qbc().ban.until==null||qbc().ban.until is timestamp)&&qba(qbc().ban.reason,0,300)&&qbc().ban.by==qbb()&&qaz(qbc().ban.at)));
+allow update: if qar()&&uid!=qbb()&&qac(['friends'])&&qai(rd().get('friends',[]),qbc().friends)&&(!(qbb() in qbc().friends)||exists(qav('friendRequests',uid+'_'+qbb())));
+}
+match /friendRequests/{rid}{
+allow read: if qar()&&(rd().from==qbb()||rd().to==qbb());
+allow create: if qar()&&qbc().keys().hasOnly(['from','to','createdAt'])&&qbc().from==qbb()&&qbc().to is string&&qbc().to!=qbb()&&rid==qbb()+'_'+qbc().to&&qaz(qbc().createdAt)&&exists(qav('users',qbc().to))&&qaj()&&!qag(qbc().to);
+allow delete: if qar()&&(rd().from==qbb()||rd().to==qbb());
+}
+function qab(wallId){
+return wallId==qbb()||(qbb() in qay(wallId).get('friends',[])&&qay(wallId).get('privacy',{}).get('wall','friends')!='me'&&!qag(wallId));
+}
+function qah(p){
+return p is map&&p.keys().hasOnly(['q','options','votes'])&&qba(p.q,1,200)&&p.options is list&&p.options.size()>=2&&p.options.size()<=6&&p.votes=={};
+}
+match /posts/{pid}{
+allow read: if qar();
+allow create: if qar()&&qaj()&&qbc().keys().hasOnly(['authorId','wallId','groupId','text','image','images','tags','poll','repostOf','likes','commentCount','createdAt'])&&(!('images' in qbc())||(qbc().images is list&&qbc().images.size()>=2&&qbc().images.size()<=4))&&(!('tags' in qbc())||(qbc().tags is list&&qbc().tags.size()<=10))&&qbc().authorId==qbb()&&qbc().wallId is string&&(!('repostOf' in qbc())||(qba(qbc().repostOf,1,40)&&exists(qav('posts',qbc().repostOf))))&&(('groupId' in qbc())?(qbc().groupId==qbc().wallId&&qae(qbc().groupId)):qab(qbc().wallId))&&qba(qbc().text,0,4000)&&qba(qbc().image,0,750000)&&(qbc().text.size()>0||qbc().image.size()>0||'images' in qbc()||'poll' in qbc()||'repostOf' in qbc())&&(!('poll' in qbc())||qah(qbc().poll))&&qbc().likes==[]&&qbc().commentCount==0&&qaz(qbc().createdAt);
+allow update: if qar()&&qaj()&&qac(['poll'])&&qbc().poll.diff(rd().poll).affectedKeys().hasOnly(['votes'])&&qbc().poll.votes.diff(rd().poll.votes).affectedKeys().hasOnly([qbb()])&&(!(qbb() in qbc().poll.votes)||(qbc().poll.votes[qbb()] is int&&qbc().poll.votes[qbb()]>=0&&qbc().poll.votes[qbb()]<rd().poll.options.size()));
+allow update: if qar()&&qaj()&&qac(['likes'])&&qai(rd().likes,qbc().likes);
+allow update: if qar()&&qaj()&&qac(['reposts'])&&qbc().reposts==rd().get('reposts',0)+1;
+allow update: if qar()&&qac(['commentCount'])&&(qbc().commentCount==rd().commentCount+1||qbc().commentCount==rd().commentCount-1);
+allow update: if qar()&&rd().authorId==qbb()&&qac(['text','editedAt','tags'])&&qba(qbc().text,0,4000)&&(!('tags' in qbc())||(qbc().tags is list&&qbc().tags.size()<=10))&&(qbc().text.size()>0||rd().image.size()>0||'images' in rd()||'poll' in rd()||'repostOf' in rd())&&qaz(qbc().editedAt);
+allow delete: if qar()&&(rd().authorId==qbb()||rd().wallId==qbb()||(('groupId' in rd())&&qae(rd().groupId))||qao());
+match /comments/{cid}{
+allow read: if qar();
+allow create: if qar()&&qaj()&&qbc().keys().hasOnly(['authorId','text','createdAt'])&&qbc().authorId==qbb()&&qba(qbc().text,1,1000)&&qaz(qbc().createdAt)&&!qag(get(qav('posts',pid)).data.authorId);
+allow update: if qar()&&qaj()&&qac(['likes'])&&qai(rd().get('likes',[]),qbc().likes);
+allow delete: if qar()&&(rd().authorId==qbb()||get(qav('posts',pid)).data.authorId==qbb()||get(qav('posts',pid)).data.wallId==qbb()||qao());
+}
+}
+function qad(cid){return cid.matches('^g_.*');}
+function qaw(cid){return !qad(cid)&&qbb() in cid.split('_');}
+function qap(cid){return qad(cid)?qbb() in get(qav('chats',cid)).data.members:qaw(cid);}
+function qax(cid){return cid.split('_')[0]==qbb()?cid.split('_')[1]:cid.split('_')[0];}
+function qaq(before,after){
+return after is map&&after.diff(before).affectedKeys().hasOnly([qbb()])&&after.get(qbb(),request.time)==request.time;
+}
+function qas(){
+return (!qan().hasAny(['lastText','lastFrom','lastAt'])||(qbc().lastFrom==qbb()&&qba(qbc().lastText,0,200)))&&(!qan().hasAny(['lastAt'])||qaz(qbc().lastAt))&&(!qan().hasAny(['read'])||qaq(rd().get('read',{}),qbc().read));
+}
+match /chats/{cid}{
+allow read: if qar()&&qbb() in rd().members;
+allow create: if qar()&&qaw(cid)&&cid.split('_').size()==2&&qbc().keys().hasOnly(['members','lastText','lastFrom','lastAt','read'])&&qbc().members==cid.split('_')&&qbc().lastFrom==qbb()&&qba(qbc().lastText,0,200)&&qaz(qbc().lastAt)&&qaq({},qbc().read);
+allow update: if qar()&&qaw(cid)&&qac(['lastText','lastFrom','lastAt','read'])&&qas();
+allow create: if qar()&&qad(cid)&&qaj()&&qbc().keys().hasOnly(['members','group','name','ownerId','lastText','lastFrom','lastAt','read'])&&qbc().group==true&&qba(qbc().name,1,60)&&qbc().ownerId==qbb()&&qbc().members is list&&qbb() in qbc().members&&qbc().members.size()>=2&&qbc().members.size()<=50&&qbc().lastFrom==qbb()&&qba(qbc().lastText,0,200)&&qaz(qbc().lastAt)&&qaq({},qbc().read);
+allow update: if qar()&&qad(cid)&&qbb() in rd().members&&qac(['lastText','lastFrom','lastAt','read'])&&qas();
+allow update: if qar()&&qad(cid)&&rd().ownerId==qbb()&&qac(['name','members','lastText','lastFrom','lastAt','read'])&&qas()&&qba(qbc().name,1,60)&&qbc().members is list&&qbb() in qbc().members&&qbc().members.size()<=50;
+allow update: if qar()&&qad(cid)&&rd().ownerId!=qbb()&&qac(['members'])&&qai(rd().members,qbc().members)&&!(qbb() in qbc().members);
+allow delete: if qar()&&qad(cid)&&rd().ownerId==qbb();
+function qam(){
+return qad(cid)||qax(cid)==qbb()||qay(qax(cid)).get('privacy',{}).get('messages','all')!='friends'||qbb() in qay(qax(cid)).get('friends',[])||exists(qav('chats',cid));
+}
+function qat(f){
+return f is map&&f.keys().hasOnly(['from','name','text'])&&qba(f.from,0,40)&&qba(f.name,0,60)&&qba(f.text,0,2000);
+}
+match /messages/{mid}{
+allow read: if qar()&&qap(cid);
+allow create: if qar()&&qap(cid)&&qam()&&qaj()&&(qad(cid)||!qag(qax(cid)))&&qbc().keys().hasOnly(['from','text','image','audio','dur','replyTo','fwd','createdAt'])&&(!('audio' in qbc())||(qba(qbc().audio,1,700000)&&qbc().audio.matches('^data:audio/.*')&&qbc().dur is number&&qbc().dur<=61))&&qbc().from==qbb()&&qba(qbc().text,0,2000)&&qba(qbc().get('image',''),0,400000)&&(!('replyTo' in qbc())||(qbc().replyTo is map&&qbc().replyTo.keys().hasOnly(['id','from','text'])&&qba(qbc().replyTo.text,0,120)&&qba(qbc().replyTo.id,1,40)))&&(!('fwd' in qbc())||qat(qbc().fwd))&&(qbc().text.size()>0||qbc().get('image','').size()>0||'audio' in qbc()||'fwd' in qbc())&&qaz(qbc().createdAt);
+allow delete: if qar()&&rd().from==qbb();
+allow update: if qar()&&qap(cid)&&qac(['reacts'])&&qbc().reacts is map&&qbc().reacts.diff(rd().get('reacts',{})).affectedKeys().hasOnly([qbb()])&&(!(qbb() in qbc().reacts)||qbc().reacts[qbb()] in ['❤️','😂','👍','😮','😢','🔥']);
+}
+}
+function qaf(g){
+return qba(g.name,1,60)&&qba(g.get('about',''),0,600)&&qba(g.get('photo',''),0,130000)&&g.get('cover','blue') in ['blue','sunset','sea','night','rose','gold'];
+}
+match /groups/{gid}{
+allow read: if qar();
+allow create: if qar()&&qaj()&&qbc().keys().hasOnly(['name','about','photo','cover','ownerId','admins','membersCount','createdAt'])&&qaf(qbc())&&qbc().ownerId==qbb()&&qbc().admins==[qbb()]&&qbc().membersCount==1&&qaz(qbc().createdAt)&&gid in getAfter(qav('users',qbb())).data.get('groups',[]);
+allow update: if qar()&&qbb() in rd().admins&&qac(['name','about','photo','cover'])&&qaf(qbc());
+allow update: if qar()&&rd().ownerId==qbb()&&qac(['admins'])&&qbc().admins is list&&qbb() in qbc().admins&&qbc().admins.size()<=20;
+allow update: if qar()&&qac(['membersCount'])&&((qbc().membersCount==rd().membersCount+1&&!(gid in qay(qbb()).get('groups',[]))&&gid in getAfter(qav('users',qbb())).data.get('groups',[]))||(qbc().membersCount==rd().membersCount-1&&gid in qay(qbb()).get('groups',[])&&!(gid in getAfter(qav('users',qbb())).data.get('groups',[]))));
+allow delete: if qar()&&(rd().ownerId==qbb()||qao());
+}
+match /notifs/{nid}{
+allow read: if qar()&&rd().to==qbb();
+allow create: if qar()&&qbc().keys().hasOnly(['to','from','type','postId','text','createdAt'])&&qbc().from==qbb()&&qbc().to is string&&qbc().to!=qbb()&&qbc().type in ['like','comment','wall','friend','repost','answer','best']&&qba(qbc().postId,0,40)&&qba(qbc().text,0,120)&&qaz(qbc().createdAt);
+allow delete: if qar()&&(rd().to==qbb()||rd().from==qbb());
+}
+match /stories/{sid}{
+allow read: if qar();
+allow create: if qar()&&qaj()&&qbc().keys().hasOnly(['ownerId','image','text','views','createdAt'])&&qbc().ownerId==qbb()&&qba(qbc().image,1,450000)&&qbc().image.matches('^data:image/.*')&&qba(qbc().text,0,200)&&qbc().views=={}&&qaz(qbc().createdAt);
+allow update: if qar()&&rd().ownerId!=qbb()&&qac(['views'])&&qbc().views.diff(rd().views).affectedKeys().hasOnly([qbb()])&&qbc().views[qbb()]==request.time;
+allow delete: if qar()&&(rd().ownerId==qbb()||qao());
+}
+match /questions/{qid}{
+allow read: if qar();
+allow create: if qar()&&qaj()&&qbc().keys().hasOnly(['authorId','title','text','category','answersCount','bestId','createdAt'])&&qbc().authorId==qbb()&&qba(qbc().title,5,150)&&qba(qbc().text,0,2000)&&qbc().category in ['life','study','tech','games','sport','love','food','other']&&qbc().answersCount==0&&qbc().bestId==''&&qaz(qbc().createdAt);
+allow update: if qar()&&rd().authorId==qbb()&&qac(['bestId'])&&qba(qbc().bestId,0,40);
+allow update: if qar()&&qac(['answersCount'])&&(qbc().answersCount==rd().answersCount+1||qbc().answersCount==rd().answersCount-1);
+allow delete: if qar()&&(rd().authorId==qbb()||qao());
+match /answers/{aid}{
+allow read: if qar();
+allow create: if qar()&&qaj()&&qbc().keys().hasOnly(['authorId','text','likes','createdAt'])&&qbc().authorId==qbb()&&qba(qbc().text,1,3000)&&qbc().likes==[]&&qaz(qbc().createdAt);
+allow update: if qar()&&qaj()&&qac(['likes'])&&qai(rd().likes,qbc().likes);
+allow delete: if qar()&&(rd().authorId==qbb()||get(qav('questions',qid)).data.authorId==qbb()||qao());
+}
+}
+match /mail/{mid}{
+allow read: if qar()&&(rd().from==qbb()||rd().to==qbb());
+allow create: if qar()&&qaj()&&qbc().keys().hasOnly(['from','to','subject','text','read','delFrom','delTo','createdAt'])&&qbc().from==qbb()&&qbc().to is string&&exists(qav('users',qbc().to))&&!qag(qbc().to)&&qba(qbc().subject,0,200)&&qba(qbc().text,1,10000)&&qbc().read==(qbc().to==qbb())&&qbc().delFrom==false&&qbc().delTo==false&&qaz(qbc().createdAt);
+allow update: if qar()&&rd().to==qbb()&&qac(['read','delTo'])&&qbc().read is bool&&qbc().delTo is bool;
+allow update: if qar()&&rd().from==qbb()&&qac(['delFrom'])&&qbc().delFrom==true;
+allow delete: if qar()&&((rd().from==qbb()&&rd().delTo==true)||(rd().to==qbb()&&rd().delFrom==true));
+}
+match /notes/{nid}{
+allow read,delete: if qar()&&rd().ownerId==qbb();
+allow create,update: if qar()&&qbc().keys().hasOnly(['ownerId','title','text','color','pinned','updatedAt'])&&qbc().ownerId==qbb()&&(resource==null||rd().ownerId==qbb())&&qba(qbc().title,0,120)&&qba(qbc().text,0,20000)&&qbc().color in ['','yellow','green','blue','pink','violet']&&qbc().pinned is bool&&qaz(qbc().updatedAt);
+}
+match /reports/{rid}{
+allow read,delete: if qar()&&qao();
+allow create: if qar()&&qaj()&&qbc().keys().hasOnly(['from','type','targetId','targetUser','postId','reason','text','createdAt'])&&qbc().from==qbb()&&qbc().type in ['post','user','comment','group']&&qba(qbc().targetId,1,80)&&qba(qbc().targetUser,0,40)&&qba(qbc().postId,0,40)&&qbc().reason in ['spam','abuse','nsfw','fraud','other']&&qba(qbc().text,0,300)&&rid==qbc().type+'_'+qbc().targetId+'_'+qbb()&&qaz(qbc().createdAt);
+}
+match /videos/{vid}{
+allow read: if qar();
+allow create: if qar()&&qaj()&&qbc().ownerId==qbb()&&qbc().keys().hasOnly(['ownerId','title','description','source','provider','vid','fileId','type','thumb','duration','size','likes','createdAt'])&&qba(qbc().title,1,120)&&qba(qbc().get('description',''),0,2000)&&qba(qbc().get('thumb',''),0,300000)&&qbc().likes==[]&&qaz(qbc().createdAt)&&(qbc().source=='link'||(qbc().source=='file'&&get(qav('files',qbc().fileId)).data.ownerId==qbb()));
+allow update: if qar()&&rd().ownerId==qbb()&&qac(['title','description'])&&qba(qbc().title,1,120)&&qba(qbc().get('description',''),0,2000);
+allow update: if qar()&&qac(['likes'])&&qai(rd().likes,qbc().likes);
+allow delete: if qar()&&(rd().ownerId==qbb()||qao());
+}
+match /files/{fid}{
+allow read: if qar()&&(rd().ownerId==qbb()||rd().kind=='video');
+allow create: if qar()&&qaj()&&qbc().ownerId==qbb()&&qbc().kind in ['disk','video']&&qbc().keys().hasOnly(['ownerId','kind','name','size','type','chunks','status','createdAt'])&&qba(qbc().name,0,200)&&qbc().size is int&&qbc().size<=21000000&&qbc().chunks is int&&qbc().chunks>=1&&qbc().chunks<=40&&qbc().status=='uploading'&&qaz(qbc().createdAt);
+allow update: if qar()&&rd().ownerId==qbb()&&qac(['status'])&&qbc().status=='ready';
+allow delete: if qar()&&rd().ownerId==qbb();
+match /chunks/{n}{
+allow read: if qar()&&(get(qav('files',fid)).data.ownerId==qbb()||get(qav('files',fid)).data.kind=='video');
+allow create: if qar()&&get(qav('files',fid)).data.ownerId==qbb()&&qbc().keys().hasOnly(['i','data'])&&qbc().i is int&&qbc().i>=0&&qbc().i<get(qav('files',fid)).data.chunks&&qba(qbc().data,0,700000);
+allow delete: if qar()&&get(qav('files',fid)).data.ownerId==qbb();
+}
+}
+match /albums/{aid}{
+allow read: if qar();
+allow create: if qar()&&qaj()&&qbc().ownerId==qbb()&&qbc().keys().hasOnly(['ownerId','title','count','cover','coverId','createdAt','updatedAt'])&&qba(qbc().title,1,80)&&qbc().count==0&&qaz(qbc().createdAt);
+allow update: if qar()&&rd().ownerId==qbb()&&qac(['title','count','cover','coverId','updatedAt'])&&qba(qbc().title,1,80)&&qbc().count is int&&qba(qbc().cover,0,80000);
+allow delete: if qar()&&rd().ownerId==qbb();
+}
+match /photos/{pid}{
+allow read: if qar();
+allow create: if qar()&&qbc().ownerId==qbb()&&qbc().keys().hasOnly(['ownerId','albumId','thumb','createdAt'])&&get(qav('albums',qbc().albumId)).data.ownerId==qbb()&&qba(qbc().thumb,1,80000)&&qaz(qbc().createdAt);
+allow delete: if qar()&&rd().ownerId==qbb();
+}
+match /photoFull/{pid}{
+allow read: if qar();
+allow create: if qar()&&qbc().ownerId==qbb()&&qbc().keys().hasOnly(['ownerId','image'])&&qba(qbc().image,1,750000);
+allow delete: if qar()&&rd().ownerId==qbb();
+}
+}
+}
