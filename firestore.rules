@@ -261,7 +261,7 @@ service cloud.firestore {
       allow read: if signed() && resource.data.to == me();
       allow create: if signed() && d().keys().hasOnly(['to', 'from', 'type', 'postId', 'text', 'createdAt'])
         && d().from == me() && d().to is string && d().to != me()
-        && d().type in ['like', 'comment', 'wall', 'friend', 'repost']
+        && d().type in ['like', 'comment', 'wall', 'friend', 'repost', 'answer', 'best']
         && str(d().postId, 0, 40) && str(d().text, 0, 120) && now(d().createdAt);
       allow delete: if signed() && (resource.data.to == me() || resource.data.from == me());
     }
@@ -276,6 +276,51 @@ service cloud.firestore {
       allow update: if signed() && resource.data.ownerId != me() && onlyChanged(['views'])
         && d().views.diff(resource.data.views).affectedKeys().hasOnly([me()]) && d().views[me()] == request.time;
       allow delete: if signed() && (resource.data.ownerId == me() || isAdmin());
+    }
+
+    // ---------- ВС Ответы: вопросы и ответы ----------
+    match /questions/{qid} {
+      allow read: if signed();
+      allow create: if signed() && notBanned() && d().keys().hasOnly(['authorId', 'title', 'text', 'category', 'answersCount', 'bestId', 'createdAt'])
+        && d().authorId == me() && str(d().title, 5, 150) && str(d().text, 0, 2000)
+        && d().category in ['life', 'study', 'tech', 'games', 'sport', 'love', 'food', 'other']
+        && d().answersCount == 0 && d().bestId == '' && now(d().createdAt);
+      // автор выбирает лучший ответ
+      allow update: if signed() && resource.data.authorId == me() && onlyChanged(['bestId']) && str(d().bestId, 0, 40);
+      // счётчик ответов: ровно ±1
+      allow update: if signed() && onlyChanged(['answersCount'])
+        && (d().answersCount == resource.data.answersCount + 1 || d().answersCount == resource.data.answersCount - 1);
+      allow delete: if signed() && (resource.data.authorId == me() || isAdmin());
+
+      match /answers/{aid} {
+        allow read: if signed();
+        allow create: if signed() && notBanned() && d().keys().hasOnly(['authorId', 'text', 'likes', 'createdAt'])
+          && d().authorId == me() && str(d().text, 1, 3000) && d().likes == [] && now(d().createdAt);
+        allow update: if signed() && notBanned() && onlyChanged(['likes']) && toggledMe(resource.data.likes, d().likes);
+        allow delete: if signed() && (resource.data.authorId == me() || get(path('questions', qid)).data.authorId == me() || isAdmin());
+      }
+    }
+
+    // ---------- ВС Почта: письма с темой; каждый «удаляет» у себя, документ стирается, когда удалили оба ----------
+    match /mail/{mid} {
+      allow read: if signed() && (resource.data.from == me() || resource.data.to == me());
+      allow create: if signed() && notBanned() && d().keys().hasOnly(['from', 'to', 'subject', 'text', 'read', 'delFrom', 'delTo', 'createdAt'])
+        && d().from == me() && d().to is string && exists(path('users', d().to)) && !blockedBy(d().to)
+        && str(d().subject, 0, 200) && str(d().text, 1, 10000)
+        && d().read == (d().to == me()) && d().delFrom == false && d().delTo == false && now(d().createdAt);
+      allow update: if signed() && resource.data.to == me() && onlyChanged(['read', 'delTo']) && d().read is bool && d().delTo is bool;
+      allow update: if signed() && resource.data.from == me() && onlyChanged(['delFrom']) && d().delFrom == true;
+      allow delete: if signed() && ((resource.data.from == me() && resource.data.delTo == true)
+        || (resource.data.to == me() && resource.data.delFrom == true));
+    }
+
+    // ---------- ВС Заметки: личные, видит только владелец ----------
+    match /notes/{nid} {
+      allow read, delete: if signed() && resource.data.ownerId == me();
+      allow create, update: if signed() && d().keys().hasOnly(['ownerId', 'title', 'text', 'color', 'pinned', 'updatedAt'])
+        && d().ownerId == me() && (resource == null || resource.data.ownerId == me())
+        && str(d().title, 0, 120) && str(d().text, 0, 20000) && d().color in ['', 'yellow', 'green', 'blue', 'pink', 'violet']
+        && d().pinned is bool && now(d().updatedAt);
     }
 
     // ---------- Жалобы: id = тип_цель_автор (одна жалоба на цель от человека). Видит и разбирает только админ ----------

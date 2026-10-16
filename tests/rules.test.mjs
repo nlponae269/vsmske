@@ -474,3 +474,48 @@ test('истории: создать, отметить просмотр, уда�
   await assertFails(deleteDoc(doc(db(B), 'stories', ref.id)));
   await assertSucceeds(deleteDoc(doc(db(A), 'stories', ref.id)));
 });
+
+/* ---------- 1.9: Ответы, Почта, Заметки ---------- */
+test('ВС Ответы: вопрос, ответ, лучший ответ', async () => {
+  const q = doc(collection(db(A), 'questions'));
+  await assertSucceeds(setDoc(q, { authorId: A, title: 'Как сварить борщ?', text: '', category: 'food', answersCount: 0, bestId: '', createdAt: serverTimestamp() }));
+  await assertFails(setDoc(doc(collection(db(A), 'questions')), { authorId: A, title: 'Как?', text: '', category: 'food', answersCount: 0, bestId: '', createdAt: serverTimestamp() }));
+  const f = db(B), ans = doc(collection(f, 'questions', q.id, 'answers')), bt = writeBatch(f);
+  bt.set(ans, { authorId: B, text: 'Свёкла, капуста, мясо', likes: [], createdAt: serverTimestamp() });
+  bt.update(doc(f, 'questions', q.id), { answersCount: increment(1) });
+  await assertSucceeds(bt.commit());
+  await assertSucceeds(updateDoc(doc(db(C), 'questions', q.id, 'answers', ans.id), { likes: arrayUnion(C) }));
+  await assertFails(updateDoc(doc(db(B), 'questions', q.id), { bestId: ans.id }));
+  await assertSucceeds(updateDoc(doc(db(A), 'questions', q.id), { bestId: ans.id }));
+  await assertFails(updateDoc(doc(db(B), 'questions', q.id), { answersCount: 10 }));
+  await assertSucceeds(deleteDoc(doc(db(A), 'questions', q.id, 'answers', ans.id)));
+});
+test('ВС Почта: письмо, прочтение, удаление у обоих', async () => {
+  const m = doc(collection(db(A), 'mail'));
+  const letter = { from: A, to: B, subject: 'Привет', text: 'Как дела?', read: false, delFrom: false, delTo: false, createdAt: serverTimestamp() };
+  await assertSucceeds(setDoc(m, letter));
+  await assertFails(setDoc(doc(collection(db(A), 'mail')), { ...letter, from: C }));
+  await assertFails(setDoc(doc(collection(db(A), 'mail')), { ...letter, to: 'nobody' }));
+  await assertSucceeds(getDoc(doc(db(B), 'mail', m.id)));
+  await assertFails(getDoc(doc(db(C), 'mail', m.id)));
+  await assertSucceeds(updateDoc(doc(db(B), 'mail', m.id), { read: true }));
+  await assertFails(updateDoc(doc(db(A), 'mail', m.id), { read: true }));
+  await assertFails(updateDoc(doc(db(B), 'mail', m.id), { text: 'подмена' }));
+  await assertFails(deleteDoc(doc(db(A), 'mail', m.id)));
+  await assertSucceeds(updateDoc(doc(db(B), 'mail', m.id), { delTo: true }));
+  await assertSucceeds(deleteDoc(doc(db(A), 'mail', m.id)));
+});
+test('ВС Почта: заблокированный не пишет', async () => {
+  await updateDoc(doc(db(B), 'users', B), { blocked: arrayUnion(A) });
+  await assertFails(setDoc(doc(collection(db(A), 'mail')), { from: A, to: B, subject: '', text: 'x', read: false, delFrom: false, delTo: false, createdAt: serverTimestamp() }));
+});
+test('ВС Заметки: только свои', async () => {
+  const n = doc(collection(db(A), 'notes'));
+  const note = { ownerId: A, title: 'Список', text: 'молоко', color: 'yellow', pinned: false, updatedAt: serverTimestamp() };
+  await assertSucceeds(setDoc(n, note));
+  await assertSucceeds(updateDoc(n, { text: 'молоко, хлеб', updatedAt: serverTimestamp() }));
+  await assertFails(getDoc(doc(db(B), 'notes', n.id)));
+  await assertFails(setDoc(doc(db(B), 'notes', n.id), { ...note, ownerId: B }));
+  await assertFails(deleteDoc(doc(db(B), 'notes', n.id)));
+  await assertSucceeds(deleteDoc(n));
+});
