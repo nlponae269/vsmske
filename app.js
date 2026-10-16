@@ -12,7 +12,7 @@ import {
 import {
   getFirestore, doc, collection, query, where, orderBy, limit, limitToLast,
   getDoc, getDocs, addDoc, setDoc, updateDoc, deleteDoc, onSnapshot, writeBatch,
-  serverTimestamp, arrayUnion, arrayRemove, increment
+  serverTimestamp, arrayUnion, arrayRemove, increment, deleteField
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
 const firebaseConfig = {
@@ -44,7 +44,7 @@ const MAX_POST_IMG = 700000;   // символов dataURL (~520 КБ), лими
 const MAX_AVATAR = 120000;
 const CHUNK = 700000;                                   // символов base64 в одном куске (кратно 4)
 const LIMITS = { disk: 10 * 1024 * 1024, video: 20 * 1024 * 1024 };
-const VERSION = '1.6';
+const VERSION = '1.7';
 const MAX_MSG_IMG = 380000;    // фото в сообщении
 const ONLINE_MS = 5 * 60 * 1000; // «в сети», если заходил не раньше 5 минут назад
 
@@ -259,6 +259,8 @@ const I = {
   vid:'<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M12 3l8 3v6c0 4.5-3.4 8-8 9-4.6-1-8-4.5-8-9V6z"/><path d="M8.5 12l2.5 2.5 4.5-5" stroke-linecap="round"/></svg>',
   gear:'<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>',
   poll:'<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M5 20V10M12 20V4M19 20v-7"/></svg>',
+  repost:'<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 2l4 4-4 4"/><path d="M3 11V9a3 3 0 0 1 3-3h15"/><path d="M7 22l-4-4 4-4"/><path d="M21 13v2a3 3 0 0 1-3 3H3"/></svg>',
+  shield:'<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l8 3v6c0 4.5-3.4 8-8 9-4.6-1-8-4.5-8-9V6z"/><path d="M12 8v5M12 16h.01"/></svg>',
   club:'<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 21V9l8-5 8 5v12"/><path d="M9 21v-6h6v6"/></svg>',
   mic:'<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg>',
   pause:'<svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="5" width="4" height="14" rx="1"/><rect x="14" y="5" width="4" height="14" rx="1"/></svg>',
@@ -302,8 +304,9 @@ const cache = {
   users: new Map(), feed: new Map(), wall: [], comments: new Map(),
   chats: [], messages: [], incoming: [], outgoing: [], people: [],
   videos: [], video: null, albums: [], album: null, photos: [], files: [], post: null, notifs: [],
-  groups: new Map(), groupList: [], groupWall: [],
+  groups: new Map(), groupList: [], groupWall: [], reposted: new Map(), reports: [], banned: [],
 };
+let reportsUnsub = null;
 let globalUnsubs = [], viewUnsubs = [], commentUnsubs = new Map(), routedOnce = false;
 const uid = () => S.authUser?.uid;
 const app = document.getElementById('app');
@@ -313,7 +316,7 @@ function stopAll() {
   clearView(); routedOnce = false;
   Object.assign(cache, { users: new Map(), feed: new Map(), wall: [], comments: new Map(), chats: [], messages: [], incoming: [], outgoing: [], people: [],
     videos: [], video: null, albums: [], album: null, photos: [], files: [], post: null, notifs: [],
-    groups: new Map(), groupList: [], groupWall: [] });
+    groups: new Map(), groupList: [], groupWall: [], reposted: new Map(), reports: [], banned: [] });
 }
 function clearView() {
   viewUnsubs.forEach(u => u()); viewUnsubs = [];
@@ -325,7 +328,7 @@ function ensurePostPeople(posts) {
   ensureUsers(posts.flatMap(p => p.groupId ? [p.authorId] : [p.authorId, p.wallId]));
   ensureGroups(posts.map(p => p.groupId).filter(Boolean));
 }
-const findPost = id => [...cache.feed.values()].flat().concat(cache.wall, cache.groupWall, cache.post ? [cache.post] : []).find(x => x.id === id);
+const findPost = id => [...cache.feed.values()].flat().concat(cache.wall, cache.groupWall, cache.post ? [cache.post] : [], [...cache.reposted.values()]).find(x => x.id === id);
 
 /* ---------- Уведомления (лайки, комментарии, записи на стене, дружба) ----------
    Пишутся отдельно и «по возможности»: если не получилось, основное действие всё равно выполнено. */
@@ -449,6 +452,12 @@ function startSession() {
     if (!s.exists()) return;
     const prevFriends = JSON.stringify([S.me?.friends || [], S.me?.groups || []]);
     S.me = data(s); cache.users.set(id, S.me); S.phase = 'app';
+    if (isSiteAdmin() && !reportsUnsub) {
+      reportsUnsub = onSnapshot(query(collection(db, 'reports'), orderBy('createdAt', 'desc'), limit(100)), r => {
+        cache.reports = r.docs.map(data); ensureUsers(cache.reports.flatMap(x => [x.from, x.targetUser])); render();
+      }, console.error);
+      globalUnsubs.push(() => { reportsUnsub?.(); reportsUnsub = null; });
+    }
     if (!routedOnce) { routedOnce = true; route(); touchSeen(); return; }
     if (S.view === 'feed' && S.feedTab === 'friends' && prevFriends !== JSON.stringify([S.me.friends || [], S.me.groups || []])) attachView();
     else render();
@@ -490,12 +499,12 @@ function route() {
   else if (v === 'album' && arg) { S.view = 'album'; S.albumId = arg; }
   else if (v === 'post' && arg) { S.view = 'post'; S.postId = arg; }
   else if (v === 'club' && arg) { S.view = 'club'; S.clubId = arg; }
-  else if (['feed', 'friends', 'people', 'edit', 'disk', 'vid', 'settings', 'more', 'notif', 'clubs'].includes(v)) S.view = v;
+  else if (['feed', 'friends', 'people', 'edit', 'disk', 'vid', 'settings', 'more', 'notif', 'clubs', 'admin'].includes(v)) S.view = v;
   else S.view = 'feed';
   if (S.view !== 'edit') { S.editColor = null; S.editCover = null; S.editPhoto = undefined; }
   if (S.view !== 'watch') { S.videoSrc = null; S.videoErr = null; }
   S.lightbox = null; S.lightboxImg = null; S.preview = null; S.linkForm = false; S.newAlbum = false;
-  S.viewImg = null; S.postMenu = null; S.emoji = null; S.msgSel = null; S.clubEdit = false; S.editGroupPhoto = undefined; S.editGroupCover = null;
+  S.viewImg = null; S.postMenu = null; S.emoji = null; S.msgSel = null; S.profMenu = false; S.modOpen = false; S.report = null; S.clubEdit = false; S.editGroupPhoto = undefined; S.editGroupCover = null;
   if (S.view !== 'messages') S.replyTo = null;
   recStop(false); players.forEach(p => p.pause()); players.clear();
   if (S.view !== 'video') S.videoDraft = null;
@@ -608,6 +617,12 @@ function attachView() {
       cache.post = s.exists() ? data(s) : { id: pid, missing: true }; S.loading = false;
       if (!cache.post.missing) ensureUsers([cache.post.authorId, cache.post.wallId]); render();
     }, onViewErr));
+  } else if (S.view === 'admin') {
+    cache.banned = [];
+    if (isSiteAdmin()) getDocs(query(collection(db, 'users'), orderBy('ban.at', 'desc'), limit(100))).then(s => {
+      cache.banned = s.docs.map(data).filter(u => u.ban); cache.banned.forEach(u => cache.users.set(u.id, u)); S.loading = false; render();
+    }).catch(onViewErr);
+    else S.loading = false;
   } else if (S.view === 'clubs') {
     ensureGroups(S.me.groups || []);
     getDocs(query(collection(db, 'groups'), orderBy('createdAt', 'desc'), limit(50))).then(s => {
@@ -661,6 +676,13 @@ const avatar = (u, size = 40, link = true) => {
 const isAdm = u => u?.admin === true || u?.admin === 'true';
 const admBadge = u => isAdm(u) ? `<span class="adm-badge" title="Администратор VСмске" aria-label="Администратор">✓</span>` : '';
 const isSiteAdmin = () => isAdm(S.me);
+
+/* Бан (ставит админ) и чёрный список (каждый для себя) */
+const banOf = u => { const b = u?.ban; if (!b) return null; const until = b.until ? ms(b.until) : null; return until === null || until > Date.now() ? { until, reason: b.reason || '' } : null; };
+const banText = b => b.until === null ? 'навсегда' : 'до ' + new Date(b.until).toLocaleString('ru-RU', { day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' });
+const iBlocked = id => (S.me?.blocked || []).includes(id);
+const blockedMe = u => (u?.blocked || []).includes(S.me?.id);
+const BAN_DAYS = [[1, '1 день'], [7, 'Неделя'], [30, 'Месяц'], [0, 'Навсегда']];
 const nameLink = u => u && !u.deleted ? `<a class="name" href="#id/${esc(u.id)}" style="color:var(--fg);font-weight:600">${esc(u.name)}</a>${admBadge(u)}` : `<span class="name">${esc(u?.name || '…')}</span>`;
 const loadingBox = () => `<div class="card loading"><div class="spin"></div></div>`;
 
@@ -752,7 +774,7 @@ function navHtml() {
   const groups = { video: ['video', 'watch'], albums: ['albums', 'album'], clubs: ['clubs', 'club'] };
   const on = v => (groups[v] ? groups[v].includes(S.view) : S.view === v) && (v !== 'profile' || S.profileId === me.id) ? 'on' : '';
   const nav = (v, href, icon, label, badge = 0, cls = '') => `<a class="navlink ${on(v)} ${cls}" href="#${href}">${icon}<span>${label}</span>${badge ? `<span class="badge">${badge}</span>` : ''}</a>`;
-  const moreOn = ['more', 'profile', 'people', 'albums', 'album', 'disk', 'vid', 'settings', 'edit', 'notif', 'post', 'clubs', 'club'].includes(S.view) ? 'on' : '';
+  const moreOn = ['more', 'profile', 'people', 'albums', 'album', 'disk', 'vid', 'settings', 'edit', 'notif', 'post', 'clubs', 'club', 'admin'].includes(S.view) ? 'on' : '';
   return `<nav class="nav">
       ${nav('profile', 'id/' + me.id, I.home, 'Моя страница', 0, 'm-hide')}
       ${nav('feed', 'feed', I.feed, 'Новости')}
@@ -767,6 +789,7 @@ function navHtml() {
       <a class="navlink m-only ${moreOn}" href="#more">${I.more}<span>Ещё</span></a>
       <hr>
       ${nav('vid', 'vid', I.vid, 'VС ID', 0, 'm-hide sub')}
+      ${isSiteAdmin() ? nav('admin', 'admin', I.shield, 'Админ-панель', cache.reports.length, 'm-hide sub') : ''}
       ${nav('settings', 'settings', I.gear, 'Настройки', 0, 'm-hide sub')}
       <button class="sub desk" data-act="logout">${I.out}<span>Выйти</span></button>
     </nav>`;
@@ -792,6 +815,7 @@ function shell() {
   else if (S.view === 'post') main = viewPost();
   else if (S.view === 'notif') main = viewNotifs();
   else if (S.view === 'clubs') main = viewClubs();
+  else if (S.view === 'admin') main = isSiteAdmin() ? viewAdmin() : `<div class="card empty"><b>Только для администраторов</b></div>`;
   else if (S.view === 'club') main = viewClub();
   else main = viewFeed();
   const up = S.upload ? `<div class="card pad upbar" role="status"><div class="row"><span class="grow">${esc(S.upload.label)}</span><b class="tnum">${Math.round(S.upload.pct * 100)}%</b></div><div class="bar"><i style="width:${Math.round(S.upload.pct * 100)}%"></i></div><div class="hint">Не закрывайте страницу до конца загрузки</div></div>` : '';
@@ -804,13 +828,20 @@ function shell() {
   </div></header>
   <div class="wrap">
     ${navHtml()}
-    <main>${up}${main}</main>
+    <main>${banOf(me) ? `<div class="card pad ban-banner" role="alert"><b>⛔ Ваш аккаунт заблокирован ${banText(banOf(me))}</b>
+      ${banOf(me).reason ? `<div class="small">Причина: ${esc(banOf(me).reason)}</div>` : ''}<div class="small">Пока действует блокировка, нельзя писать записи, комментарии и сообщения.</div></div>` : ''}${up}${main}</main>
   </div>
   ${overlay()}`;
 }
 
 /* ---------- Окна поверх страницы: просмотр фото и файлов ---------- */
+const REPORT_REASONS = { spam: 'Спам', abuse: 'Оскорбления', nsfw: 'Неприемлемый контент', fraud: 'Мошенничество', other: 'Другое' };
 function overlay() {
+  if (S.report) return `<div class="ov" data-act="reportclose"><div class="ov-in modal" data-stop="1">
+      <div class="row"><b class="grow">Пожаловаться</b><button class="icon-btn" data-act="reportclose" aria-label="Закрыть">✕</button></div>
+      <p class="muted small" style="margin:0">Жалобу увидит только администратор. Что не так?</p>
+      ${Object.entries(REPORT_REASONS).map(([k, l]) => `<button class="btn sec" style="justify-content:flex-start" data-act="reportsend" data-r="${k}">${l}</button>`).join('')}
+    </div></div>`;
   if (S.viewImg) return `<div class="ov" data-act="ovclose"><div class="ov-in" data-stop="1">
       <div class="ov-top"><span class="grow"></span><button class="btn ghost light" data-act="ovclose" aria-label="Закрыть">✕</button></div>
       <div class="ov-img"><img src="${esc(safeImg(S.viewImg))}" alt="Фото"></div></div></div>`;
@@ -1011,6 +1042,10 @@ function viewSettings() {
         Notification.permission === 'denied' ? '<span class="muted small">Запрещены в настройках браузера</span>'
         : seg('notify', notifyOn() ? 'on' : 'off', [['on', 'Вкл'], ['off', 'Выкл']])}</div>
       <p class="hint" style="margin:0">Сохраняется на этом устройстве. Число непрочитанных диалогов видно и в названии вкладки.</p></div>` : ''}
+    ${(me.blocked || []).length ? `<div class="card"><div class="pad" style="padding-bottom:4px"><h2 class="h" style="font-size:16px">Чёрный список <span class="muted">${me.blocked.length}</span></h2>
+      <p class="hint" style="margin:4px 0 0">Эти люди не могут писать вам, комментировать ваши записи и отправлять заявки.</p></div>
+      <div class="ulist">${(ensureUsers(me.blocked), me.blocked.map(U).filter(Boolean).map(u => `<div class="uitem">${avatar(u, 40)}<span class="grow">${nameLink(u)}</span>
+        <button class="btn sec" data-act="unblock" data-id="${esc(u.id)}">Разблокировать</button></div>`).join(''))}</div></div>` : ''}
     <div class="card pad set"><h2 class="h" style="font-size:16px">Приватность</h2>
       <div class="set-row"><span class="grow">Кто может писать мне сообщения</span>${seg('pmsg', pr.messages || 'all', [['all', 'Все'], ['friends', 'Только друзья']])}</div>
       <div class="set-row"><span class="grow">Кто может писать на моей стене</span>${seg('pwall', pr.wall || 'friends', [['friends', 'Друзья'], ['me', 'Только я']])}</div></div>
@@ -1037,7 +1072,8 @@ function viewMore() {
     </div>
     <div class="card ulist">
       ${item('vid', I.vid, 'VС ID', 'Вход, почта, пароль')}
-      ${item('settings', I.gear, 'Настройки', 'Тема и приватность')}
+      ${isSiteAdmin() ? item('admin', I.shield, 'Админ-панель' + (cache.reports.length ? ` <span class="badge">${cache.reports.length}</span>` : ''), 'Жалобы и блокировки') : ''}
+      ${item('settings', I.gear, 'Настройки', 'Тема, приватность, чёрный список')}
     </div>
     ${installCard()}`;
 }
@@ -1111,8 +1147,39 @@ function viewClub() {
   ${S.loading ? loadingBox() : cache.groupWall.length ? cache.groupWall.map(p => postCard(p)).join('') : `<div class="card empty">${admin ? 'Напишите первую запись — её увидят подписчики в новостях.' : 'Здесь пока нет записей'}</div>`}`;
 }
 
+/* ---------- Админ-панель ---------- */
+function viewAdmin() {
+  const reps = cache.reports;
+  const target = r => r.type === 'post' ? '#post/' + (r.postId || r.targetId) : r.type === 'group' ? '#club/' + r.targetId : '#id/' + (r.targetUser || r.targetId);
+  const kind = { post: 'Запись', user: 'Пользователь', comment: 'Комментарий', group: 'Сообщество' };
+  return `<div class="card pad admin-head"><div class="row"><span class="ficon">${I.shield}</span><div class="grow"><h1 class="h brandh">Админ-панель</h1>
+      <div class="muted small">Жалоб: ${reps.length} · Заблокированных: ${cache.banned.filter(u => banOf(u)).length}</div></div></div></div>
+    <div class="card"><div class="pad" style="padding-bottom:4px"><h2 class="h" style="font-size:16px">Жалобы <span class="muted">${reps.length}</span></h2></div>
+      <div class="ulist">${reps.length ? reps.map(r => {
+        const from = U(r.from), who = U(r.targetUser);
+        return `<div class="uitem report"><div class="grow" style="min-width:0">
+            <div><span class="chip">${kind[r.type] || r.type}</span> <b>${esc(REPORT_REASONS[r.reason] || r.reason)}</b> <span class="muted small">· ${ago(r.createdAt)}</span></div>
+            ${who ? `<div class="small">Нарушитель: ${nameLink(who)}${banOf(who) ? ' <span class="chip ban-chip">заблокирован</span>' : ''}</div>` : ''}
+            ${r.text ? `<div class="muted small notif-text">«${esc(r.text)}»</div>` : ''}
+            <div class="muted small">Пожаловался: ${from ? nameLink(from) : '…'}</div>
+            <div class="acts" style="margin-top:8px;flex-wrap:wrap"><a class="btn sec small" href="${esc(target(r))}">Открыть</a>
+              ${r.type === 'post' ? `<button class="btn ${S.confirm === 'rpost:' + r.id ? 'danger' : 'ghost'} small" data-act="rpost" data-id="${esc(r.id)}">${S.confirm === 'rpost:' + r.id ? 'Точно удалить запись?' : 'Удалить запись'}</button>` : ''}
+              ${r.targetUser && who && !isAdm(who) && !banOf(who) ? `<button class="btn ghost small" data-act="rban" data-id="${esc(r.id)}">Бан на неделю</button>` : ''}
+              <button class="btn ghost small" data-act="rdel" data-id="${esc(r.id)}">Отклонить</button></div>
+          </div></div>`;
+      }).join('') : '<div class="empty">Жалоб нет 🎉</div>'}</div></div>
+    <div class="card"><div class="pad" style="padding-bottom:4px"><h2 class="h" style="font-size:16px">Заблокированные</h2></div>
+      <div class="ulist">${S.loading ? '<div class="loading"><div class="spin"></div></div>' : cache.banned.length ? cache.banned.map(u => {
+        const b = banOf(u);
+        return `<div class="uitem">${avatar(u, 44)}<div class="grow" style="min-width:0">${nameLink(u)}
+          <div class="muted small">${b ? 'Заблокирован ' + banText(b) : 'Срок истёк'}${u.ban?.reason ? ' · ' + esc(u.ban.reason) : ''}</div></div>
+          <div class="acts"><button class="btn sec" data-act="unban" data-id="${esc(u.id)}">${b ? 'Разбанить' : 'Убрать из списка'}</button></div></div>`;
+      }).join('') : '<div class="empty">Никто не заблокирован</div>'}</div></div>
+    <p class="hint" style="text-align:center">Забанить человека можно и с его страницы: «⋯» → «Модерация».</p>`;
+}
+
 /* Уведомления */
-const NOTIF_TEXT = { like: 'оценил(а) вашу запись', comment: 'прокомментировал(а) вашу запись', wall: 'написал(а) у вас на стене', friend: 'принял(а) вашу заявку в друзья' };
+const NOTIF_TEXT = { like: 'оценил(а) вашу запись', comment: 'прокомментировал(а) вашу запись', wall: 'написал(а) у вас на стене', friend: 'принял(а) вашу заявку в друзья', repost: 'поделился(ась) вашей записью' };
 function viewNotifs() {
   const list = cache.notifs.filter(n => n.from !== S.me.id);
   return `<div class="card"><div class="pad" style="padding-bottom:4px"><h1 class="h">Уведомления <span class="muted">${list.length}</span></h1></div>
@@ -1145,6 +1212,7 @@ const emojiPanel = target => S.emoji === target
 const emojiBtn = (target, cls = 'icon-btn') => `<button type="button" class="${cls}" data-act="emojis" data-t="${target}" aria-label="Смайлики" aria-expanded="${S.emoji === target}">😊</button>`;
 
 function composer(wallId, ph, g = null) {
+  if (banOf(S.me)) return '';
   const d = S.draft;
   return `<div class="card pad composer"><form data-form="post" data-wall="${esc(wallId)}" ${g ? 'data-group="1"' : ''}>
     <div class="row" style="align-items:flex-start">${g ? groupAvatar(g, 40, false) : avatar(S.me, 40, false)}
@@ -1176,8 +1244,35 @@ function pollHtml(p) {
     <div class="muted small">${total} ${plural(total, 'голос', 'голоса', 'голосов')}${voted ? ' · нажмите на другой вариант, чтобы переголосовать' : ''}</div></div>`;
 }
 
+// Оригинал репоста: кэшируем, грузим один раз
+const pendingPosts = new Set();
+function ensurePosts(ids) {
+  const miss = [...new Set(ids)].filter(i => i && !cache.reposted.has(i) && !pendingPosts.has(i));
+  if (!miss.length) return;
+  miss.forEach(i => pendingPosts.add(i));
+  Promise.all(miss.map(async i => {
+    try { const s = await getDoc(doc(db, 'posts', i)); cache.reposted.set(i, s.exists() ? data(s) : { id: i, missing: true }); if (s.exists()) ensurePostPeople([data(s)]); }
+    catch (e) { cache.reposted.set(i, { id: i, missing: true }); }
+    finally { pendingPosts.delete(i); }
+  })).then(render);
+}
+function repostHtml(id) {
+  ensurePosts([id]);
+  const o = cache.reposted.get(id);
+  if (!o) return `<div class="repost muted small">Загружаем…</div>`;
+  if (o.missing) return `<div class="repost muted small">Исходная запись удалена</div>`;
+  const a = U(o.authorId), g = o.groupId ? G(o.groupId) : null;
+  if (!a || (o.groupId && !g)) return `<div class="repost muted small">Загружаем…</div>`;
+  return `<div class="repost"><div class="row">${g ? groupAvatar(g, 32) : avatar(a, 32)}<div class="grow">${g ? `<a class="name" href="#club/${esc(g.id)}" style="color:var(--fg);font-weight:600">${esc(g.name)}</a>` : nameLink(a)}
+      <div class="muted small"><a href="#post/${esc(o.id)}" style="color:inherit">${ago(o.createdAt)}</a></div></div></div>
+    ${o.text ? `<div class="post-text">${linkify(o.text)}</div>` : ''}
+    ${o.image ? `<img class="post-img" src="${esc(o.image)}" alt="Фото к записи" loading="lazy" data-act="viewimg" data-kind="post" data-id="${esc(o.id)}">` : ''}
+    ${pollHtml(o)}</div>`;
+}
+
 function postCard(p, pinned = false) {
   const a = U(p.authorId); if (!a) return '';
+  if (iBlocked(p.authorId) && p.wallId !== S.me.id) return '';
   const g = p.groupId ? G(p.groupId) : null; if (p.groupId && !g) return '';
   const me = S.me, wall = !g && p.wallId !== p.authorId ? U(p.wallId) : null;
   const likes = p.likes || [], liked = likes.includes(me.id);
@@ -1192,12 +1287,13 @@ function postCard(p, pinned = false) {
     <div class="row post-head">${g ? groupAvatar(g, 44) : avatar(a, 44)}
       <div class="grow">${g ? `<a class="name" href="#club/${esc(g.id)}" style="color:var(--fg);font-weight:600">${esc(g.name)}</a>` : nameLink(a)}${wall ? ` <span class="muted">→</span> ${nameLink(wall)}` : ''}
         <div class="muted small"><a href="#post/${esc(p.id)}" style="color:inherit">${ago(p.createdAt)}</a>${p.editedAt ? ' · изменено' : ''}</div></div>
-      ${canDel || canPin ? `<button class="icon-btn" data-act="postmenu" data-id="${esc(p.id)}" aria-label="Действия с записью" aria-expanded="${menu}">${I.more}</button>` : ''}
+      <button class="icon-btn" data-act="postmenu" data-id="${esc(p.id)}" aria-label="Действия с записью" aria-expanded="${menu}">${I.more}</button>
     </div>
     ${menu ? `<div class="post-menu">
       ${canEdit && !editing ? `<button class="btn ghost small" data-act="editpost" data-id="${esc(p.id)}">Изменить</button>` : ''}
       ${canPin ? `<button class="btn ghost small" data-act="pinpost" data-id="${isPinned ? '' : esc(p.id)}">${isPinned ? 'Открепить' : 'Закрепить'}</button>` : ''}
       ${canDel ? `<button class="btn ${S.confirm === confirmKey ? 'danger' : 'ghost'} small" data-act="delpost" data-id="${esc(p.id)}">${S.confirm === confirmKey ? 'Точно удалить?' : 'Удалить'}</button>` : ''}
+      ${p.authorId !== me.id ? `<button class="btn ghost small" data-act="report" data-type="post" data-id="${esc(p.id)}" data-user="${esc(p.authorId)}" data-post="${esc(p.id)}" data-text="${esc((p.text || '').slice(0, 300))}">Пожаловаться</button>` : ''}
     </div>` : ''}
     ${editing ? `<form class="form" data-form="editpost" data-id="${esc(p.id)}">
         <textarea id="ep_${esc(p.id)}" rows="3" maxlength="4000">${esc(p.text)}</textarea>
@@ -1205,15 +1301,17 @@ function postCard(p, pinned = false) {
       : p.text ? `<div class="post-text">${linkify(p.text)}</div>` : ''}
     ${p.image ? `<img class="post-img" src="${esc(p.image)}" alt="Фото к записи" loading="lazy" data-act="viewimg" data-kind="post" data-id="${esc(p.id)}">` : ''}
     ${pollHtml(p)}
+    ${p.repostOf ? repostHtml(p.repostOf) : ''}
     <div class="post-actions">
       <button class="pill ${liked ? 'liked' : ''}" data-act="like" data-id="${esc(p.id)}" aria-pressed="${liked}" aria-label="Нравится">${liked ? I.heart : I.heartO}${likes.length || ''}</button>
       <button class="pill" data-act="togglec" data-id="${esc(p.id)}" aria-label="Комментарии">${I.comment}${n || ''}</button>
+      <button class="pill" data-act="repost" data-id="${esc(p.id)}" aria-label="Поделиться у себя на стене" title="Поделиться у себя на стене">${I.repost}${p.reposts || ''}</button>
       <span class="grow"></span>
       <button class="pill" data-act="copy" data-text="${esc(location.origin + location.pathname + '#post/' + p.id)}" aria-label="Скопировать ссылку на запись">${I.link}</button>
     </div>
     ${open ? `<div class="comments">
       ${!comments ? '<div class="muted small">Загружаем…</div>' : comments.map(c => {
-        const ca = U(c.authorId); if (!ca) return '';
+        const ca = U(c.authorId); if (!ca || iBlocked(c.authorId)) return '';
         const del = c.authorId === me.id || canDel;
         return `<div class="comment">${avatar(ca, 32)}<div class="bubble">${nameLink(ca)} <span class="post-text">${linkify(c.text)}</span>
           <div class="muted small">${ago(c.createdAt)}${del ? ` · <button class="btn ghost small" style="padding:0 4px" data-act="delc" data-post="${esc(p.id)}" data-id="${esc(c.id)}">удалить</button>` : ''}</div></div></div>`;
@@ -1259,9 +1357,22 @@ function viewProfile() {
       : `<div class="cover" ${COVERS[u.cover] ? `style="--cover:${COVERS[u.cover]}"` : ''}></div>`}
     <div class="prof">${adm ? `<span class="adm-ring">${avatar(u, 120, false)}</span>` : avatar(u, 120, false)}
       <div class="prof-info"><h1 class="prof-name">${esc(u.name)}${admBadge(u)}</h1><div class="muted">${u.status ? esc(u.status) : own ? 'Добавьте статус в «Редактировать»' : '@' + esc(u.nick)}</div>
-        ${!own && seenText(u) ? `<div class="seen small ${isOnline(u) ? 'on' : ''}">${seenText(u)}</div>` : ''}</div>
-      <div class="prof-btns">${own ? `<a class="btn sec" href="#edit">Редактировать</a>` : `<a class="btn" href="#im/${esc(u.id)}">Написать</a>${relButtons(u.id)}`}</div>
+        ${!own && seenText(u) ? `<div class="seen small ${isOnline(u) ? 'on' : ''}">${seenText(u)}</div>` : ''}
+        ${banOf(u) ? `<span class="chip ban-chip">⛔ Заблокирован ${banText(banOf(u))}</span>` : ''}
+        ${!own && iBlocked(u.id) ? `<span class="chip">Вы заблокировали этого человека</span>` : ''}</div>
+      <div class="prof-btns">${own ? `<a class="btn sec" href="#edit">Редактировать</a>` : `${iBlocked(u.id) ? '' : `<a class="btn" href="#im/${esc(u.id)}">Написать</a>${relButtons(u.id)}`}
+        <button class="icon-btn" data-act="profmenu" aria-label="Ещё" aria-expanded="${!!S.profMenu}">${I.more}</button>`}</div>
     </div>
+    ${!own && S.profMenu ? `<div class="post-menu" style="padding:0 20px 14px">
+      <button class="btn ghost small" data-act="${iBlocked(u.id) ? 'unblock' : 'block'}" data-id="${esc(u.id)}">${iBlocked(u.id) ? 'Разблокировать' : S.confirm === 'block:' + u.id ? 'Точно заблокировать?' : 'Заблокировать'}</button>
+      <button class="btn ghost small" data-act="report" data-type="user" data-id="${esc(u.id)}" data-user="${esc(u.id)}" data-text="${esc(u.name)}">Пожаловаться</button>
+      ${isSiteAdmin() && !adm ? `<button class="btn ghost small" data-act="modopen">Модерация</button>` : ''}
+    </div>` : ''}
+    ${!own && isSiteAdmin() && !adm && S.modOpen ? `<div class="mod-box"><b>Модерация: ${esc(u.name)}</b>
+      ${banOf(u) ? `<div class="row" style="flex-wrap:wrap"><span class="grow">Заблокирован ${banText(banOf(u))}${banOf(u).reason ? ' · ' + esc(banOf(u).reason) : ''}</span><button class="btn" data-act="unban" data-id="${esc(u.id)}">Разбанить</button></div>`
+        : `<input id="banReason" class="inp" maxlength="300" placeholder="Причина (её увидит человек)">
+        <div class="row" style="flex-wrap:wrap;gap:6px">${BAN_DAYS.map(([d, l]) => `<button class="btn ${d ? 'sec' : 'danger'} small" data-act="ban" data-id="${esc(u.id)}" data-d="${d}">${l}</button>`).join('')}</div>`}
+    </div>` : ''}
     <dl class="facts">
       <dt>Короткое имя</dt><dd>@${esc(u.nick)}</dd>
       ${adm ? `<dt>Роль</dt><dd><b class="adm-role">Администратор сайта</b></dd>` : ''}
@@ -1367,11 +1478,18 @@ function viewPeople() {
 
 /* Сообщения */
 const dialogName = (u, self) => self ? 'Избранное' : u.name;
+const REACTS = ['❤️', '😂', '👍', '😮', '😢', '🔥'];
+function reactsHtml(m, id) {
+  const r = m.reacts || {}, counts = {};
+  Object.entries(r).forEach(([u, e]) => { if (REACTS.includes(e)) (counts[e] ||= []).push(u); });
+  const list = Object.entries(counts);
+  return list.length ? `<div class="reacts">${list.map(([e, us]) => `<button class="react ${us.includes(id) ? 'mine' : ''}" data-act="react" data-id="${esc(m.id)}" data-e="${e}">${e}${us.length > 1 ? `<span>${us.length}</span>` : ''}</button>`).join('')}</div>` : '';
+}
 function msgHtml(m, id, peerRead) {
   const mine = m.from === id, img = safeImg(m.image), sel = S.msgSel === m.id, rp = m.replyTo;
   const ticks = mine && peerRead !== null ? `<span class="ticks ${ms(m.createdAt) <= peerRead ? 'read' : ''}" aria-label="${ms(m.createdAt) <= peerRead ? 'Прочитано' : 'Отправлено'}">${ms(m.createdAt) <= peerRead ? '✓✓' : '✓'}</span>` : '';
   const quote = rp ? `<div class="msg-quote"><b>${esc(rp.from === id ? 'Вы' : (U(rp.from)?.name || '').split(' ')[0])}</b>${esc(rp.text || '')}</div>` : '';
-  return `<div class="msg ${mine ? 'me' : ''} ${img ? 'has-img' : ''} ${sel ? 'sel' : ''}" data-act="selmsg" data-id="${esc(m.id)}">${quote}${img ? `<img class="msg-img" src="${esc(img)}" alt="Фото" data-act="viewimg" data-kind="msg" data-id="${esc(m.id)}">` : ''}${typeof m.audio === 'string' && m.audio.startsWith('data:audio/') ? voiceHtml(m) : ''}${m.text ? `<span>${linkify(m.text)}</span>` : ''}<time>${hm(new Date(ms(m.createdAt)))}${ticks}</time>${sel ? `<div class="msg-acts"><button data-act="replymsg" data-id="${esc(m.id)}">${I.reply}Ответить</button>${mine ? `<button data-act="delmsg" data-id="${esc(m.id)}">${S.confirm === 'msg:' + m.id ? 'Удалить у всех?' : 'Удалить'}</button>` : ''}</div>` : ''}</div>`;
+  return `<div class="msg ${mine ? 'me' : ''} ${img ? 'has-img' : ''} ${sel ? 'sel' : ''}" data-act="selmsg" data-id="${esc(m.id)}">${quote}${img ? `<img class="msg-img" src="${esc(img)}" alt="Фото" data-act="viewimg" data-kind="msg" data-id="${esc(m.id)}">` : ''}${typeof m.audio === 'string' && m.audio.startsWith('data:audio/') ? voiceHtml(m) : ''}${m.text ? `<span>${linkify(m.text)}</span>` : ''}${reactsHtml(m, id)}<time>${hm(new Date(ms(m.createdAt)))}${ticks}</time>${sel ? `<div class="react-pick">${REACTS.map(e => `<button data-act="react" data-id="${esc(m.id)}" data-e="${e}" aria-label="Реакция ${e}">${e}</button>`).join('')}</div><div class="msg-acts"><button data-act="replymsg" data-id="${esc(m.id)}">${I.reply}Ответить</button>${mine ? `<button data-act="delmsg" data-id="${esc(m.id)}">${S.confirm === 'msg:' + m.id ? 'Удалить у всех?' : 'Удалить'}</button>` : ''}</div>` : ''}</div>`;
 }
 function viewMessages() {
   const id = S.me.id;
@@ -1394,7 +1512,10 @@ function viewMessages() {
       <div class="msgs">${body}</div>
       ${rp ? `<div class="reply-bar">${I.reply}<div class="grow" style="min-width:0"><b>${esc(rp.from === id ? 'Вы' : o.name.split(' ')[0])}</b><div class="muted small" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(rp.text)}</div></div><button class="icon-btn" data-act="noreply" aria-label="Не отвечать">✕</button></div>` : ''}
       ${emojiPanel('msgInput')}
-      ${o.deleted ? '' : !self && o.privacy?.messages === 'friends' && !(S.me.friends || []).includes(o.id) && !cache.messages.length
+      ${o.deleted ? '' : banOf(S.me) ? `<div class="chat-form muted small" style="justify-content:center">Ваш аккаунт заблокирован — писать сообщения нельзя</div>`
+        : !self && iBlocked(o.id) ? `<div class="chat-form muted small" style="justify-content:center">Вы заблокировали этого человека · <button class="linkbtn" data-act="unblock" data-id="${esc(o.id)}">разблокировать</button></div>`
+        : !self && blockedMe(o) ? `<div class="chat-form muted small" style="justify-content:center">${esc(o.name.split(' ')[0])} ограничил(а) вам доступ к сообщениям</div>`
+        : !self && o.privacy?.messages === 'friends' && !(S.me.friends || []).includes(o.id) && !cache.messages.length
         ? `<div class="chat-form muted small" style="justify-content:center">${esc(o.name.split(' ')[0])} принимает сообщения только от друзей</div>` : S.rec ? `<div class="chat-form rec-bar"><span class="rec-dot"></span><b id="recTime" class="tnum">${fmtDur((Date.now() - S.rec.started) / 1000)}</b><span class="grow muted small">Идёт запись, до 1 минуты</span>
           <button type="button" class="btn ghost" data-act="reccancel">Отмена</button><button type="button" class="btn" data-act="recsend">${I.send}</button></div>`
         : `<form class="chat-form" data-form="msg" data-to="${esc(o.id)}"><button type="button" class="icon-btn" data-act="msgphoto" aria-label="Отправить фото" ${S.busy ? 'disabled' : ''}>${I.photo}</button>${emojiBtn('msgInput')}<input id="msgInput" placeholder="Сообщение" maxlength="2000" autocomplete="off"><button type="button" class="icon-btn" data-act="mic" aria-label="Записать голосовое">${I.mic}</button><button class="btn" aria-label="Отправить">${I.send}</button></form>`}`;
@@ -1425,8 +1546,9 @@ document.addEventListener('click', async e => {
   const stop = e.target.closest('[data-stop]'); if (stop && !stop.contains(b)) return;
   const { act, id } = b.dataset;
   const twoStep = key => { if (S.confirm === key) { S.confirm = null; return true; } S.confirm = key; render(); return false; };
-  if (!['delpost', 'unfriend', 'delvideo', 'delalbum', 'delfile', 'delphoto', 'delmsg', 'postmenu'].includes(act)) S.confirm = null;
+  if (!['delpost', 'unfriend', 'delvideo', 'delalbum', 'delfile', 'delphoto', 'delmsg', 'postmenu', 'block', 'rpost', 'profmenu'].includes(act)) S.confirm = null;
   if (!['selmsg', 'delmsg', 'replymsg', 'playvoice'].includes(act)) S.msgSel = null;
+  if (!['profmenu', 'block', 'modopen', 'ban', 'unban', 'report'].includes(act)) S.profMenu = false;
   if (!['postmenu', 'delpost', 'pinpost'].includes(act)) S.postMenu = null;
   if (!['emoji', 'emojis'].includes(act)) S.emoji = null;
   try {
@@ -1464,9 +1586,7 @@ document.addEventListener('click', async e => {
         render(); document.getElementById('c_' + id)?.focus(); break;
       case 'delpost': {
         if (!twoStep('post:' + id)) return;
-        const cs = await getDocs(collection(db, 'posts', id, 'comments'));
-        const bt = writeBatch(db); cs.docs.slice(0, 480).forEach(d => bt.delete(d.ref)); bt.delete(doc(db, 'posts', id));
-        await bt.commit(); toast('Запись удалена'); break;
+        await deletePostFully(id); toast('Запись удалена'); break;
       }
       case 'delc': {
         const bt = writeBatch(db);
@@ -1505,6 +1625,7 @@ document.addEventListener('click', async e => {
       }
       case 'lightbox': openLightbox(+b.dataset.i); break;
       case 'lbstep': { const n = cache.photos.length; if (n) openLightbox((S.lightbox + Number(b.dataset.d) + n) % n); break; }
+      case 'reportclose': S.report = null; render(); break;
       case 'ovclose': S.lightbox = null; S.lightboxImg = null; S.preview = null; S.viewImg = null; render(); break;
       case 'delphoto': {
         if (!twoStep('photo:' + id)) return;
@@ -1588,6 +1709,61 @@ document.addEventListener('click', async e => {
       case 'noavatar': S.editPhoto = ''; render(); break;
       case 'color': S.editColor = b.dataset.c; render(); break;
       case 'cover': S.editCover = b.dataset.c; render(); break;
+      case 'profmenu': S.profMenu = !S.profMenu; S.modOpen = false; render(); break;
+      case 'modopen': S.modOpen = !S.modOpen; render(); document.getElementById('banReason')?.focus(); break;
+      case 'block': {
+        if (!twoStep('block:' + id)) return;
+        const me = S.me, bt = writeBatch(db), patch = { blocked: arrayUnion(id) };
+        if ((me.friends || []).includes(id)) { patch.friends = arrayRemove(id); bt.update(doc(db, 'users', id), { friends: arrayRemove(me.id) }); }
+        bt.update(doc(db, 'users', me.id), patch);
+        if (cache.incoming.some(r => r.from === id)) bt.delete(doc(db, 'friendRequests', id + '_' + me.id));
+        if (cache.outgoing.some(r => r.to === id)) bt.delete(doc(db, 'friendRequests', me.id + '_' + id));
+        await bt.commit(); S.profMenu = false; toast('Человек заблокирован'); render(); break;
+      }
+      case 'unblock': await updateDoc(doc(db, 'users', uid()), { blocked: arrayRemove(id) }); toast('Разблокирован'); break;
+      case 'ban': {
+        const d = Number(b.dataset.d), reason = (document.getElementById('banReason')?.value || '').trim().slice(0, 300);
+        const until = d ? new Date(Date.now() + d * 864e5) : null;
+        await banUser(id, until, reason); S.modOpen = false; S.profMenu = false; render(); break;
+      }
+      case 'unban': await updateDoc(doc(db, 'users', id), { ban: deleteField() }); S.modOpen = false; S.profMenu = false; toast('Блокировка снята'); refreshUser(id); render(); break;
+      case 'report': S.report = { type: b.dataset.type, targetId: id, targetUser: b.dataset.user || '', postId: b.dataset.post || '', text: b.dataset.text || '' }; S.postMenu = null; render(); break;
+      case 'reportsend': {
+        const r = S.report; if (!r) return;
+        try {
+          await setDoc(doc(db, 'reports', `${r.type}_${r.targetId}_${uid()}`), { from: uid(), type: r.type, targetId: r.targetId, targetUser: r.targetUser, postId: r.postId, reason: b.dataset.r, text: r.text.slice(0, 300), createdAt: serverTimestamp() });
+          toast('Жалоба отправлена. Спасибо!');
+        } catch (e) { toast(e.code === 'permission-denied' ? 'Вы уже жаловались на это' : errText(e)); }
+        S.report = null; render(); break;
+      }
+      case 'repost': {
+        const p = findPost(id); if (!p) return;
+        const origId = p.repostOf || p.id, orig = p.repostOf ? (cache.reposted.get(origId) || findPost(origId)) : p;
+        const bt = writeBatch(db);
+        bt.set(doc(collection(db, 'posts')), { authorId: uid(), wallId: uid(), text: '', image: '', repostOf: origId, likes: [], commentCount: 0, createdAt: serverTimestamp() });
+        bt.update(doc(db, 'posts', origId), { reposts: increment(1) });
+        await bt.commit();
+        if (orig && !orig.missing) notify(orig.authorId, 'repost', origId, orig.text || 'Фото');
+        toast('Запись появилась на вашей стене'); break;
+      }
+      case 'react': {
+        const m = cache.messages.find(x => x.id === id); if (!m) return;
+        const mine = (m.reacts || {})[uid()];
+        await updateDoc(doc(db, 'chats', chatId(uid(), S.chatWith), 'messages', id), { [`reacts.${uid()}`]: mine === b.dataset.e ? deleteField() : b.dataset.e });
+        S.msgSel = null; render(); break;
+      }
+      case 'rdel': await deleteDoc(doc(db, 'reports', id)); toast('Жалоба закрыта'); break;
+      case 'rpost': {
+        const r = cache.reports.find(x => x.id === id); if (!r) return;
+        if (!twoStep('rpost:' + id)) return;
+        await deletePostFully(r.postId || r.targetId);
+        await deleteDoc(doc(db, 'reports', id)); toast('Запись удалена'); break;
+      }
+      case 'rban': {
+        const r = cache.reports.find(x => x.id === id); if (!r?.targetUser) return;
+        await banUser(r.targetUser, new Date(Date.now() + 7 * 864e5), 'Жалоба: ' + (REPORT_REASONS[r.reason] || r.reason));
+        await deleteDoc(doc(db, 'reports', id)); break;
+      }
       case 'newclub': S.newClub = !S.newClub; render(); if (S.newClub) document.getElementById('clName')?.focus(); break;
       case 'sub': case 'unsub': {
         const on = act === 'sub', mine = (S.me.groups || []).includes(id);
@@ -1620,6 +1796,17 @@ document.addEventListener('click', async e => {
     }
   } catch (err) { console.error(err); toast(errText(err)); }
 });
+
+async function deletePostFully(id) {
+  const cs = await getDocs(collection(db, 'posts', id, 'comments'));
+  const bt = writeBatch(db); cs.docs.slice(0, 480).forEach(d => bt.delete(d.ref)); bt.delete(doc(db, 'posts', id));
+  await bt.commit();
+}
+async function banUser(id, until, reason) {
+  await updateDoc(doc(db, 'users', id), { ban: { until: until || null, reason, by: uid(), at: serverTimestamp() } });
+  toast(until ? 'Заблокирован до ' + until.toLocaleDateString('ru-RU') : 'Заблокирован навсегда'); refreshUser(id);
+}
+function refreshUser(id) { cache.users.delete(id); ensureUsers([id]); if (S.view === 'admin') attachView(); }
 
 /* Сообщения */
 async function sendMessage(to, text, image = '', extra = {}) {

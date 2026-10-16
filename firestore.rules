@@ -14,6 +14,13 @@ service cloud.firestore {
     function user(id) { return get(path('users', id)).data; }
     // Админ назначается только вручную в консоли Firestore: users/{uid}.admin = true (boolean или строка "true")
     function isAdmin() { return user(me()).get('admin', false) in [true, 'true']; }
+    // Бан ставит админ с сайта: users/{uid}.ban = {until (timestamp или null — навсегда), reason, by, at}
+    function notBanned() {
+      let b = user(me()).get('ban', null);
+      return b == null || (b.get('until', null) != null && b.until <= request.time);
+    }
+    // Чёрный список: users/{uid}.blocked — кого человек заблокировал
+    function blockedBy(id) { return id != me() && me() in user(id).get('blocked', []); }
     function group(id) { return get(path('groups', id)).data; }
     function groupAdmin(id) { return me() in group(id).admins; }
 
@@ -48,7 +55,8 @@ service cloud.firestore {
         && (!('notifSeenAt' in u) || u.notifSeenAt is timestamp)
         && str(u.get('pinned', ''), 0, 40)
         && u.get('cover', 'blue') in ['blue', 'sunset', 'sea', 'night', 'rose', 'gold']
-        && u.get('groups', []) is list && u.get('groups', []).size() <= 500;
+        && u.get('groups', []) is list && u.get('groups', []).size() <= 500
+        && u.get('blocked', []) is list && u.get('blocked', []).size() <= 500;
     }
     // Ник в профиле должен принадлежать владельцу профиля (после пачки)
     function nickOwned(u) { return getAfter(path('usernames', u.nick)).data.uid == me(); }
@@ -62,13 +70,19 @@ service cloud.firestore {
 
     match /users/{uid} {
       allow read: if signed();
-      allow create: if signed() && uid == me() && validProfile(d()) && d().friends.size() == 0 && !('admin' in d())
+      allow create: if signed() && uid == me() && validProfile(d()) && d().friends.size() == 0 && !('admin' in d()) && !('ban' in d())
         && now(d().createdAt) && nickOwned(d());
       // свой профиль
       allow update: if signed() && uid == me() && validProfile(d())
-        && !changed().hasAny(['createdAt', 'admin'])
+        && !changed().hasAny(['createdAt', 'admin', 'ban'])
         && (!changed().hasAny(['nick']) || nickOwned(d()))
         && (!changed().hasAny(['friends']) || friendsOk(resource.data.get('friends', []), d().friends));
+      // админ банит и разбанивает (других админов — нельзя)
+      allow update: if signed() && uid != me() && isAdmin() && onlyChanged(['ban'])
+        && !(resource.data.get('admin', false) in [true, 'true'])
+        && (!('ban' in d()) || (d().ban is map && d().ban.keys().hasOnly(['until', 'reason', 'by', 'at'])
+          && (d().ban.until == null || d().ban.until is timestamp) && str(d().ban.reason, 0, 300)
+          && d().ban.by == me() && now(d().ban.at)));
       // чужой профиль: только добавить себя в друзья (по моей принятой заявке) или убрать себя
       allow update: if signed() && uid != me() && onlyChanged(['friends'])
         && toggledMe(resource.data.get('friends', []), d().friends)
@@ -81,7 +95,7 @@ service cloud.firestore {
       allow create: if signed() && d().keys().hasOnly(['from', 'to', 'createdAt'])
         && d().from == me() && d().to is string && d().to != me()
         && rid == me() + '_' + d().to && now(d().createdAt)
-        && exists(path('users', d().to));
+        && exists(path('users', d().to)) && notBanned() && !blockedBy(d().to);
       allow delete: if signed() && (resource.data.from == me() || resource.data.to == me());
     }
 
@@ -89,7 +103,7 @@ service cloud.firestore {
     // На чужой стене пишут только друзья, и только если хозяин не выбрал «Только я»
     function canWriteWall(wallId) {
       return wallId == me() || (me() in user(wallId).get('friends', [])
-        && user(wallId).get('privacy', {}).get('wall', 'friends') != 'me');
+        && user(wallId).get('privacy', {}).get('wall', 'friends') != 'me' && !blockedBy(wallId));
     }
     function validPoll(p) {
       return p is map && p.keys().hasOnly(['q', 'options', 'votes']) && str(p.q, 1, 200)
@@ -97,20 +111,24 @@ service cloud.firestore {
     }
     match /posts/{pid} {
       allow read: if signed();
-      allow create: if signed() && d().keys().hasOnly(['authorId', 'wallId', 'groupId', 'text', 'image', 'poll', 'likes', 'commentCount', 'createdAt'])
+      allow create: if signed() && notBanned()
+        && d().keys().hasOnly(['authorId', 'wallId', 'groupId', 'text', 'image', 'poll', 'repostOf', 'likes', 'commentCount', 'createdAt'])
         && d().authorId == me() && d().wallId is string
+        && (!('repostOf' in d()) || (str(d().repostOf, 1, 40) && exists(path('posts', d().repostOf))))
         && (('groupId' in d()) ? (d().groupId == d().wallId && groupAdmin(d().groupId)) : canWriteWall(d().wallId))
-        && str(d().text, 0, 4000) && str(d().image, 0, 750000) && (d().text.size() > 0 || d().image.size() > 0 || 'poll' in d())
+        && str(d().text, 0, 4000) && str(d().image, 0, 750000) && (d().text.size() > 0 || d().image.size() > 0 || 'poll' in d() || 'repostOf' in d())
         && (!('poll' in d()) || validPoll(d().poll))
         && d().likes == [] && d().commentCount == 0 && now(d().createdAt);
       // голос в опросе: меняется только мой голос, номер варианта в пределах списка
-      allow update: if signed() && onlyChanged(['poll'])
+      allow update: if signed() && notBanned() && onlyChanged(['poll'])
         && d().poll.diff(resource.data.poll).affectedKeys().hasOnly(['votes'])
         && d().poll.votes.diff(resource.data.poll.votes).affectedKeys().hasOnly([me()])
         && (!(me() in d().poll.votes) || (d().poll.votes[me()] is int && d().poll.votes[me()] >= 0
           && d().poll.votes[me()] < resource.data.poll.options.size()));
       // лайк: добавить или убрать только себя
-      allow update: if signed() && onlyChanged(['likes']) && toggledMe(resource.data.likes, d().likes);
+      allow update: if signed() && notBanned() && onlyChanged(['likes']) && toggledMe(resource.data.likes, d().likes);
+      // счётчик репостов: только +1, вместе с самим репостом
+      allow update: if signed() && notBanned() && onlyChanged(['reposts']) && d().reposts == resource.data.get('reposts', 0) + 1;
       // счётчик комментариев: ровно ±1
       allow update: if signed() && onlyChanged(['commentCount'])
         && (d().commentCount == resource.data.commentCount + 1 || d().commentCount == resource.data.commentCount - 1);
@@ -122,8 +140,9 @@ service cloud.firestore {
 
       match /comments/{cid} {
         allow read: if signed();
-        allow create: if signed() && d().keys().hasOnly(['authorId', 'text', 'createdAt'])
-          && d().authorId == me() && str(d().text, 1, 1000) && now(d().createdAt);
+        allow create: if signed() && notBanned() && d().keys().hasOnly(['authorId', 'text', 'createdAt'])
+          && d().authorId == me() && str(d().text, 1, 1000) && now(d().createdAt)
+          && !blockedBy(get(path('posts', pid)).data.authorId);
         allow delete: if signed() && (resource.data.authorId == me()
           || get(path('posts', pid)).data.authorId == me()
           || get(path('posts', pid)).data.wallId == me()
@@ -159,7 +178,7 @@ service cloud.firestore {
       }
       match /messages/{mid} {
         allow read: if signed() && inChat(cid);
-        allow create: if signed() && inChat(cid) && canStart()
+        allow create: if signed() && inChat(cid) && canStart() && notBanned() && !blockedBy(peer(cid))
           && d().keys().hasOnly(['from', 'text', 'image', 'audio', 'dur', 'replyTo', 'createdAt'])
           && (!('audio' in d()) || (str(d().audio, 1, 700000) && d().audio.matches('^data:audio/.*') && d().dur is number && d().dur <= 61))
           && d().from == me() && str(d().text, 0, 2000) && str(d().get('image', ''), 0, 400000)
@@ -167,6 +186,10 @@ service cloud.firestore {
             && str(d().replyTo.text, 0, 120) && str(d().replyTo.id, 1, 40)))
           && (d().text.size() > 0 || d().get('image', '').size() > 0 || 'audio' in d()) && now(d().createdAt);
         allow delete: if signed() && resource.data.from == me();
+        // реакция: каждый участник ставит или снимает только свою
+        allow update: if signed() && inChat(cid) && onlyChanged(['reacts'])
+          && d().reacts is map && d().reacts.diff(resource.data.get('reacts', {})).affectedKeys().hasOnly([me()])
+          && (!(me() in d().reacts) || d().reacts[me()] in ['❤️', '😂', '👍', '😮', '😢', '🔥']);
       }
     }
 
@@ -178,7 +201,7 @@ service cloud.firestore {
     }
     match /groups/{gid} {
       allow read: if signed();
-      allow create: if signed() && d().keys().hasOnly(['name', 'about', 'photo', 'cover', 'ownerId', 'admins', 'membersCount', 'createdAt'])
+      allow create: if signed() && notBanned() && d().keys().hasOnly(['name', 'about', 'photo', 'cover', 'ownerId', 'admins', 'membersCount', 'createdAt'])
         && validGroup(d()) && d().ownerId == me() && d().admins == [me()] && d().membersCount == 1 && now(d().createdAt)
         && gid in getAfter(path('users', me())).data.get('groups', []);
       // админы сообщества меняют название, описание, фото, обложку
@@ -200,15 +223,26 @@ service cloud.firestore {
       allow read: if signed() && resource.data.to == me();
       allow create: if signed() && d().keys().hasOnly(['to', 'from', 'type', 'postId', 'text', 'createdAt'])
         && d().from == me() && d().to is string && d().to != me()
-        && d().type in ['like', 'comment', 'wall', 'friend']
+        && d().type in ['like', 'comment', 'wall', 'friend', 'repost']
         && str(d().postId, 0, 40) && str(d().text, 0, 120) && now(d().createdAt);
       allow delete: if signed() && (resource.data.to == me() || resource.data.from == me());
+    }
+
+    // ---------- Жалобы: id = тип_цель_автор (одна жалоба на цель от человека). Видит и разбирает только админ ----------
+    match /reports/{rid} {
+      allow read, delete: if signed() && isAdmin();
+      allow create: if signed() && notBanned()
+        && d().keys().hasOnly(['from', 'type', 'targetId', 'targetUser', 'postId', 'reason', 'text', 'createdAt'])
+        && d().from == me() && d().type in ['post', 'user', 'comment', 'group']
+        && str(d().targetId, 1, 80) && str(d().targetUser, 0, 40) && str(d().postId, 0, 40)
+        && d().reason in ['spam', 'abuse', 'nsfw', 'fraud', 'other'] && str(d().text, 0, 300)
+        && rid == d().type + '_' + d().targetId + '_' + me() && now(d().createdAt);
     }
 
     // ---------- ВС Видео ----------
     match /videos/{vid} {
       allow read: if signed();
-      allow create: if signed() && d().ownerId == me()
+      allow create: if signed() && notBanned() && d().ownerId == me()
         && d().keys().hasOnly(['ownerId', 'title', 'description', 'source', 'provider', 'vid', 'fileId', 'type', 'thumb', 'duration', 'size', 'likes', 'createdAt'])
         && str(d().title, 1, 120) && str(d().get('description', ''), 0, 2000) && str(d().get('thumb', ''), 0, 300000)
         && d().likes == [] && now(d().createdAt)
@@ -222,7 +256,7 @@ service cloud.firestore {
     // ---------- Файлы ВС Диска и видео (кусками по 700 000 символов) ----------
     match /files/{fid} {
       allow read: if signed() && (resource.data.ownerId == me() || resource.data.kind == 'video');
-      allow create: if signed() && d().ownerId == me() && d().kind in ['disk', 'video']
+      allow create: if signed() && notBanned() && d().ownerId == me() && d().kind in ['disk', 'video']
         && d().keys().hasOnly(['ownerId', 'kind', 'name', 'size', 'type', 'chunks', 'status', 'createdAt'])
         && str(d().name, 0, 200) && d().size is int && d().size <= 21000000
         && d().chunks is int && d().chunks >= 1 && d().chunks <= 40
@@ -243,7 +277,7 @@ service cloud.firestore {
     // ---------- ВС Альбомы ----------
     match /albums/{aid} {
       allow read: if signed();
-      allow create: if signed() && d().ownerId == me()
+      allow create: if signed() && notBanned() && d().ownerId == me()
         && d().keys().hasOnly(['ownerId', 'title', 'count', 'cover', 'coverId', 'createdAt', 'updatedAt'])
         && str(d().title, 1, 80) && d().count == 0 && now(d().createdAt);
       allow update: if signed() && resource.data.ownerId == me() && onlyChanged(['title', 'count', 'cover', 'coverId', 'updatedAt'])

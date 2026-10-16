@@ -6,7 +6,7 @@ import { readFileSync } from 'node:fs';
 import { initializeTestEnvironment, assertSucceeds, assertFails } from '@firebase/rules-unit-testing';
 import {
   doc, collection, setDoc, getDoc, updateDoc, deleteDoc, writeBatch,
-  serverTimestamp, arrayUnion, arrayRemove, increment, Timestamp
+  serverTimestamp, arrayUnion, arrayRemove, increment, Timestamp, deleteField
 } from 'firebase/firestore';
 
 let env;
@@ -340,4 +340,65 @@ test('голосовое сообщение', async () => {
   b.set(doc(f, 'chats', cid), { members: [A, B].sort(), lastText: '🎤 Голосовое', lastFrom: B, lastAt: serverTimestamp(), read: { [B]: serverTimestamp() } }, { merge: true });
   await assertSucceeds(b.commit());
   await assertFails(setDoc(doc(collection(f, 'chats', cid, 'messages')), { from: B, text: '', audio: 'javascript:alert(1)', dur: 3, createdAt: serverTimestamp() }));
+});
+
+/* ---------- 1.7: чёрный список, бан, жалобы, реакции, репосты ---------- */
+const banFor = (by, ms) => ({ until: ms === null ? null : Timestamp.fromMillis(Date.now() + ms), reason: 'спам', by, at: serverTimestamp() });
+test('бан: ставит только админ, забаненный не пишет; истёкший бан не мешает', async () => {
+  await assertFails(updateDoc(doc(db(B), 'users', C), { ban: banFor(B, null) }));
+  await env.withSecurityRulesDisabled(ctx => updateDoc(doc(ctx.firestore(), 'users', A), { admin: true }));
+  await assertSucceeds(updateDoc(doc(db(A), 'users', B), { ban: banFor(A, null) }));
+  await assertFails(updateDoc(doc(db(B), 'users', B), { ban: null }));
+  await assertFails(setDoc(doc(collection(db(B), 'posts')), post(B, B)));
+  await assertFails(send(B, A, 'привет'));
+  await assertFails(updateDoc(doc(db(B), 'posts', 'p1'), { likes: arrayUnion(B) }));
+  await assertSucceeds(updateDoc(doc(db(A), 'users', B), { ban: banFor(A, -1000) }));
+  await assertSucceeds(setDoc(doc(collection(db(B), 'posts')), post(B, B)));
+  await assertSucceeds(updateDoc(doc(db(A), 'users', B), { ban: deleteField() }));
+  await assertFails(updateDoc(doc(db(C), 'users', A), { ban: banFor(C, null) }));
+});
+test('нельзя забанить админа', async () => {
+  await env.withSecurityRulesDisabled(async ctx => {
+    await updateDoc(doc(ctx.firestore(), 'users', A), { admin: true });
+    await updateDoc(doc(ctx.firestore(), 'users', C), { admin: 'true' });
+  });
+  await assertFails(updateDoc(doc(db(A), 'users', C), { ban: banFor(A, null) }));
+});
+test('чёрный список: не пишет, не комментирует, не шлёт заявку', async () => {
+  await assertSucceeds(updateDoc(doc(db(A), 'users', A), { blocked: arrayUnion(B) }));
+  await assertFails(send(B, A, 'привет'));
+  await assertFails(setDoc(doc(collection(db(B), 'posts', 'p1', 'comments')), { authorId: B, text: 'x', createdAt: serverTimestamp() }));
+  await assertFails(setDoc(doc(db(B), 'friendRequests', B + '_' + A), { from: B, to: A, createdAt: serverTimestamp() }));
+  await assertSucceeds(send(C, A, 'привет'));
+  await assertSucceeds(send(A, B, 'я могу писать'));
+});
+test('жалобы: создать одну, читает только админ', async () => {
+  const rid = 'post_p1_' + B;
+  const rep = { from: B, type: 'post', targetId: 'p1', targetUser: A, postId: 'p1', reason: 'spam', text: 'привет', createdAt: serverTimestamp() };
+  await assertSucceeds(setDoc(doc(db(B), 'reports', rid), rep));
+  await assertFails(setDoc(doc(db(B), 'reports', rid), rep));
+  await assertFails(setDoc(doc(db(B), 'reports', 'post_p1_' + C), rep));
+  await assertFails(getDoc(doc(db(B), 'reports', rid)));
+  await env.withSecurityRulesDisabled(ctx => updateDoc(doc(ctx.firestore(), 'users', C), { admin: true }));
+  await assertSucceeds(getDoc(doc(db(C), 'reports', rid)));
+  await assertSucceeds(deleteDoc(doc(db(C), 'reports', rid)));
+});
+test('реакции: только своя и из списка', async () => {
+  const ref = await send(B, A, 'привет');
+  const cid = [A, B].sort().join('_');
+  await assertSucceeds(updateDoc(doc(db(A), 'chats', cid, 'messages', ref.id), { 'reacts.aaaa': '❤️' }));
+  await assertSucceeds(updateDoc(doc(db(B), 'chats', cid, 'messages', ref.id), { [`reacts.${B}`]: '😂' }));
+  await assertFails(updateDoc(doc(db(B), 'chats', cid, 'messages', ref.id), { [`reacts.${A}`]: '👍' }));
+  await assertFails(updateDoc(doc(db(B), 'chats', cid, 'messages', ref.id), { [`reacts.${B}`]: '💩' }));
+  await assertFails(updateDoc(doc(db(B), 'chats', cid, 'messages', ref.id), { text: 'подмена' }));
+  await assertSucceeds(updateDoc(doc(db(A), 'chats', cid, 'messages', ref.id), { [`reacts.${A}`]: deleteField() }));
+  await assertFails(updateDoc(doc(db(C), 'chats', cid, 'messages', ref.id), { [`reacts.${C}`]: '❤️' }));
+});
+test('репост: запись со ссылкой + счётчик +1', async () => {
+  const f = db(C), b = writeBatch(f);
+  b.set(doc(collection(f, 'posts')), post(C, C, { text: '', repostOf: 'p1' }));
+  b.update(doc(f, 'posts', 'p1'), { reposts: increment(1) });
+  await assertSucceeds(b.commit());
+  await assertFails(updateDoc(doc(f, 'posts', 'p1'), { reposts: 50 }));
+  await assertFails(setDoc(doc(collection(f, 'posts')), post(C, C, { text: '', repostOf: 'nope' })));
 });

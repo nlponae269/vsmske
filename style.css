@@ -426,3 +426,19 @@ input[type=search]::-webkit-search-cancel-button{display:none}
 .rec-bar{align-items:center}
 .rec-dot{width:10px;height:10px;border-radius:50%;background:var(--like);animation:recBlink 1s ease-in-out infinite}
 @keyframes recBlink{50%{opacity:.25}}
+
+/* 1.7: модерация, реакции, репосты */
+.chip{display:inline-block;padding:2px 8px;border-radius:99px;font-size:12px;font-weight:600;background:var(--surface-2);color:var(--muted);margin-top:4px}
+.ban-chip{background:color-mix(in srgb,var(--like) 14%,transparent);color:var(--like)}
+.ban-banner{border:1px solid color-mix(in srgb,var(--like) 40%,transparent);background:color-mix(in srgb,var(--like) 8%,var(--surface));display:flex;flex-direction:column;gap:4px}
+.ban-banner b{color:var(--like)}
+.mod-box{margin:0 20px 16px;padding:14px;border-radius:12px;border:1px dashed var(--line);display:flex;flex-direction:column;gap:10px}
+.reacts{display:flex;gap:4px;flex-wrap:wrap;margin-top:4px;white-space:normal}
+.react{border:0;border-radius:99px;padding:1px 7px;font-size:13px;line-height:1.5;cursor:pointer;background:color-mix(in srgb,currentColor 14%,transparent);color:inherit;display:inline-flex;gap:3px;align-items:center}
+.react span{font-size:11px;font-weight:700}
+.react.mine{outline:1.5px solid currentColor}
+.react-pick{display:flex;gap:2px;justify-content:flex-end;margin-top:6px;white-space:normal}
+.react-pick button{border:0;background:color-mix(in srgb,currentColor 12%,transparent);border-radius:99px;font-size:18px;line-height:1;padding:5px 6px;cursor:pointer}
+.repost{border-left:3px solid var(--accent);padding:4px 0 4px 12px;margin:8px 0 4px;display:flex;flex-direction:column;gap:8px}
+.ov-in.modal{max-width:380px;width:calc(100% - 32px);background:var(--surface);color:var(--fg);border-radius:16px;padding:18px;display:flex;flex-direction:column;gap:8px;height:auto}
+.report .acts{justify-content:flex-start}

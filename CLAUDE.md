@@ -15,7 +15,7 @@
   - файлы Диска и видео режутся на куски по 700 000 символов base64 в `files/{id}/chunks/{0000..}`.
 - Маршрутизация через hash: `#feed`, `#id/<uid>`, `#im/<uid>`, `#friends`, `#people`, `#edit`,
   `#video`, `#video/<id>`, `#videos/<uid>`, `#albums/<uid>`, `#album/<id>`, `#disk`, `#vid`, `#settings`, `#more`,
-  `#post/<id>` (одна запись), `#notif` (уведомления), `#clubs` (сообщества), `#club/<id>` (сообщество). `#im/<свой uid>` — «Избранное» (чат с самим собой, id `uid_uid`).
+  `#post/<id>` (одна запись), `#notif` (уведомления), `#clubs` (сообщества), `#club/<id>` (сообщество), `#admin` (админ-панель, только для админов). `#im/<свой uid>` — «Избранное» (чат с самим собой, id `uid_uid`).
 - Рендер: функция `render()` целиком перерисовывает `#app` через innerHTML, а значения полей ввода сохраняются между перерисовками.
   Исключение — страница видео: там обновляются только части страницы, чтобы плеер не перезапускался (см. `playerKey`).
 
@@ -23,7 +23,8 @@
 `users`, `usernames` (уникальные короткие имена), `friendRequests` (id = `от_кому`), `posts` + `posts/{id}/comments`,
 `chats` (id = `uid1_uid2` по алфавиту) + `chats/{id}/messages`, `videos`, `files` + `files/{id}/chunks`,
 `albums`, `photos` (миниатюры), `photoFull` (полные фото), `notifs` (уведомления: `to`, `from`, `type`, `postId`, `text`),
-`groups` (сообщества: `name`, `about`, `photo`, `cover`, `ownerId`, `admins[]`, `membersCount`).
+`groups` (сообщества: `name`, `about`, `photo`, `cover`, `ownerId`, `admins[]`, `membersCount`),
+`reports` (жалобы, id = `тип_цель_автор`; читает и удаляет только админ).
 
 Поля, добавленные в 1.3: `users.lastSeen` (статус «в сети», пишется не чаще раза в 4 минуты),
 `posts.editedAt` (запись изменена автором), `chats/{id}/messages.image` (фото в сообщении, dataURL до `MAX_MSG_IMG`).
@@ -37,6 +38,11 @@
 - `users.groups` (подписки на сообщества, до 500). Подписка = в одной пачке `users.groups` и `groups.membersCount` ±1.
   Записи сообщества лежат в `posts` с `wallId = groupId` и полем `groupId`; писать могут только `groups.admins`.
 - `messages.audio` (голосовое, dataURL `data:audio/...` до ~500 КБ, до 60 с) и `messages.dur` (секунды).
+Поля 1.7:
+- `users.ban` (`{until: timestamp|null, reason, by, at}`, null — навсегда). Ставит и снимает только админ с сайта (не другому админу).
+  Правило `notBanned()` запрещает забаненному создавать записи, комментарии, сообщения, сообщества, заявки, видео, файлы, альбомы, жалобы, лайкать и голосовать.
+- `users.blocked` (чёрный список, до 500): `blockedBy()` в правилах не даёт заблокированному писать сообщения, комментировать записи, писать на стене и слать заявки.
+- `messages.reacts` (`{uid: эмодзи}` из `REACTS`), `posts.repostOf` (id оригинала) и `posts.reposts` (счётчик, только +1).
 Хранится не больше `NOTIF_KEEP` уведомлений на человека: лишние удаляет клиент получателя (запрос без orderBy, чтобы не нужен был индекс).
 
 Составные индексы (созданы в консоли):
