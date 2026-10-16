@@ -1,0 +1,90 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signed() { return request.auth != null; }
+    function me() { return request.auth.uid; }
+    function onlyChanged(keys) { return request.resource.data.diff(resource.data).affectedKeys().hasOnly(keys); }
+
+    match /usernames/{nick} {
+      allow read: if true;
+      allow create: if signed() && request.resource.data.uid == me();
+      allow delete: if signed() && resource.data.uid == me();
+    }
+
+    match /users/{uid} {
+      allow read: if signed();
+      allow create: if signed() && uid == me();
+      allow update: if signed() && (uid == me() || onlyChanged(['friends']));
+    }
+
+    match /friendRequests/{rid} {
+      allow read: if signed() && (resource.data.from == me() || resource.data.to == me());
+      allow create: if signed() && request.resource.data.from == me();
+      allow delete: if signed() && (resource.data.from == me() || resource.data.to == me());
+    }
+
+    match /posts/{pid} {
+      allow read: if signed();
+      allow create: if signed() && request.resource.data.authorId == me();
+      allow update: if signed() && onlyChanged(['likes', 'commentCount']);
+      allow delete: if signed() && (resource.data.authorId == me() || resource.data.wallId == me());
+
+      match /comments/{cid} {
+        allow read: if signed();
+        allow create: if signed() && request.resource.data.authorId == me();
+        allow delete: if signed() && (resource.data.authorId == me()
+          || get(/databases/$(database)/documents/posts/$(pid)).data.authorId == me()
+          || get(/databases/$(database)/documents/posts/$(pid)).data.wallId == me());
+      }
+    }
+
+    match /chats/{cid} {
+      allow read: if signed() && me() in resource.data.members;
+      allow create, update: if signed() && me() in cid.split('_');
+
+      match /messages/{mid} {
+        allow read: if signed() && me() in cid.split('_');
+        allow create: if signed() && me() in cid.split('_') && request.resource.data.from == me();
+      }
+    }
+
+    // ВС Видео
+    match /videos/{vid} {
+      allow read: if signed();
+      allow create: if signed() && request.resource.data.ownerId == me();
+      allow update: if signed() && (resource.data.ownerId == me() || onlyChanged(['likes']));
+      allow delete: if signed() && resource.data.ownerId == me();
+    }
+
+    // Файлы для ВС Диска и видео (хранятся кусками)
+    match /files/{fid} {
+      allow read: if signed() && (resource.data.ownerId == me() || resource.data.kind == 'video');
+      allow create: if signed() && request.resource.data.ownerId == me();
+      allow update, delete: if signed() && resource.data.ownerId == me();
+
+      match /chunks/{n} {
+        allow read: if signed() && (get(/databases/$(database)/documents/files/$(fid)).data.ownerId == me()
+          || get(/databases/$(database)/documents/files/$(fid)).data.kind == 'video');
+        allow create, delete: if signed() && get(/databases/$(database)/documents/files/$(fid)).data.ownerId == me();
+      }
+    }
+
+    // ВС Альбомы
+    match /albums/{aid} {
+      allow read: if signed();
+      allow create: if signed() && request.resource.data.ownerId == me();
+      allow update, delete: if signed() && resource.data.ownerId == me();
+    }
+    match /photos/{pid} {
+      allow read: if signed();
+      allow create: if signed() && request.resource.data.ownerId == me();
+      allow delete: if signed() && resource.data.ownerId == me();
+    }
+    match /photoFull/{pid} {
+      allow read: if signed();
+      allow create: if signed() && request.resource.data.ownerId == me();
+      allow delete: if signed() && resource.data.ownerId == me();
+    }
+  }
+}
