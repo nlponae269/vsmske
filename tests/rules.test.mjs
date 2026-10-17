@@ -590,3 +590,23 @@ test('2.1: правка своего сообщения и закладки', as
   await assertFails(updateDoc(doc(db(B), 'chats', cid, 'messages', ref.id), { text: 'x', from: A, edited: serverTimestamp() }));
   await assertSucceeds(updateDoc(doc(db(A), 'users', A), { saved: arrayUnion('p1') }));
 });
+
+/* ---------- 3.0: события, эмодзи-статус, «сейчас слушает» ---------- */
+test('ВС События: создать, «пойду», править может только автор', async () => {
+  const e = doc(collection(db(A), 'events'));
+  const ev = { ownerId: A, title: 'Шашлыки', text: 'Берите мясо', place: 'Парк', at: Timestamp.fromMillis(Date.now() + 864e5), cover: '', going: [A], createdAt: serverTimestamp() };
+  await assertSucceeds(setDoc(e, ev));
+  await assertFails(setDoc(doc(collection(db(A), 'events')), { ...ev, going: [A, B] }));
+  await assertSucceeds(updateDoc(doc(db(B), 'events', e.id), { going: arrayUnion(B) }));
+  await assertFails(updateDoc(doc(db(B), 'events', e.id), { going: [B] }));
+  await assertFails(updateDoc(doc(db(B), 'events', e.id), { title: 'Взлом' }));
+  await assertSucceeds(updateDoc(e, { place: 'Набережная' }));
+  await assertFails(deleteDoc(doc(db(B), 'events', e.id)));
+  await assertSucceeds(deleteDoc(e));
+});
+test('эмодзи-статус и «сейчас слушает»', async () => {
+  await assertSucceeds(updateDoc(doc(db(A), 'users', A), { emoji: '🔥', listening: { title: 'Песня', artist: 'Группа', at: serverTimestamp() } }));
+  await assertSucceeds(updateDoc(doc(db(A), 'users', A), { listening: null }));
+  await assertFails(updateDoc(doc(db(A), 'users', A), { emoji: 'x'.repeat(40) }));
+  await assertFails(updateDoc(doc(db(A), 'users', A), { listening: { title: 'x', evil: 1 } }));
+});
