@@ -47,7 +47,7 @@ const MAX_POST_IMG = 700000;   // символов dataURL (~520 КБ), лими
 const MAX_AVATAR = 120000;
 const CHUNK = 700000;                                   // символов base64 в одном куске (кратно 4)
 const LIMITS = { disk: 10 * 1024 * 1024, video: 20 * 1024 * 1024, music: 12 * 1024 * 1024 };
-const VERSION = '5.3';
+const VERSION = '5.4';
 const MAX_MSG_IMG = 380000;    // фото в сообщении
 const ONLINE_MS = 5 * 60 * 1000; // «в сети», если заходил не раньше 5 минут назад
 
@@ -58,6 +58,10 @@ window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); instal
 window.addEventListener('appinstalled', () => { installPrompt = null; toast('VСмске установлено на главный экран'); });
 const isStandalone = () => matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
 const isIOS = () => /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+// Android-приложение собирает GitHub Actions (папка android/) и кладёт в релиз с тегом android
+const APK_URL = 'https://github.com/nlponae269/vsmske/releases/download/android/VSmske.apk';
+const androidCard = () => isIOS() ? '' : `<div class="card pad set"><h2 class="h" style="font-size:16px">Приложение для Android</h2>
+    <div class="set-row"><span class="grow">Настоящее приложение: liquid glass, музыка в фоне с управлением в шторке</span><a class="btn" href="${APK_URL}" rel="noopener">Скачать APK</a></div></div>`;
 function installCard() {
   if (isStandalone()) return '';
   if (installPrompt) return `<div class="card pad set install"><h2 class="h" style="font-size:16px">Приложение VСмске</h2>
@@ -1520,7 +1524,7 @@ function viewSettings() {
       <div class="set-row"><span class="grow">Цвет</span><div class="accents" role="radiogroup">${ACCENTS.map(([k, l, c]) => `<button role="radio" aria-checked="${(lsGet('vs_accent') || 'blue') === k}" aria-label="${l}" title="${l}" class="${(lsGet('vs_accent') || 'blue') === k ? 'on' : ''}" style="background:${c}" data-act="accent" data-v="${k}"></button>`).join('')}</div></div>
       <div class="set-row"><span class="grow">Облегчённая версия<br><span class="muted small">Простой вид как в первых версиях: без стекла, шариков и размытия. Быстрее на слабых устройствах</span></span>${seg('lite', isLite() ? 'on' : 'off', [['off', 'Выкл'], ['on', 'Вкл']])}</div>
       <p class="hint" style="margin:0">Сохраняется на этом устройстве.</p></div>
-    ${installCard()}
+    ${androidCard()}${installCard()}
     <div class="card pad set"><h2 class="h" style="font-size:16px">Музыка</h2>
       <div class="set-row"><span class="grow">Показывать в профиле, что я слушаю</span>${seg('listen', lsGet('vs_listen') === '0' ? 'off' : 'on', [['on', 'Да'], ['off', 'Нет']])}</div>
       <div class="set-row"><span class="grow">Анимации</span>${seg('anim', lsGet('vs_anim') === 'off' ? 'off' : 'on', [['on', 'Вкл'], ['off', 'Выкл']])}</div></div>
