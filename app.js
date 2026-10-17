@@ -47,7 +47,7 @@ const MAX_POST_IMG = 700000;   // символов dataURL (~520 КБ), лими
 const MAX_AVATAR = 120000;
 const CHUNK = 700000;                                   // символов base64 в одном куске (кратно 4)
 const LIMITS = { disk: 10 * 1024 * 1024, video: 20 * 1024 * 1024, music: 12 * 1024 * 1024 };
-const VERSION = '5.4';
+const VERSION = '6.0';
 const MAX_MSG_IMG = 380000;    // фото в сообщении
 const ONLINE_MS = 5 * 60 * 1000; // «в сети», если заходил не раньше 5 минут назад
 
@@ -1081,20 +1081,36 @@ function syncGlass() {
 }
 // SVG-фильтр внутри backdrop-filter понимает только Chromium (Chrome, Edge, Яндекс, Samsung); userAgentData есть только у него
 const lgOk = !!navigator.userAgentData?.brands?.some(b => /Chromium/.test(b.brand));
-/* Облегчённая версия (5.3): отключаем glass.css (стекло, шарики, шрифты 5.0) — остаётся классический вид из style.css.
-   Сразу при загрузке это делает скрипт в index.html, чтобы не мигало. */
-const isLite = () => lsGet('vs_lite') === 'on';
-function applyLite() {
-  const lite = isLite(), skin = document.getElementById('skin'), html = document.documentElement;
-  if (skin) skin.disabled = lite;
-  if (lite) html.dataset.lite = 'on'; else delete html.dataset.lite;
-  html.classList.toggle('lg-on', lgOk && !lite);
-  if (!lite) setTimeout(syncGlass, 400);
+/* Оформление (6.0): material — Material You (material.css), glass — «Фиолетовое стекло» / Liquid Glass (glass.css),
+   lite — классический вид первых версий (только style.css). Сразу при загрузке это делает скрипт в index.html, чтобы не мигало. */
+const SKINS = [['material', 'Material You'], ['glass', 'Liquid Glass'], ['lite', 'Классический']];
+const skinNow = () => { const k = lsGet('vs_skin'); return SKINS.some(s => s[0] === k) ? k : (lsGet('vs_lite') === 'on' ? 'lite' : 'material'); };
+const isLite = () => skinNow() !== 'glass';   // всё стеклянное (карта преломления) нужно только в Liquid Glass
+function applySkin() {
+  const k = skinNow(), html = document.documentElement, glass = document.getElementById('skin'), md = document.getElementById('skinMd');
+  if (glass) glass.disabled = k !== 'glass';
+  if (md) md.disabled = k !== 'material';
+  html.dataset.skin = k;
+  html.classList.toggle('lg-on', lgOk && k === 'glass');
+  if (k === 'glass') setTimeout(syncGlass, 400);
 }
-applyLite();
+applySkin();
 // если glass.css был отключён с самого начала, браузер догружает его только при включении — карту стекла пересчитываем, когда он применится
 document.getElementById('skin')?.addEventListener('load', () => syncGlass());
 window.addEventListener('resize', () => setTimeout(syncGlass, 100));
+
+/* Material You: рябь от места нажатия, как у кнопок Android (только в этом оформлении) */
+const RIPPLE = '.btn,.pill,.icon-btn,.seg button,.tabs button,.tabs a,.app-tile,.ditem,.fgrid button,.mbar-play,.top-me,.top-bell,.nav a,.nav button';
+document.addEventListener('pointerdown', e => {
+  if (document.documentElement.dataset.skin !== 'material' || document.documentElement.dataset.anim === 'off') return;
+  const el = e.target.closest?.(RIPPLE); if (!el || el.disabled) return;
+  const r = el.getBoundingClientRect(), d = Math.hypot(r.width, r.height) * 2;
+  const box = document.createElement('span'), dot = document.createElement('i');
+  box.className = 'rip';
+  dot.style.cssText = `width:${d}px;height:${d}px;left:${e.clientX - r.left - d / 2}px;top:${e.clientY - r.top - d / 2}px`;
+  box.appendChild(dot); el.appendChild(box);
+  setTimeout(() => box.remove(), 600);
+}, { passive: true });
 
 /* ---------- Анимации ----------
    render() каждый раз пересоздаёт страницу, поэтому анимируем только то, что появилось впервые (по ключу).
@@ -1522,7 +1538,7 @@ function viewSettings() {
     <div class="card pad set"><h2 class="h" style="font-size:16px">Оформление</h2>
       <div class="set-row"><span class="grow">Тема</span>${seg('theme', th, [['system', 'Как в системе'], ['light', 'Светлая'], ['dark', 'Тёмная']])}</div>
       <div class="set-row"><span class="grow">Цвет</span><div class="accents" role="radiogroup">${ACCENTS.map(([k, l, c]) => `<button role="radio" aria-checked="${(lsGet('vs_accent') || 'blue') === k}" aria-label="${l}" title="${l}" class="${(lsGet('vs_accent') || 'blue') === k ? 'on' : ''}" style="background:${c}" data-act="accent" data-v="${k}"></button>`).join('')}</div></div>
-      <div class="set-row"><span class="grow">Облегчённая версия<br><span class="muted small">Простой вид как в первых версиях: без стекла, шариков и размытия. Быстрее на слабых устройствах</span></span>${seg('lite', isLite() ? 'on' : 'off', [['off', 'Выкл'], ['on', 'Вкл']])}</div>
+      <div class="set-row"><span class="grow">Дизайн<br><span class="muted small">Material You — как на Android, Liquid Glass — фиолетовое стекло, Классический — простой и быстрый</span></span>${seg('skin', skinNow(), SKINS)}</div>
       <p class="hint" style="margin:0">Сохраняется на этом устройстве.</p></div>
     ${androidCard()}${installCard()}
     <div class="card pad set"><h2 class="h" style="font-size:16px">Музыка</h2>
@@ -3529,7 +3545,7 @@ document.addEventListener('click', async e => {
       case 'resetpass': await sendPasswordResetEmail(auth, auth.currentUser.email); toast('Письмо для смены пароля отправлено на ' + auth.currentUser.email); break;
       case 'verify': await sendEmailVerification(auth.currentUser); toast('Письмо отправлено на ' + auth.currentUser.email + '. Откройте ссылку и войдите заново.'); break;
       case 'theme': lsSet('vs_theme', b.dataset.v); applyTheme(b.dataset.v); render(); break;
-      case 'lite': lsSet('vs_lite', b.dataset.v); applyLite(); render(); break;
+      case 'skin': lsSet('vs_skin', b.dataset.v); applySkin(); render(); break;
       case 'anim': lsSet('vs_anim', b.dataset.v); document.documentElement.dataset.anim = b.dataset.v; render(); break;
       case 'listen': lsSet('vs_listen', b.dataset.v === 'off' ? '0' : '1'); if (b.dataset.v === 'off') { lastShared = 'off'; updateDoc(doc(db, 'users', uid()), { listening: null }).catch(console.error); } else lastShared = ''; render(); break;
       case 'accent': lsSet('vs_accent', b.dataset.v); applyAccent(b.dataset.v); render(); break;
