@@ -1170,54 +1170,190 @@ body:has(.fp) .toast{bottom:auto;top:calc(64px + env(safe-area-inset-top,0px))}
 @media (max-width:420px){.tf-body{grid-template-columns:1fr}.tf-cover{margin:0 auto}}
 
 /* ==========================================================================
-   3.7 — СВОЙ СТИЛЬ. Ничего общего с ВК: фиолетово-коралловый фирменный цвет,
-   узкая колонка-«рельс» из значков вместо списка слева, аватарки-«скруглённые квадраты»,
-   профиль по центру с плашками, крупные заголовки шрифтом Unbounded.
-   Профиль администратора (.admin-card) по-прежнему не трогаем.
+   4.0 — НОВЫЙ VСмске. Полный редизайн с нуля: шрифты Manrope + Montserrat Alternates,
+   иконки-«дуотон», плавающая шапка-остров и док снизу экрана (как в macOS: значки
+   увеличиваются под курсором), стеклянные карточки и «северное сияние» на фоне.
+   От прошлой версии оставлены только профиль по центру и иконка приложения.
+   Профиль администратора (.admin-card) не трогаем.
    ========================================================================== */
-:root:not([data-accent]){--accent:#6C4DFF;--accent-soft:#EEEAFF}
-:root{--coral:#FF6B57;--grad:linear-gradient(135deg,var(--accent) 0%,color-mix(in srgb,var(--accent) 45%,var(--coral)) 60%,var(--coral) 100%);
-  --bg:#F6F3FC;--surface-2:#F2EEFB;--line:#E7E1F5;--r:24px;--blob1:rgba(108,77,255,.13);--blob2:rgba(255,107,87,.11)}
-@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){--bg:#0D0A15;--surface:#16121F;--surface-2:#1F1A2B;--line:#2A2338;--blob1:rgba(124,98,255,.16);--blob2:rgba(255,107,87,.09)}
-  :root:not([data-theme="light"]):not([data-accent]){--accent:#9D87FF;--accent-soft:#2A2350}}
-:root[data-theme="dark"]{--bg:#0D0A15;--surface:#16121F;--surface-2:#1F1A2B;--line:#2A2338;--blob1:rgba(124,98,255,.16);--blob2:rgba(255,107,87,.09)}
-:root[data-theme="dark"]:not([data-accent]){--accent:#9D87FF;--accent-soft:#2A2350}
+:root{
+  --f-body:"Manrope",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  --f-display:"Montserrat Alternates","Manrope",system-ui,sans-serif;
+  --coral:#FF6B57; --mint:#1FD1A5; --pink:#FF4F8B;
+  --bg:#F5F4FA; --surface:#FFFFFF; --surface-2:#F1EFF8; --line:#E8E4F3; --fg:#15112B; --muted:#6F698C;
+  --r:26px; --r-sm:16px; --glass:rgba(255,255,255,.74);
+  --shadow:0 1px 2px rgba(30,20,80,.04),0 14px 34px -14px rgba(30,20,80,.16);
+  --shadow-lg:0 30px 60px -22px rgba(30,20,80,.38);
+  --grad:linear-gradient(120deg,var(--accent) 0%,color-mix(in srgb,var(--accent) 45%,var(--coral)) 62%,var(--coral) 100%);
+  --ring:conic-gradient(from 200deg,var(--accent),var(--pink),var(--coral),var(--mint),var(--accent));
+  --blob1:rgba(108,77,255,.16); --blob2:rgba(255,107,87,.13); --blob3:rgba(31,209,165,.10)
+}
+:root:not([data-accent]){--accent:#6C4DFF;--accent-soft:#ECE8FF}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){--bg:#07060D;--surface:#110F1B;--surface-2:#1A1727;--line:#262238;--fg:#F2F0FB;--muted:#9C96B8;--glass:rgba(17,15,27,.72);
+    --shadow:0 1px 0 rgba(255,255,255,.04) inset,0 18px 40px -18px rgba(0,0,0,.7);--shadow-lg:0 30px 70px -20px rgba(0,0,0,.8);
+    --blob1:rgba(124,98,255,.22);--blob2:rgba(255,107,87,.12);--blob3:rgba(31,209,165,.10)}
+  :root:not([data-theme="light"]):not([data-accent]){--accent:#A28FFF;--accent-soft:#2A2352}}
+:root[data-theme="dark"]{--bg:#07060D;--surface:#110F1B;--surface-2:#1A1727;--line:#262238;--fg:#F2F0FB;--muted:#9C96B8;--glass:rgba(17,15,27,.72);
+  --shadow:0 1px 0 rgba(255,255,255,.04) inset,0 18px 40px -18px rgba(0,0,0,.7);--shadow-lg:0 30px 70px -20px rgba(0,0,0,.8);
+  --blob1:rgba(124,98,255,.22);--blob2:rgba(255,107,87,.12);--blob3:rgba(31,209,165,.10)}
+:root[data-theme="dark"]:not([data-accent]){--accent:#A28FFF;--accent-soft:#2A2352}
 
-/* логотип: строчные «вс» на фирменном градиенте, чуть наклонён */
-.logo-mark{border-radius:14px 14px 14px 4px;transform:rotate(-6deg);font-family:Unbounded,system-ui,sans-serif;font-weight:700;letter-spacing:-.04em;text-transform:none}
-.logo-word{font-family:Unbounded,system-ui,sans-serif;font-weight:700;letter-spacing:-.03em}
+body{font-family:var(--f-body);font-size:15.5px;letter-spacing:-.005em;font-feature-settings:"ss01","cv11";background:var(--bg)}
+body::after{background:radial-gradient(42vw 38vw at 6% 4%,var(--blob1),transparent 70%),radial-gradient(38vw 34vw at 96% 18%,var(--blob2),transparent 70%),
+  radial-gradient(46vw 32vw at 70% 104%,var(--blob3),transparent 70%),radial-gradient(40vw 30vw at 0% 96%,var(--blob1),transparent 70%)}
+h1,h2,h3,.h,.brandh{font-family:var(--f-display);letter-spacing:-.02em}
+.brandh{font-size:26px;font-weight:800;background:var(--grad);-webkit-background-clip:text;background-clip:text;color:transparent;width:fit-content}
+::selection{background:color-mix(in srgb,var(--accent) 30%,transparent)}
+
+/* логотип (как на иконке приложения) */
+.logo-mark{width:40px;height:40px;border-radius:14px 14px 14px 4px;transform:rotate(-6deg);background:var(--grad);font-family:Unbounded,system-ui,sans-serif;font-weight:700;letter-spacing:-.04em;
+  box-shadow:0 10px 22px -8px color-mix(in srgb,var(--accent) 70%,transparent),inset 0 0 0 2px rgba(255,255,255,.22)}
+.logo-word{font-family:Unbounded,system-ui,sans-serif;font-weight:700;letter-spacing:-.03em;font-size:18px}
 .boot-logo{border-radius:28px 28px 28px 8px;transform:rotate(-6deg)}
-/* шапка: без имени у аватарки, поиск — широкая «таблетка» */
+
+/* шапка — плавающий остров */
+.top{top:calc(10px + env(safe-area-inset-top,0px));margin:10px auto 0;width:calc(100% - 24px);max-width:1120px;border-radius:22px;border:1px solid var(--line);
+  background:var(--glass);box-shadow:var(--shadow);backdrop-filter:saturate(1.8) blur(22px);-webkit-backdrop-filter:saturate(1.8) blur(22px)}
+.top-in{height:60px;max-width:none;padding:0 10px 0 14px;gap:12px}
+.search{flex:1;max-width:460px;margin:0 auto}
+.search input{height:42px;border-radius:14px;background:var(--surface-2);border:1.5px solid transparent;padding-left:40px;font:inherit}
+.search input:focus{border-color:var(--accent);background:var(--surface);outline:none}
+.search svg{top:12px;left:14px;color:var(--muted)}
+.top-bell{width:42px;height:42px;border-radius:14px;background:var(--surface-2);justify-content:center}
+.top-me{padding:3px;border-radius:14px;background:var(--surface-2)}
 .top-me > span:not(.av){display:none}
-.search{border-radius:99px;background:var(--surface-2);border:1px solid var(--line)}
-/* аватарки — скруглённые квадраты (у админа остаётся круг в кольце) */
+
+/* сетка: одна колонка, меню — док снизу */
+.wrap{max-width:1000px;grid-template-columns:minmax(0,1fr);gap:0;padding:22px 16px calc(130px + env(safe-area-inset-bottom,0px))}
+main{gap:18px}
+.nav{position:fixed;z-index:35;top:auto;left:50%;right:auto;bottom:calc(14px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);
+  display:flex;flex-direction:row;align-items:flex-end;justify-content:center;gap:4px;padding:8px;max-height:none;overflow:visible;
+  background:var(--glass);border:1px solid var(--line);border-radius:28px;box-shadow:var(--shadow-lg);
+  backdrop-filter:saturate(1.8) blur(22px);-webkit-backdrop-filter:saturate(1.8) blur(22px)}
+.nav hr,.nav .sub,.nav .desk{display:none!important}
+.nav .m-only{display:flex!important}
+.nav :is(a,button){position:relative;flex:none;flex-direction:column;align-items:center;justify-content:center;gap:0;width:52px;height:52px;padding:0;border-radius:18px;
+  background:transparent;color:var(--muted);font-weight:700;box-shadow:none;transform-origin:50% 100%;transition:transform .28s cubic-bezier(.3,1.5,.5,1),background .2s,color .2s}
+.nav :is(a,button) svg{width:26px;height:26px;padding:0;margin:0;border-radius:0;background:none;color:inherit}
+.nav :is(a,button) > span:not(.badge){position:absolute;bottom:calc(100% + 14px);left:50%;transform:translate(-50%,4px);padding:5px 10px;border-radius:10px;
+  background:var(--fg);color:var(--bg);font-size:12px;white-space:nowrap;opacity:0;pointer-events:none;transition:opacity .15s,transform .15s}
+.nav :is(a,button).on{background:var(--grad);color:#fff;box-shadow:0 12px 24px -8px color-mix(in srgb,var(--accent) 70%,transparent)}
+.nav :is(a,button).on::after{content:"";position:absolute;bottom:-7px;width:5px;height:5px;border-radius:50%;background:var(--accent)}
+.nav .badge,.nav :is(a,button).on .badge{position:absolute;top:1px;right:1px;margin:0;min-width:18px;height:18px;padding:0 5px;line-height:18px;font-size:10.5px;text-align:center;
+  border-radius:99px;background:var(--coral);color:#fff;box-shadow:0 0 0 2px var(--surface)}
+@media (hover:hover) and (min-width:761px){
+  .nav a:hover{transform:translateY(-10px) scale(1.25);color:var(--fg);background:var(--surface-2)}
+  .nav a.on:hover{color:#fff;background:var(--grad)}
+  .nav a:hover > span:not(.badge){opacity:1;transform:translate(-50%,0) scale(.8)}
+  .nav a:hover + a,.nav a:has(+ a:hover){transform:translateY(-4px) scale(1.1)}
+}
+@media (min-width:761px) and (max-width:900px){.nav :is(a,button){width:44px;height:44px}.nav :is(a,button) svg{width:22px;height:22px}}
+
+/* карточки — стекло */
+.card:not(.admin-card){background:var(--surface);border:1px solid var(--line);border-radius:var(--r);box-shadow:var(--shadow)}
+:root[data-theme="dark"] .card:not(.admin-card){background:linear-gradient(180deg,rgba(255,255,255,.03),rgba(255,255,255,0)),var(--surface)}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]) .card:not(.admin-card){background:linear-gradient(180deg,rgba(255,255,255,.03),rgba(255,255,255,0)),var(--surface)}}
+.pad{padding:20px 22px}
+.h{font-weight:700}
+.muted{color:var(--muted)}
+.hint{color:var(--muted)}
+
+/* кнопки, поля, переключатели */
+.btn{border:0;border-radius:14px;padding:10px 20px;font-family:var(--f-body);font-weight:700;letter-spacing:-.005em;background:var(--grad);color:#fff;
+  box-shadow:0 12px 26px -12px color-mix(in srgb,var(--accent) 80%,transparent);transition:transform .12s,filter .15s,box-shadow .2s}
+.btn:hover{filter:brightness(1.06) saturate(1.05)}
+.btn.small{padding:7px 14px;border-radius:12px;font-size:13.5px}
+.btn.sec{background:var(--accent-soft);color:var(--accent);box-shadow:none}
+.btn.ghost{background:transparent;color:var(--fg);box-shadow:none;border:1.5px solid var(--line)}
+.btn.ghost:hover{background:var(--surface-2)}
+.btn.danger{background:color-mix(in srgb,#FF4D6A 14%,transparent);color:#E5334F;box-shadow:none}
+.btn:disabled{filter:grayscale(.4);opacity:.6}
+.icon-btn{border-radius:12px;color:var(--muted)}
+.icon-btn:hover{background:var(--surface-2);color:var(--fg)}
+.field label,.field > span{font-weight:700;font-size:13px;color:var(--muted)}
+.field input,.field textarea,.inp,select.inp,.form textarea,.composer textarea{border-radius:14px;border:1.5px solid transparent;background:var(--surface-2);font:inherit;color:var(--fg);transition:border-color .15s,background .15s,box-shadow .15s}
+.field input:focus,.field textarea:focus,.inp:focus,.form textarea:focus,.composer textarea:focus{border-color:var(--accent);background:var(--surface);box-shadow:0 0 0 4px color-mix(in srgb,var(--accent) 14%,transparent);outline:none}
+.cform input,.chat-form input{border-radius:16px}
+.tabs{gap:6px;padding:4px 18px 16px;border-bottom:0;flex-wrap:wrap}
+.tabs :is(a,button){border:0!important;margin:0;padding:8px 15px;border-radius:12px;background:var(--surface-2);color:var(--muted);font-weight:700;font-size:14px}
+.tabs :is(a,button).on{background:var(--grad);color:#fff;box-shadow:0 10px 20px -10px color-mix(in srgb,var(--accent) 80%,transparent)}
+.seg{border-radius:14px;padding:4px;background:var(--surface-2)}
+.seg button{border-radius:10px;font-weight:700}
+.seg button.on{background:var(--surface);color:var(--accent);box-shadow:var(--shadow)}
+.badge{background:var(--coral);color:#fff;font-weight:800}
+.chip{border-radius:10px}
+
+/* списки и строки */
+.ulist{padding:6px}
+.uitem{padding:12px 14px;border-top:0!important;border-radius:18px}
+.uitem.setlink:hover,a.uitem:hover,.ditem:hover{background:var(--surface-2)}
+.ficon{width:44px;height:44px;border-radius:15px;background:var(--accent-soft);color:var(--accent)}
+.empty{padding:48px 20px}
+.empty b{font-family:var(--f-display);font-size:18px;color:var(--fg)}
+
+/* аватарки — скруглённые квадраты (у админа — круг в кольце) */
 .av{border-radius:32%}
 .adm-ring .av,.admin-card .prof .av{border-radius:50%}
-/* карточки: тоньше тень, видимая граница */
-.card:not(.admin-card){border:1px solid var(--line);box-shadow:0 1px 0 rgba(255,255,255,.4) inset,0 6px 24px -10px rgba(40,20,90,.12)}
-h1.h,.brandh{font-family:Unbounded,system-ui,sans-serif;letter-spacing:-.025em}
+.story-ring{padding:3px;background:var(--ring);border-radius:36%}
+.story-ring.seen{background:var(--line)}
+.story-ring .av{box-shadow:0 0 0 3px var(--surface)}
 
-/* компьютер: меню — узкий «рельс» из значков с подписями под ними */
-@media (min-width:761px){
-  .wrap{grid-template-columns:88px minmax(0,1fr);max-width:1060px}
-  .nav{padding:10px 6px;gap:2px;border-radius:30px;scrollbar-width:none;border:1px solid var(--line)}
-  .nav::-webkit-scrollbar{display:none}
-  .nav :is(a,button){position:relative;flex-direction:column;justify-content:center;gap:3px;padding:7px 2px;border-radius:18px;font-size:10.5px;font-weight:600;line-height:1.1;text-align:center;color:var(--muted)}
-  .nav :is(a,button) > span:not(.badge){max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-  .nav :is(a,button) svg{width:42px;height:42px;padding:10px;border-radius:15px;background:transparent}
-  .nav :is(a,button):hover{background:transparent;color:var(--fg)}
-  .nav :is(a,button):hover svg{background:var(--surface-2)}
-  .nav :is(a,button).on{background:transparent;color:var(--accent);box-shadow:none}
-  .nav :is(a,button).on svg{background:var(--grad);color:#fff;box-shadow:0 8px 18px -4px color-mix(in srgb,var(--accent) 55%,transparent)}
-  .nav .badge,.nav :is(a,button).on .badge{position:absolute;top:2px;right:12px;margin:0;padding:0 5px;font-size:10px;line-height:16px;background:var(--coral);color:#fff;box-shadow:0 0 0 2px var(--surface)}
-  .nav hr{margin:6px 12px}
-}
+/* записи */
+.post{gap:14px}
+.post-head .name{font-weight:800}
+.post-head .av{box-shadow:none}
+.post-text{font-size:16px;line-height:1.55}
+.post-img,.post-grid{border-radius:20px}
+.post-actions{gap:8px;padding-top:2px;border-top:0;margin-top:0}
+.post-actions .pill{background:var(--surface-2);color:var(--muted);border-radius:14px;padding:8px 14px;gap:7px;font-weight:800}
+.post-actions .pill svg{width:20px;height:20px}
+.post-actions .pill:hover{color:var(--accent);background:var(--accent-soft)}
+.post-actions .pill.liked{background:linear-gradient(120deg,var(--pink),var(--coral));color:#fff;box-shadow:0 10px 20px -10px var(--pink)}
+.comments{border-top:0;padding-top:4px}
+.comment .bubble{background:var(--surface-2);border-radius:18px;padding:9px 13px}
+.pin-label{color:var(--accent);font-weight:700}
 
-/* профиль: всё по центру, сведения — плашками с значками */
-.card:not(.admin-card) .cover{margin:8px 8px 0;border-radius:18px;height:170px}
+/* сообщения */
+.im{border-radius:var(--r)}
+.dlist{border-right:1px solid var(--line);padding:6px}
+.ditem{border-radius:16px}
+.ditem.on{background:var(--accent-soft)}
+.ditem .dot{background:var(--coral)}
+.chat-head{padding:12px 18px;border-bottom:1px solid var(--line)}
+.msg{border-radius:22px;padding:10px 15px;box-shadow:none;line-height:1.45}
+.msg.me:not(.jumbo){background:var(--grad);color:#fff}
+.msg.me{border-bottom-right-radius:8px}
+.msg:not(.me){background:var(--surface-2);border-bottom-left-radius:8px}
+
+/* сервисы */
+.app-tile{border:1px solid var(--line);border-radius:24px;box-shadow:var(--shadow);background:var(--surface);transition:transform .2s,box-shadow .2s}
+.app-tile::after{background:var(--grad);opacity:.12}
+.app-ico{width:52px;height:52px;border-radius:18px;box-shadow:0 12px 22px -10px rgba(0,0,0,.35)}
+.app-tile b{font-family:var(--f-display);font-size:15px}
+@media (hover:hover){.app-tile:hover{transform:translateY(-4px);box-shadow:var(--shadow-lg)}}
+
+/* вход */
+.login .card{border-radius:28px;box-shadow:var(--shadow-lg)}
+.hero h1{font-family:var(--f-display);font-weight:800;font-size:46px;letter-spacing:-.03em;background:var(--grad);-webkit-background-clip:text;background-clip:text;color:transparent}
+.auth-tabs{border-radius:14px;background:var(--surface-2);padding:4px}
+.auth-tabs button{border-radius:10px;font-weight:700}
+.auth-tabs button.on{background:var(--surface);color:var(--accent);box-shadow:var(--shadow)}
+
+/* мини-плеер — над доком */
+.mbar{left:50%;right:auto;width:min(640px,calc(100% - 24px));transform:translateX(-50%);bottom:calc(88px + env(safe-area-inset-bottom,0px));
+  border-radius:22px;border:1px solid var(--line);background:var(--glass);box-shadow:var(--shadow-lg);backdrop-filter:saturate(1.8) blur(22px);-webkit-backdrop-filter:saturate(1.8) blur(22px)}
+.mbar-fill{border-radius:22px 22px 0 0;background:var(--grad)}
+body:has(.mbar) .wrap{padding-bottom:calc(200px + env(safe-area-inset-bottom,0px))}
+.toast{bottom:calc(96px + env(safe-area-inset-bottom,0px));border-radius:16px;background:color-mix(in srgb,var(--fg) 92%,transparent);backdrop-filter:blur(10px);font-weight:700}
+body:has(.mbar) .toast{bottom:calc(160px + env(safe-area-inset-bottom,0px))}
+
+/* профиль — по центру с плашками (как в 3.7) */
+.card:not(.admin-card) .cover{margin:8px 8px 0;border-radius:20px;height:180px}
 .card:not(.admin-card) .prof{flex-direction:column;align-items:center;text-align:center;margin-top:-62px;gap:10px}
+.card:not(.admin-card) .prof .av{border:5px solid var(--surface);box-shadow:var(--shadow)}
 .card:not(.admin-card) .prof-info{min-width:0;width:100%}
-.card:not(.admin-card) .prof-name{font-family:Unbounded,system-ui,sans-serif;letter-spacing:-.03em}
+.card:not(.admin-card) .prof-name{font-family:var(--f-display);font-size:26px;letter-spacing:-.03em}
 .card:not(.admin-card) .prof-btns{justify-content:center}
 .card:not(.admin-card) .facts{display:flex;flex-wrap:wrap;justify-content:center;gap:8px;border-top:0;padding:4px 20px 18px}
 .card:not(.admin-card) .facts dt{display:none}
@@ -1228,20 +1364,44 @@ h1.h,.brandh{font-family:Unbounded,system-ui,sans-serif;letter-spacing:-.025em}
 .card:not(.admin-card) .facts dd.f-about{flex-basis:100%;justify-content:center;background:none;padding:2px 8px;border-radius:0;color:var(--fg);font-size:15px;white-space:pre-line}
 .card:not(.admin-card) .facts dd.f-col{flex-basis:100%;justify-content:center;background:none;padding:0;flex-direction:column}
 .card:not(.admin-card) .facts .nick-col,.card:not(.admin-card) .facts .nick-menu{justify-content:center}
-.card:not(.admin-card) .stats{justify-content:center;border-top:0;padding-top:0}
-.card:not(.admin-card) .stats div{align-items:center;min-width:92px;padding:10px 14px;border-radius:18px;background:var(--surface-2)}
+.card:not(.admin-card) .stats{justify-content:center;border-top:0;padding-top:0;gap:10px}
+.card:not(.admin-card) .stats div{flex:0 1 auto;align-items:center;min-width:92px;padding:10px 14px;border-radius:18px;background:var(--surface-2)}
 
-/* записи: значки действий в цветных кружках вместо серых «таблеток» */
-.post-head .av{border-radius:32%}
-.post-text{font-size:15.5px;line-height:1.5}
-.post-actions{gap:4px;padding-top:6px;border-top:1px dashed var(--line);margin-top:10px}
-.post-actions .pill{background:transparent;padding:4px 10px 4px 4px;gap:8px;color:var(--muted);font-weight:600}
-.post-actions .pill svg{width:34px;height:34px;padding:8px;border-radius:12px;background:var(--surface-2);transition:background .2s,color .2s}
-.post-actions .pill[data-act=like] svg{color:#FF4D7E;background:color-mix(in srgb,#FF4D7E 12%,transparent)}
-.post-actions .pill[data-act=togglec] svg{color:var(--accent);background:var(--accent-soft)}
-.post-actions .pill[data-act=repost] svg{color:var(--coral);background:color-mix(in srgb,var(--coral) 14%,transparent)}
-.post-actions .pill.liked{color:#FF4D7E;background:transparent}
-.post-actions .pill.liked svg{background:#FF4D7E;color:#fff}
-.post-actions .pill:hover svg{filter:brightness(1.05)}
-/* кнопки — фирменный градиент */
-.btn:not(.sec):not(.ghost):not(.danger){background:var(--grad);border:0;color:#fff}
+/* телефон */
+@media (max-width:760px){
+  .top{width:calc(100% - 16px);margin-top:8px;border-radius:20px}
+  .top-in{height:56px;padding:0 8px 0 10px}
+  .logo-word{display:none}
+  .wrap{padding:14px 10px calc(110px + env(safe-area-inset-bottom,0px))}
+  .nav{left:10px;right:10px;transform:none;justify-content:space-around;gap:0;padding:6px;border-radius:24px;bottom:calc(10px + env(safe-area-inset-bottom,0px))}
+  .nav :is(a,button){flex:1;width:auto;height:54px;gap:3px;border-radius:16px}
+  .nav :is(a,button) svg{width:24px;height:24px}
+  .nav :is(a,button) > span:not(.badge){position:static;opacity:1;transform:none;background:none;color:inherit;padding:0;font-size:10.5px}
+  .nav :is(a,button).on{background:transparent;color:var(--accent);box-shadow:none}
+  .nav :is(a,button).on svg{width:46px;height:30px;padding:3px 11px;border-radius:99px;background:var(--grad);color:#fff;box-shadow:0 8px 16px -8px var(--accent)}
+  .nav :is(a,button).on::after{display:none}
+  .nav .badge{top:2px;right:calc(50% - 22px)}
+  .mbar{bottom:calc(80px + env(safe-area-inset-bottom,0px));width:calc(100% - 20px)}
+  body:has(.mbar) .wrap{padding-bottom:calc(180px + env(safe-area-inset-bottom,0px))}
+  .toast{bottom:calc(90px + env(safe-area-inset-bottom,0px))}
+  body:has(.mbar) .toast{bottom:calc(150px + env(safe-area-inset-bottom,0px))}
+  .hero h1{font-size:34px}
+  .brandh{font-size:22px}
+  .card:not(.admin-card) .cover{height:140px}
+  .card:not(.admin-card) .prof-name{font-size:22px}
+}
+body:has(.fp) .toast{bottom:auto;top:calc(64px + env(safe-area-inset-top,0px))}
+.logo-mark,.boot-logo{color:#fff}
+.im{height:calc(100dvh - 210px);min-height:420px}
+@media (min-width:761px){
+  .nav:has(:is(a,button).on:not(.m-only)) .m-only.on{background:transparent;color:var(--muted);box-shadow:none}
+  .nav:has(:is(a,button).on:not(.m-only)) .m-only.on::after{display:none}
+}
+@media (max-width:760px){.im{height:calc(100dvh - 186px);min-height:0}}
+.nav :is(a,button).on svg{background:none}
+@media (max-width:760px){.nav :is(a,button).on svg{background:var(--grad)}}
+.mbar{overflow:hidden}
+.mbar-fill{border-radius:0;height:3px}
+.hero{position:relative}
+.hero::before{content:"";position:absolute;inset:-60px -40px auto auto;width:320px;height:320px;border-radius:50%;background:var(--grad);filter:blur(90px);opacity:.35;z-index:-1;pointer-events:none}
+@media (min-width:761px){.nav a.sub[href="#admin"]{display:flex!important}}
