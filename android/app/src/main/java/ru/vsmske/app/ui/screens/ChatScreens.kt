@@ -18,11 +18,12 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.ime
+import androidx.compose.foundation.layout.union
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -166,7 +167,7 @@ fun ChatScreen(key: String) {
         if (uri != null) { sending = true; scope.safe(toast) { try { Repo.sendMessage(key, "", Images.compress(ctx, uri, 1280, Images.MAX_MSG_IMG)) } finally { sending = false } } }
     }
     val top = LocalPad.current.calculateTopPadding()
-    Column(Modifier.fillMaxSize().imePadding()) {
+    Column(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.ime.union(WindowInsets.navigationBars))) {
         Box(Modifier.weight(1f)) {
             val list = msgs
             when {
@@ -193,9 +194,8 @@ fun ChatScreen(key: String) {
                 }
             }
         }
-        val bottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
         Row(
-            Modifier.padding(start = 10.dp, end = 10.dp, top = 6.dp, bottom = bottom + 10.dp).glassCard(26.dp).padding(6.dp),
+            Modifier.padding(start = 10.dp, end = 10.dp, top = 6.dp, bottom = 10.dp).glassCard(26.dp).padding(6.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             IconBtn(Icons.Rounded.Image, "Фото", tint = Vs.accent) { picker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) }

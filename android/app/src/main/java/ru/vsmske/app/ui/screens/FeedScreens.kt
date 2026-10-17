@@ -7,7 +7,11 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.ime
+import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.union
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
@@ -91,7 +95,7 @@ fun PostScreen(id: String) {
     var text by remember { mutableStateOf("") }
     Header(HeaderSpec("Запись", if (comments.isNotEmpty()) "${comments.size} комм." else ""))
     LaunchedEffect(comments) { Repo.ensureUsers(comments.map { it.authorId }) }
-    Column(Modifier.fillMaxSize().imePadding()) {
+    Column(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.ime.union(WindowInsets.navigationBars))) {
         LazyColumn(Modifier.weight(1f), contentPadding = listPad(LocalPad.current).let { PaddingValues(start = 12.dp, end = 12.dp, top = it.calculateTopPadding(), bottom = 12.dp) }, verticalArrangement = Arrangement.spacedBy(10.dp)) {
             val p = post
             if (p == null) item { Loading() } else {
@@ -101,7 +105,7 @@ fun PostScreen(id: String) {
             }
         }
         val p = post
-        if (p != null) Card(Modifier.padding(start = 12.dp, end = 12.dp, bottom = LocalPad.current.calculateBottomPadding())) {
+        if (p != null) Card(Modifier.padding(start = 12.dp, end = 12.dp, bottom = 12.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Field(text, { text = it.take(1000) }, "Комментарий", singleLine = false, modifier = Modifier.weight(1f))
                 Spacer(Modifier.width(6.dp))

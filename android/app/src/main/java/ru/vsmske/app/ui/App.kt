@@ -151,7 +151,7 @@ private fun Main(openPlayer: MutableState<Boolean>) {
     val route = entry?.destination?.route
     val me = Fb.uid
     val isTab = route in TABS && (route != "profile/{id}" || entry?.arguments?.getString("id") == me)
-    val inChat = route == "chat/{key}"
+    val inChat = route == "chat/{key}" || route == "post/{id}"   // экраны с полем ввода внизу — мини-плеер прячем
     val ps by MusicPlayer.state.collectAsState()
     val hasPlayer = ps.track != null
 
