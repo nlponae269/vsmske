@@ -1,0 +1,281 @@
+/* ==========================================================================
+   6.0 — MATERIAL YOU. Оформление как на Android 12+ (Material 3 Expressive):
+   динамический цвет — тональная палитра из цвета оформления (data-accent → --md-h/--md-c),
+   тональные поверхности вместо теней и стекла, шрифт Google Sans, крупные скругления,
+   кнопки-таблетки, навигация с «пилюлей», рябь по нажатию (span.rip ставит app.js),
+   профиль с аватаркой-«печенькой». Ложится поверх классического style.css.
+   Файл включён только при vs_skin = 'material' (по умолчанию). Профиль админа (.admin-card) не трогаем.
+   ========================================================================== */
+
+/* ---------- Цвета: сначала постоянная палитра M3 (для старых браузеров), потом динамическая ---------- */
+:root:not(#vs){
+  --md-p:#65558F;--md-on-p:#fff;--md-pc:#E9DDFF;--md-on-pc:#22005D;
+  --md-sc:#E8DEF8;--md-on-sc:#1D192B;--md-t:#7D5260;--md-tc:#FFD8E4;--md-on-tc:#31111D;
+  --md-s:#FEF7FF;--md-s-lowest:#fff;--md-s-low:#F7F2FA;--md-s-c:#F3EDF7;--md-s-high:#ECE6F0;--md-s-highest:#E6E0E9;
+  --md-on-s:#1D1B20;--md-on-sv:#49454F;--md-ol:#79747E;--md-olv:#CAC4D0;
+  --md-inv-s:#322F35;--md-inv-on:#F5EFF7;--md-inv-p:#D0BCFF;
+  --md-err:#B3261E;--md-err-c:#F9DEDC;--md-on-err-c:#410E0B;
+  --md-h:293;--md-c:.2;
+}
+:root:not(#vs)[data-accent="violet"]{--md-h:285;--md-c:.16}
+:root:not(#vs)[data-accent="green"]{--md-h:152;--md-c:.13}
+:root:not(#vs)[data-accent="orange"]{--md-h:50;--md-c:.16}
+:root:not(#vs)[data-accent="pink"]{--md-h:352;--md-c:.17}
+
+@supports (color: oklch(0.5 0.1 200)){
+  :root:not(#vs){
+    --md-p:oklch(.5 var(--md-c) var(--md-h));--md-on-p:#fff;
+    --md-pc:oklch(.92 calc(var(--md-c)*.42) var(--md-h));--md-on-pc:oklch(.28 calc(var(--md-c)*.8) var(--md-h));
+    --md-sc:oklch(.92 calc(var(--md-c)*.2) var(--md-h));--md-on-sc:oklch(.27 calc(var(--md-c)*.35) var(--md-h));
+    --md-t:oklch(.52 calc(var(--md-c)*.7) calc(var(--md-h) + 60));--md-tc:oklch(.92 calc(var(--md-c)*.32) calc(var(--md-h) + 60));
+    --md-on-tc:oklch(.28 calc(var(--md-c)*.6) calc(var(--md-h) + 60));
+    --md-s:oklch(.985 .007 var(--md-h));--md-s-lowest:#fff;--md-s-low:oklch(.966 .011 var(--md-h));--md-s-c:oklch(.952 .013 var(--md-h));
+    --md-s-high:oklch(.937 .015 var(--md-h));--md-s-highest:oklch(.92 .017 var(--md-h));
+    --md-on-s:oklch(.22 .015 var(--md-h));--md-on-sv:oklch(.44 .03 var(--md-h));--md-ol:oklch(.6 .03 var(--md-h));--md-olv:oklch(.85 .022 var(--md-h));
+    --md-inv-s:oklch(.3 .015 var(--md-h));--md-inv-on:oklch(.95 .01 var(--md-h));--md-inv-p:oklch(.82 calc(var(--md-c)*.55) var(--md-h));
+  }
+}
+
+/* тёмная тема — те же роли, другие тона */
+@media (prefers-color-scheme: dark){:root:not(#vs):not([data-theme="light"]){
+  --md-p:#D0BCFF;--md-on-p:#381E72;--md-pc:#4F378B;--md-on-pc:#EADDFF;--md-sc:#4A4458;--md-on-sc:#E8DEF8;
+  --md-t:#EFB8C8;--md-tc:#633B48;--md-on-tc:#FFD8E4;
+  --md-s:#141218;--md-s-lowest:#0F0D13;--md-s-low:#1D1B20;--md-s-c:#211F26;--md-s-high:#2B2930;--md-s-highest:#36343B;
+  --md-on-s:#E6E0E9;--md-on-sv:#CAC4D0;--md-ol:#938F99;--md-olv:#49454F;--md-inv-s:#E6E0E9;--md-inv-on:#322F35;--md-inv-p:#6750A4;
+  --md-err:#F2B8B5;--md-err-c:#8C1D18;--md-on-err-c:#F9DEDC}}
+:root:not(#vs)[data-theme="dark"]{
+  --md-p:#D0BCFF;--md-on-p:#381E72;--md-pc:#4F378B;--md-on-pc:#EADDFF;--md-sc:#4A4458;--md-on-sc:#E8DEF8;
+  --md-t:#EFB8C8;--md-tc:#633B48;--md-on-tc:#FFD8E4;
+  --md-s:#141218;--md-s-lowest:#0F0D13;--md-s-low:#1D1B20;--md-s-c:#211F26;--md-s-high:#2B2930;--md-s-highest:#36343B;
+  --md-on-s:#E6E0E9;--md-on-sv:#CAC4D0;--md-ol:#938F99;--md-olv:#49454F;--md-inv-s:#E6E0E9;--md-inv-on:#322F35;--md-inv-p:#6750A4;
+  --md-err:#F2B8B5;--md-err-c:#8C1D18;--md-on-err-c:#F9DEDC}
+@supports (color: oklch(0.5 0.1 200)){
+  @media (prefers-color-scheme: dark){:root:not(#vs):not([data-theme="light"]){
+    --md-p:oklch(.8 calc(var(--md-c)*.55) var(--md-h));--md-on-p:oklch(.3 calc(var(--md-c)*.7) var(--md-h));
+    --md-pc:oklch(.38 calc(var(--md-c)*.62) var(--md-h));--md-on-pc:oklch(.92 calc(var(--md-c)*.32) var(--md-h));
+    --md-sc:oklch(.36 calc(var(--md-c)*.22) var(--md-h));--md-on-sc:oklch(.9 calc(var(--md-c)*.18) var(--md-h));
+    --md-t:oklch(.8 calc(var(--md-c)*.42) calc(var(--md-h) + 60));--md-tc:oklch(.38 calc(var(--md-c)*.45) calc(var(--md-h) + 60));
+    --md-on-tc:oklch(.92 calc(var(--md-c)*.28) calc(var(--md-h) + 60));
+    --md-s:oklch(.165 .012 var(--md-h));--md-s-lowest:oklch(.13 .01 var(--md-h));--md-s-low:oklch(.205 .014 var(--md-h));--md-s-c:oklch(.225 .015 var(--md-h));
+    --md-s-high:oklch(.26 .016 var(--md-h));--md-s-highest:oklch(.3 .017 var(--md-h));
+    --md-on-s:oklch(.92 .012 var(--md-h));--md-on-sv:oklch(.8 .025 var(--md-h));--md-ol:oklch(.62 .025 var(--md-h));--md-olv:oklch(.37 .02 var(--md-h));
+    --md-inv-s:oklch(.92 .012 var(--md-h));--md-inv-on:oklch(.26 .015 var(--md-h));--md-inv-p:oklch(.5 var(--md-c) var(--md-h))}}
+  :root:not(#vs)[data-theme="dark"]{
+    --md-p:oklch(.8 calc(var(--md-c)*.55) var(--md-h));--md-on-p:oklch(.3 calc(var(--md-c)*.7) var(--md-h));
+    --md-pc:oklch(.38 calc(var(--md-c)*.62) var(--md-h));--md-on-pc:oklch(.92 calc(var(--md-c)*.32) var(--md-h));
+    --md-sc:oklch(.36 calc(var(--md-c)*.22) var(--md-h));--md-on-sc:oklch(.9 calc(var(--md-c)*.18) var(--md-h));
+    --md-t:oklch(.8 calc(var(--md-c)*.42) calc(var(--md-h) + 60));--md-tc:oklch(.38 calc(var(--md-c)*.45) calc(var(--md-h) + 60));
+    --md-on-tc:oklch(.92 calc(var(--md-c)*.28) calc(var(--md-h) + 60));
+    --md-s:oklch(.165 .012 var(--md-h));--md-s-lowest:oklch(.13 .01 var(--md-h));--md-s-low:oklch(.205 .014 var(--md-h));--md-s-c:oklch(.225 .015 var(--md-h));
+    --md-s-high:oklch(.26 .016 var(--md-h));--md-s-highest:oklch(.3 .017 var(--md-h));
+    --md-on-s:oklch(.92 .012 var(--md-h));--md-on-sv:oklch(.8 .025 var(--md-h));--md-ol:oklch(.62 .025 var(--md-h));--md-olv:oklch(.37 .02 var(--md-h));
+    --md-inv-s:oklch(.92 .012 var(--md-h));--md-inv-on:oklch(.26 .015 var(--md-h));--md-inv-p:oklch(.5 var(--md-c) var(--md-h))}
+}
+
+/* роли M3 → переменные классического слоя (их используют все разделы сайта) */
+:root:not(#vs){
+  --bg:var(--md-s);--surface:var(--md-s-low);--surface-2:var(--md-s-high);--line:var(--md-olv);
+  --fg:var(--md-on-s);--muted:var(--md-on-sv);--accent:var(--md-p);--accent-soft:var(--md-sc);--accent-fg:var(--md-on-p);
+  --like:#E0245E;--ok:#2E7D5B;--r:28px;--r-sm:16px;--shadow:none;
+  --grad:linear-gradient(135deg,var(--md-p),var(--md-t));
+  --f-body:"Google Sans","Roboto",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --f-display:"Google Sans","Roboto",system-ui,sans-serif;
+  --ease:cubic-bezier(.2,0,0,1);--ease-spring:cubic-bezier(.34,1.56,.64,1);
+}
+
+/* ---------- Основа ---------- */
+html{background:var(--md-s)}
+body{background:var(--md-s);color:var(--md-on-s);font:400 15.5px/1.5 var(--f-body);letter-spacing:.005em;-webkit-font-smoothing:antialiased}
+::selection{background:var(--md-pc);color:var(--md-on-pc)}
+:focus-visible{outline:3px solid var(--md-p);outline-offset:2px;border-radius:12px}
+a{color:var(--md-p)}
+.muted,.hint{color:var(--md-on-sv)}
+.h{font:500 20px/1.25 var(--f-display);letter-spacing:0}
+h1,h2,h3{font-family:var(--f-display);font-weight:500}
+.brandh{font:500 28px/1.2 var(--f-display);letter-spacing:-.01em;color:var(--md-on-s)}
+.lg,.orbs{display:none}
+*{scrollbar-width:thin;scrollbar-color:var(--md-olv) transparent}
+
+/* рябь по нажатию и слой состояния (наведение) — как у кнопок Android */
+.rip{position:absolute;inset:0;border-radius:inherit;overflow:hidden;pointer-events:none;z-index:0}
+.rip i{position:absolute;border-radius:50%;background:currentColor;opacity:.14;transform:scale(0);animation:rip .55s var(--ease) forwards}
+@keyframes rip{to{transform:scale(1);opacity:0}}
+:is(.btn,.pill,.icon-btn,.seg button,.tabs button,.tabs a,.app-tile,.ditem,.fgrid button,.mbar-play,.top-me,.top-bell,.nav a,.nav button,.uitem .name,.chip,.accents button){position:relative}
+@media (hover:hover){
+  :is(.btn,.pill,.icon-btn,.seg button,.tabs button,.tabs a,.ditem,.fgrid button,.top-me,.top-bell,.nav a,.nav button):hover{
+    box-shadow:inset 0 0 0 100vmax color-mix(in srgb,currentColor 8%,transparent)}
+}
+
+/* ---------- Верхняя панель (top app bar) ---------- */
+.top{background:var(--md-s);border-bottom:0;transition:background .2s var(--ease)}
+.top-in{height:68px;gap:12px}
+.logo-mark{width:40px;height:40px;border-radius:14px;background:var(--md-pc);color:var(--md-on-pc);font:600 15px/1 var(--f-display);letter-spacing:0}
+.logo-word{font:500 22px/1 var(--f-display);letter-spacing:-.01em;color:var(--md-on-s)}
+.search{max-width:520px}
+.search input{height:52px;border-radius:28px;background:var(--md-s-high);border:0;padding:0 20px 0 52px;font-size:16px;color:var(--md-on-s);transition:background .2s var(--ease)}
+.search input::placeholder{color:var(--md-on-sv)}
+.search input:focus{background:var(--md-s-highest);box-shadow:inset 0 0 0 2px var(--md-p)}
+.search svg{left:18px;top:15px;width:22px;height:22px;color:var(--md-on-sv)}
+.top-me{border-radius:28px;padding:4px 14px 4px 4px;background:var(--md-s-high)}
+.top-me span{font-weight:500}
+.top-bell{width:48px;height:48px;border-radius:50%;display:grid;place-items:center;background:none;color:var(--md-on-sv)}
+.top-bell.on{background:var(--md-sc);color:var(--md-on-sc)}
+
+/* ---------- Навигация: на компьютере — колонка с «пилюлями», на телефоне — нижняя панель ---------- */
+@media (min-width:761px){
+  .wrap{grid-template-columns:232px minmax(0,1fr);gap:24px;padding-top:8px}
+  .nav{top:calc(80px + env(safe-area-inset-top,0px));gap:2px}
+}
+.nav :is(a,button){height:52px;padding:0 18px;border-radius:28px;gap:14px;color:var(--md-on-sv);font-weight:500;font-size:15px;
+  transition:background-color .25s var(--ease),color .25s var(--ease)}
+.nav :is(a,button).on{background:var(--md-sc);color:var(--md-on-sc);font-weight:600;box-shadow:none}
+.nav svg{color:inherit;width:24px;height:24px}
+.nav .badge{background:var(--md-err);color:#fff;min-width:22px;text-align:center}
+.nav hr{border-top-color:var(--md-olv);margin:10px 18px}
+.nav .sub{color:var(--md-on-sv);font-size:14px}
+@media (max-width:760px){
+  .wrap{padding-block:8px calc(96px + env(safe-area-inset-bottom,0px))}
+  .nav{background:var(--md-s-c);border-top:0;padding:10px max(4px,env(safe-area-inset-right,0px)) calc(14px + env(safe-area-inset-bottom,0px)) max(4px,env(safe-area-inset-left,0px));gap:0}
+  .nav :is(a,button){height:auto;padding:0;gap:4px;border-radius:0;font-size:12px;font-weight:500;background:none!important;color:var(--md-on-sv)}
+  .nav :is(a,button) svg{box-sizing:content-box;width:24px;height:24px;padding:4px 20px;border-radius:16px;transition:background-color .3s var(--ease),padding .3s var(--ease-spring)}
+  .nav :is(a,button).on{color:var(--md-on-s);font-weight:700}
+  .nav :is(a,button).on svg{background:var(--md-sc);color:var(--md-on-sc)}
+  .nav :is(a,button):active svg{padding:4px 16px}
+  .nav .badge{top:-2px;right:calc(50% - 26px);font-size:10px;padding:0 5px;min-width:16px;border:2px solid var(--md-s-c)}
+  .top-in{height:64px}
+  .search input{height:48px}
+  .search svg{top:13px}
+  .top-me{padding:0;background:none}
+}
+
+/* ---------- Поверхности (карточки) ---------- */
+.card:not(.admin-card){background:var(--md-s-low);border:0;border-radius:28px;box-shadow:none}
+main{gap:12px}
+.pad{padding:20px}
+.tabs{border-bottom:0;gap:8px;padding:12px 16px;flex-wrap:wrap}
+.tabs :is(button,a){border:0!important;margin:0;height:36px;padding:0 16px;border-radius:12px;background:var(--md-s-high);color:var(--md-on-sv);font-weight:500;
+  display:inline-flex;align-items:center;gap:6px;transition:background-color .2s var(--ease),border-radius .3s var(--ease)}
+.tabs :is(button,a).on{background:var(--md-sc);color:var(--md-on-sc);border-radius:18px}
+.tabs :is(button,a).on::before{content:"✓";font-weight:700;font-size:13px}
+
+/* ---------- Кнопки ---------- */
+.btn{height:44px;padding:0 24px;border-radius:22px;font:500 15px/1 var(--f-body);letter-spacing:.01em;background:var(--md-p);color:var(--md-on-p);
+  display:inline-flex;align-items:center;justify-content:center;gap:8px;
+  transition:border-radius .3s var(--ease-spring),background-color .2s var(--ease),transform .2s var(--ease)}
+.btn:hover{filter:none}
+.btn:active:not(:disabled){border-radius:12px}
+.btn.sec{background:var(--md-sc);color:var(--md-on-sc)}
+.btn.ghost{background:none;color:var(--md-p);padding:0 14px}
+.btn.ghost:hover{color:var(--md-p)}
+.btn.danger{background:var(--md-err-c);color:var(--md-on-err-c)}
+.btn:disabled{opacity:.38}
+.icon-btn{min-width:44px;height:44px;justify-content:center;border-radius:22px;color:var(--md-on-sv);padding:0 10px;transition:border-radius .3s var(--ease-spring)}
+.icon-btn:active{border-radius:14px}
+.icon-btn.on{background:var(--md-sc);color:var(--md-on-sc)}
+
+/* сегментированные кнопки (настройки) */
+.seg{background:none;border:1px solid var(--md-ol);border-radius:22px;padding:0;gap:0;overflow:hidden;flex-wrap:nowrap}
+.seg button{border-radius:0;height:40px;padding:0 16px;color:var(--md-on-s);font-weight:500;border-left:1px solid var(--md-ol);white-space:nowrap;
+  display:inline-flex;align-items:center;gap:6px;transition:background-color .2s var(--ease)}
+.seg button:first-child{border-left:0}
+.seg button.on{background:var(--md-sc);color:var(--md-on-sc);box-shadow:none;font-weight:600}
+.seg button.on::before{content:"✓";font-weight:700}
+@media (max-width:520px){.seg{flex-wrap:wrap;border-radius:18px}.seg button{flex:1 1 auto;justify-content:center}}
+
+/* поля ввода — «заполненные» M3 */
+.field label{color:var(--md-on-sv);font-size:13px;font-weight:500}
+.field input,.field textarea,.field select,.cform input,.chat-form input,.chat-form textarea{background:var(--md-s-highest);border:0;border-radius:16px 16px 4px 4px;
+  box-shadow:inset 0 -1px 0 var(--md-on-sv);color:var(--md-on-s);transition:box-shadow .2s var(--ease)}
+.field input,.field textarea{padding:14px 16px}
+.field input:focus,.field textarea:focus,.cform input:focus,.chat-form input:focus{box-shadow:inset 0 -2px 0 var(--md-p);outline:none}
+.cform input,.chat-form input{border-radius:24px;box-shadow:none;height:48px;padding:0 20px}
+.cform input:focus,.chat-form input:focus{box-shadow:inset 0 0 0 2px var(--md-p)}
+.composer textarea{font-size:17px}
+.composer-bar{border-top:0;padding-top:4px}
+
+/* ---------- Записи ---------- */
+.post{gap:12px}
+.post-head .name{font-weight:600;font-size:16px}
+.post-text{font-size:16px;line-height:1.55}
+.post-img,.post .imgs img{border-radius:20px}
+.pill{height:40px;padding:0 16px;border-radius:20px;background:none;border:1px solid var(--md-olv);color:var(--md-on-sv);font-weight:500;
+  transition:background-color .2s var(--ease),border-radius .3s var(--ease-spring),color .2s}
+.pill:active{border-radius:12px}
+.pill.liked{background:var(--md-tc);color:var(--md-on-tc);border-color:transparent}
+.pill.liked svg{animation:likepop .45s var(--ease-spring)}
+@keyframes likepop{40%{transform:scale(1.35)}}
+.comments{border-top:0;padding-top:4px}
+.comment .bubble{background:var(--md-s-high);border-radius:4px 20px 20px 20px;padding:10px 14px}
+.daysep{background:var(--md-s-high);color:var(--md-on-sv);padding:4px 12px;border-radius:12px}
+
+/* ---------- Профиль ---------- */
+.cover{height:180px;border-radius:24px;margin:8px 8px 0;background-image:var(--cover,linear-gradient(135deg,var(--md-p),var(--md-t)));background-size:cover}
+.prof{margin-top:-64px;padding:0 24px 20px}
+.prof .av{border:6px solid var(--md-s-low)}
+.prof-name{font:500 28px/1.2 var(--f-display);letter-spacing:-.01em}
+.facts{border-top:0;padding:4px 24px 20px}
+.stats{border-top:0;gap:10px;padding:0 20px 20px;flex-wrap:wrap}
+.stats div{background:var(--md-s-high);border-radius:20px;padding:10px 18px;min-width:90px}
+.stats b{font-size:20px;font-weight:600}
+.fgrid button{border-radius:20px}
+
+/* аватарка в профиле — «печенька» из Material 3 Expressive */
+.prof > .av{border:0!important;
+  -webkit-mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Cpath d='M50 2c6 0 8 6 13 7s10-3 14 0 3 9 7 13 10 3 12 8-2 10-1 15 6 8 4 13-8 6-9 11 2 11-1 15-9 3-14 6-5 9-10 10-9-5-15-5-9 6-15 5-6-7-10-10-11-2-14-6 1-10-1-15-8-6-9-11 4-9 4-13-5-9-3-14 8-5 12-8 3-9 7-13 10 1 14-1 7-7 12-7z'/%3E%3C/svg%3E") center/100% 100% no-repeat;
+  mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Cpath d='M50 2c6 0 8 6 13 7s10-3 14 0 3 9 7 13 10 3 12 8-2 10-1 15 6 8 4 13-8 6-9 11 2 11-1 15-9 3-14 6-5 9-10 10-9-5-15-5-9 6-15 5-6-7-10-10-11-2-14-6 1-10-1-15-8-6-9-11 4-9 4-13-5-9-3-14 8-5 12-8 3-9 7-13 10 1 14-1 7-7 12-7z'/%3E%3C/svg%3E") center/100% 100% no-repeat}
+
+/* ---------- Люди, списки, сообщения ---------- */
+.uitem{border-top:0;padding:12px 20px;border-radius:24px}
+.uitem + .uitem{margin-top:2px}
+.ditem{border-radius:24px;margin:2px 8px;width:calc(100% - 16px);padding:12px}
+.ditem.on{background:var(--md-sc);color:var(--md-on-sc)}
+.ditem .dot{background:var(--md-p)}
+.dlist{border-right:0;background:var(--md-s-low);padding:6px 0}
+.im{gap:12px;background:none;border-radius:28px}
+.chat{background:var(--md-s-low);border-radius:28px}
+.chat-head{border-bottom:0;padding:14px 18px}
+.chat-form{border-top:0;padding:10px 14px 14px}
+.msg{border-radius:22px;padding:10px 14px;background:var(--md-s-highest);color:var(--md-on-s)}
+.msg.me{background:var(--md-p);color:var(--md-on-p);border-bottom-right-radius:6px}
+.msg:not(.me){border-bottom-left-radius:6px}
+
+/* ---------- Сервисы ---------- */
+.app-tile{background:var(--md-s-low);border:0;border-radius:28px;box-shadow:none;padding:20px;gap:8px;transition:border-radius .35s var(--ease-spring),background-color .2s var(--ease)}
+.app-tile:hover{transform:none;background:var(--md-s-c);border-radius:20px}
+.app-tile .app-ico{border-radius:16px}
+
+/* ---------- Окна, подсказки, плеер ---------- */
+.ov-in.modal{background:var(--md-s-high);border-radius:28px;padding:24px;box-shadow:0 12px 40px rgba(0,0,0,.25)}
+.toast{background:var(--md-inv-s);color:var(--md-inv-on);border-radius:12px;padding:14px 18px;font-weight:500;box-shadow:0 6px 18px rgba(0,0,0,.25)}
+.mbar{background:var(--md-s-high);border-top:0;border-radius:24px;left:12px;right:12px;bottom:calc(12px + env(safe-area-inset-bottom,0px));overflow:hidden;
+  box-shadow:0 4px 16px rgba(0,0,0,.18)}
+@media (max-width:760px){.mbar{bottom:calc(92px + env(safe-area-inset-bottom,0px))}}
+@media (min-width:761px){.mbar{left:auto;width:min(560px,calc(100% - 24px))}}
+.mbar-fill{background:var(--md-p);height:4px;border-radius:0 2px 2px 0}
+.mbar-play{background:var(--md-pc);color:var(--md-on-pc);border-radius:16px;transition:border-radius .3s var(--ease-spring)}
+.mbar-play:active{border-radius:50%}
+.badge{background:var(--md-err);color:#fff}
+
+/* индикатор загрузки — меняющая форму фигура Material 3 Expressive */
+.spin{border:0!important;background:var(--md-p);border-radius:42% 58% 63% 37% / 45% 45% 55% 55%;animation:mdload 1.6s var(--ease) infinite}
+@keyframes mdload{0%{border-radius:50%;rotate:0deg;scale:.8}25%{border-radius:30% 70% 70% 30% / 30% 30% 70% 70%}50%{border-radius:20%;rotate:180deg;scale:1}
+  75%{border-radius:60% 40% 30% 70% / 60% 30% 70% 40%}100%{border-radius:50%;rotate:360deg;scale:.8}}
+
+/* ---------- Вход ---------- */
+.login .card:not(.admin-card){background:var(--md-s-low)}
+.hero .logo-mark{width:64px;height:64px;border-radius:22px;font-size:24px}
+.hero h1{font:500 40px/1.1 var(--f-display);letter-spacing:-.02em}
+
+/* истории */
+.story-ring{background:conic-gradient(from 210deg,var(--md-p),var(--md-t),var(--md-p))}
+.story-ring .av{border-color:var(--md-s-low)!important}
+.story-plus{background:var(--md-p);color:var(--md-on-p);border-color:var(--md-s-low)}
+
+/* выключатель анимаций: без ряби и морфинга */
+:root[data-anim="off"] :is(.rip,.spin){animation:none!important}
+@media (prefers-reduced-motion:reduce){.rip{display:none}}
+
+/* разделители-линии Material 3 заменяет отступами */
+.badges,.reply-bar,.emoji{border-top:0}
+.badges{padding-top:4px}
+.reply-bar{background:var(--md-s-high);border-radius:16px;margin:0 12px}
