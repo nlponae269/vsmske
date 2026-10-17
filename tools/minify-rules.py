@@ -28,7 +28,7 @@ for n, short in zip(names, pool):
 text = re.sub(r'(?<!request\.)\bresource\.data\b', 'rd()', text)
 text = text.replace('match /databases/{database}/documents {', 'match /databases/{database}/documents {\nfunction rd() { return resource.data; }', 1)
 text = re.sub(r' ?([(){}\[\],=!<>&|+\-?:;]) ?', r'\1', text)
-text = re.sub(r'\b(allow [a-z, ]+):if', r'\1: if', text)
+text = re.sub(r'\b(allow [a-z, ]+):if', r'\1:if', text)
 text = text.replace('match/', 'match /').replace('function', 'function ').replace('function  ', 'function ').replace('return', 'return ').replace('return  ', 'return ')
 text = re.sub(r'\b(is|in)\b', r' \1 ', text); text = re.sub(r' {2,}', ' ', text)
 text = re.sub(r'\blet\b', 'let ', text).replace('let  ', 'let ')

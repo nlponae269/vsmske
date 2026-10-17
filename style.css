@@ -644,3 +644,14 @@ body:has(.mbar) .wrap{padding-bottom:84px}
   #mbarTime{display:none}
   body:has(.mbar) .wrap{padding-bottom:calc(150px + env(safe-area-inset-bottom,0px))}
 }
+
+/* 2.1: достижения, QR, поиск в диалоге, закладки */
+.badges{display:flex;flex-wrap:wrap;gap:6px;padding:12px 20px 16px;border-top:1px solid var(--line)}
+.badge-a{display:inline-flex;align-items:center;gap:4px;padding:4px 10px;border-radius:99px;background:var(--accent-soft);color:var(--fg);font-size:13px;font-weight:600}
+.admin-card .badges{border-color:#2A2148}
+.admin-card .badge-a{background:#2A2148;color:#F3EEFF}
+.qr-modal{align-items:stretch}
+.qr-box{display:grid;place-items:center;background:#fff;border-radius:14px;padding:14px;min-height:240px}
+.qr-box img{width:min(260px,70vw);height:auto;image-rendering:pixelated}
+.msg-search{display:flex;align-items:center;gap:8px;padding:8px 14px;border-bottom:1px solid var(--line);color:var(--muted)}
+.msg-search input{flex:1;min-width:0;border:0;background:var(--surface-2);border-radius:99px;height:34px;padding:0 12px;outline:none;color:var(--fg)}

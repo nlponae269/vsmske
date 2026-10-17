@@ -44,7 +44,7 @@ const MAX_POST_IMG = 700000;   // символов dataURL (~520 КБ), лими
 const MAX_AVATAR = 120000;
 const CHUNK = 700000;                                   // символов base64 в одном куске (кратно 4)
 const LIMITS = { disk: 10 * 1024 * 1024, video: 20 * 1024 * 1024, music: 12 * 1024 * 1024 };
-const VERSION = '2.0';
+const VERSION = '2.1';
 const MAX_MSG_IMG = 380000;    // фото в сообщении
 const ONLINE_MS = 5 * 60 * 1000; // «в сети», если заходил не раньше 5 минут назад
 
@@ -233,6 +233,8 @@ function embedSrc(v) {
   return '';
 }
 const safeImg = s => typeof s === 'string' && (s.startsWith('data:image/') || s.startsWith('https://')) ? s : '';
+// Аватар: только загруженное фото или фото из Google (а не ссылка на чужой сервер)
+const safePhoto = s => typeof s === 'string' && (/^data:image\/(jpeg|png|webp|gif);base64,/.test(s) || /^https:\/\/[a-z0-9-]+\.googleusercontent\.com\//.test(s)) ? s : '';
 function videoThumb(v) {
   if (v.thumb) return safeImg(v.thumb);
   if (v.provider === 'youtube' && /^[\w-]{11}$/.test(v.vid)) return `https://i.ytimg.com/vi/${v.vid}/hqdefault.jpg`;
@@ -285,6 +287,8 @@ const I = {
   gear:'<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>',
   poll:'<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M5 20V10M12 20V4M19 20v-7"/></svg>',
   eye:'<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg>',
+  bookmark:'<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M6 3h12v18l-6-4-6 4z"/></svg>',
+  qr:'<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><path d="M14 14h3v3h-3zM18 18h3v3h-3zM14 20h2M20 14v2"/></svg>',
   music:'<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18V5l11-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="17" cy="16" r="3"/></svg>',
   cart:'<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 4h2l2.4 11.2a2 2 0 0 0 2 1.6h7.7a2 2 0 0 0 2-1.5L21 8H6.2"/><circle cx="10" cy="20" r="1.4"/><circle cx="17" cy="20" r="1.4"/></svg>',
   next:'<svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M6 5l9 7-9 7zM17 5h2v14h-2z"/></svg>',
@@ -367,7 +371,7 @@ function ensurePostPeople(posts) {
   ensureUsers(posts.flatMap(p => p.groupId ? [p.authorId] : [p.authorId, p.wallId]));
   ensureGroups(posts.map(p => p.groupId).filter(Boolean));
 }
-const findPost = id => [...cache.feed.values()].flat().concat(cache.wall, cache.groupWall, cache.tagPosts, cache.post ? [cache.post] : [], [...cache.reposted.values()]).find(x => x.id === id);
+const findPost = id => [...cache.feed.values()].flat().concat(cache.wall, cache.groupWall, cache.tagPosts, cache.savedPosts || [], cache.post ? [cache.post] : [], [...cache.reposted.values()]).find(x => x.id === id);
 
 /* ---------- Уведомления (лайки, комментарии, записи на стене, дружба) ----------
    Пишутся отдельно и «по возможности»: если не получилось, основное действие всё равно выполнено. */
@@ -544,6 +548,7 @@ function route() {
   else if (v === 'post' && arg) { S.view = 'post'; S.postId = arg; }
   else if (v === 'club' && arg) { S.view = 'club'; S.clubId = arg; }
   else if (v === 'q' && arg) { S.view = 'question'; S.qId = arg; }
+  else if (v === 'saved') { S.view = 'saved'; }
   else if (v === 'market') { S.view = 'market'; S.mktCat = arg || 'all'; }
   else if (v === 'lot' && arg) { S.view = 'lot'; S.lotId = arg; }
   else if (v === 'music') { S.view = 'music'; S.musicTab = arg || 'my'; }
@@ -561,6 +566,7 @@ function route() {
   S.newQ = false; S.noteEdit = null; S.giftFor = null; S.newLot = false; if (S.view !== 'mail') S.mailDraft = null;
   S.newRoom = null; S.fwd = null; S.roomInfo = false; S.story = null; S.storyDraft = null; clearTimeout(storyTimer); S.clubEdit = false; S.editGroupPhoto = undefined; S.editGroupCover = null;
   if (S.view !== 'messages') S.replyTo = null;
+  S.editMsg = null; S.mqOpen = false; S.mq = '';
   recStop(false); players.forEach(p => p.pause()); players.clear();
   if (S.view !== 'video') S.videoDraft = null;
   attachView();
@@ -583,6 +589,7 @@ function attachView() {
     }, onViewErr));
     loadStories();
     if (S.feedTab === 'all') listen(query(collection(db, 'posts'), orderBy('createdAt', 'desc'), limit(50)), 'all');
+    else if (S.feedTab === 'top') listen(query(collection(db, 'posts'), orderBy('createdAt', 'desc'), limit(150)), 'top');
     else {
       chunk([id, ...(S.me.friends || [])], 30).forEach((c, i) =>
         listen(query(collection(db, 'posts'), where('authorId', 'in', c), orderBy('createdAt', 'desc'), limit(50)), i));
@@ -677,6 +684,13 @@ function attachView() {
       cache.post = s.exists() ? data(s) : { id: pid, missing: true }; S.loading = false;
       if (!cache.post.missing) ensureUsers([cache.post.authorId, cache.post.wallId]); render();
     }, onViewErr));
+  } else if (S.view === 'saved') {
+    cache.savedPosts = [];
+    const ids = (S.me.saved || []).slice(-100).reverse();
+    Promise.all(ids.map(pid => getDoc(doc(db, 'posts', pid)).catch(() => null))).then(snaps => {
+      if (S.view !== 'saved') return;
+      cache.savedPosts = snaps.filter(x => x?.exists()).map(data); ensurePostPeople(cache.savedPosts); S.loading = false; render();
+    });
   } else if (S.view === 'market') {
     cache.lots = [];
     const q = S.mktCat === 'mine' ? query(collection(db, 'market'), where('ownerId', '==', id), limit(100))
@@ -855,8 +869,9 @@ const isUnread = c => c.lastFrom !== uid() && (!c.read?.[uid()] || ms(c.read[uid
 
 /* ---------- Рендер ---------- */
 const avatar = (u, size = 40, link = true) => {
-  const inner = u?.photo ? `<img src="${esc(u.photo)}" alt="" referrerpolicy="no-referrer">` : esc(initials(u?.name));
-  const st = `width:${size}px;height:${size}px;font-size:${Math.round(size * .38)}px;background-color:${esc(u?.color || '#8E95AB')}`;
+  const ph = safePhoto(u?.photo);
+  const inner = ph ? `<img src="${esc(ph)}" alt="" referrerpolicy="no-referrer">` : esc(initials(u?.name));
+  const st = `width:${size}px;height:${size}px;font-size:${Math.round(size * .38)}px;background-color:${/^#[0-9a-f]{6}$/i.test(u?.color || '') ? u.color : '#8E95AB'}`;
   return link && u && !u.deleted
     ? `<a class="av" style="${st}" href="#id/${esc(u.id)}" aria-label="${esc(u.name)}">${inner}</a>`
     : `<span class="av" style="${st}">${inner}</span>`;
@@ -972,13 +987,14 @@ function navHtml() {
   const groups = { video: ['video', 'watch'], albums: ['albums', 'album'], clubs: ['clubs', 'club'], apps: ['apps', 'answers', 'question', 'mail', 'notes', 'weather', 'games', 'market', 'lot'], music: ['music'] };
   const on = v => (groups[v] ? groups[v].includes(S.view) : S.view === v) && (v !== 'profile' || S.profileId === me.id) ? 'on' : '';
   const nav = (v, href, icon, label, badge = 0, cls = '') => `<a class="navlink ${on(v)} ${cls}" href="#${href}">${icon}<span>${label}</span>${badge ? `<span class="badge">${badge}</span>` : ''}</a>`;
-  const moreOn = ['more', 'profile', 'people', 'albums', 'album', 'disk', 'vid', 'settings', 'edit', 'notif', 'post', 'clubs', 'club', 'admin', 'guests', 'tag', 'apps', 'answers', 'question', 'mail', 'notes', 'weather', 'games', 'market', 'lot', 'music'].includes(S.view) ? 'on' : '';
+  const moreOn = ['more', 'profile', 'people', 'albums', 'album', 'disk', 'vid', 'settings', 'edit', 'notif', 'post', 'clubs', 'club', 'admin', 'guests', 'tag', 'apps', 'answers', 'question', 'mail', 'notes', 'weather', 'games', 'market', 'lot', 'music', 'saved'].includes(S.view) ? 'on' : '';
   return `<nav class="nav">
       ${nav('profile', 'id/' + me.id, I.home, 'Моя страница', 0, 'm-hide')}
       ${nav('feed', 'feed', I.feed, 'Новости')}
       ${nav('messages', 'im', I.msg, 'Сообщения', unread)}
       ${nav('friends', 'friends', I.friends, 'Друзья', reqs)}
       ${nav('notif', 'notif', I.bell, 'Уведомления', unseenNotifs(), 'm-hide')}
+      ${nav('saved', 'saved', I.bookmark, 'Закладки', 0, 'm-hide')}
       ${nav('people', 'people', I.people, 'Люди', 0, 'm-hide')}
       ${nav('apps', 'apps', I.apps, 'Сервисы', unreadMail(), 'm-hide')}
       ${nav('music', 'music', I.music, 'Музыка', 0, 'm-hide')}
@@ -1018,6 +1034,8 @@ function shell() {
   else if (S.view === 'guests') main = viewGuests();
   else if (S.view === 'apps') main = viewApps();
   else if (S.view === 'market') main = viewMarket();
+  else if (S.view === 'saved') main = `<div class="card pad"><h1 class="h brandh">Закладки</h1><div class="muted small">Записи, которые вы сохранили. Видите только вы.</div></div>
+    ${S.loading ? loadingBox() : cache.savedPosts?.length ? cache.savedPosts.map(p => postCard(p)).join('') : '<div class="card empty"><b>Закладок пока нет</b><span>Нажмите «⋯» у записи → «В закладки».</span></div>'}`;
   else if (S.view === 'lot') main = viewLot();
   else if (S.view === 'music') main = viewMusic();
   else if (S.view === 'answers') main = viewAnswers();
@@ -1051,6 +1069,14 @@ function shell() {
 const REPORT_REASONS = { spam: 'Спам', abuse: 'Оскорбления', nsfw: 'Неприемлемый контент', fraud: 'Мошенничество', other: 'Другое' };
 function overlay() {
   if (S.story) return storyOverlay();
+  if (S.qr) {
+    const u = U(S.qr.id);
+    return `<div class="ov" data-act="ovx"><div class="ov-in modal qr-modal" data-stop="1">
+      <div class="row"><b class="grow">${esc(u?.name || '')}</b><button class="icon-btn" data-act="ovx" aria-label="Закрыть">✕</button></div>
+      <div class="qr-box">${S.qr.img ? `<img src="${S.qr.img}" alt="QR-код страницы">` : '<div class="spin"></div>'}</div>
+      <p class="muted small" style="margin:0;text-align:center">Наведите камеру телефона, чтобы открыть страницу</p>
+      <button class="btn sec" data-act="copy" data-text="${esc(S.qr.url)}">Скопировать ссылку</button></div></div>`;
+  }
   if (S.giftFor) {
     const u = U(S.giftFor);
     return `<div class="ov" data-act="ovx"><div class="ov-in modal" data-stop="1">
@@ -1316,6 +1342,7 @@ function viewMore() {
     <div class="card ulist">
       ${item('notif', I.bell, 'Уведомления' + (unseenNotifs() ? ` <span class="badge">${unseenNotifs()}</span>` : ''), 'Лайки, комментарии, записи на стене')}
       ${item('apps', I.apps, 'Сервисы' + (unreadMail() ? ` <span class="badge">${unreadMail()}</span>` : ''), 'Почта, Ответы, Заметки, Погода, Игры')}
+      ${item('saved', I.bookmark, 'Закладки', 'Сохранённые записи')}
       ${item('clubs', I.club, 'Сообщества', 'Группы по интересам')}
       ${item('people', I.people, 'Люди', 'Поиск и новые пользователи')}
       ${item('albums', I.album, 'ВС Альбомы', 'Ваши фотографии')}
@@ -1859,17 +1886,21 @@ function viewNotifs() {
 /* Новости */
 function viewFeed() {
   const seen = new Set();
-  const posts = [...cache.feed.values()].flat().filter(p => !seen.has(p.id) && seen.add(p.id))
-    .sort((a, b) => ms(b.createdAt) - ms(a.createdAt)).slice(0, 100);
+  // «Популярное»: последние 150 записей за неделю, по лайкам, комментариям и репостам
+  const score = p => (p.likes || []).length + 2 * (p.commentCount || 0) + 3 * (p.reposts || 0);
+  const weekAgo = Date.now() - 7 * 864e5;
+  const posts = S.feedTab === 'top'
+    ? [...cache.feed.values()].flat().filter(p => ms(p.createdAt) >= weekAgo && score(p) > 0 && !p.repostOf).sort((a, b) => score(b) - score(a)).slice(0, 30)
+    : [...cache.feed.values()].flat().filter(p => !seen.has(p.id) && seen.add(p.id)).sort((a, b) => ms(b.createdAt) - ms(a.createdAt)).slice(0, 100);
   const tab = (t, l) => `<button class="${S.feedTab === t ? 'on' : ''}" data-act="feedtab" data-tab="${t}">${l}</button>`;
   const fr = S.me.friends || []; ensureUsers(fr.slice(0, 200));
   const bdays = fr.map(U).filter(u => u && isBdayToday(u.bday));
   return `${storiesBar()}${bdays.length ? `<div class="card pad bday-card"><b>🎂 Сегодня день рождения</b>
       ${bdays.map(u => `<div class="row">${avatar(u, 36)}<span class="grow">${nameLink(u)}</span><a class="btn sec small" href="#im/${esc(u.id)}">Поздравить</a></div>`).join('')}</div>` : ''}
   ${composer(S.me.id, 'Что у вас нового?')}
-  <div class="card"><div class="tabs">${tab('friends', 'Друзья')}${tab('all', 'Все записи')}</div></div>
+  <div class="card"><div class="tabs">${tab('friends', 'Друзья')}${tab('top', '🔥 Популярное')}${tab('all', 'Все записи')}</div></div>
   ${S.loading ? loadingBox() : posts.length ? posts.map(postCard).join('') :
-    `<div class="card empty"><b>${S.feedTab === 'friends' ? 'Здесь появятся записи ваши и ваших друзей' : 'Пока никто ничего не написал'}</b>
+    `<div class="card empty"><b>${S.feedTab === 'friends' ? 'Здесь появятся записи ваши и ваших друзей' : S.feedTab === 'top' ? 'За неделю пока ничего не залайкали' : 'Пока никто ничего не написал'}</b>
      <span>Напишите первую запись или найдите знакомых.</span><a class="btn sec" href="#people">Найти людей</a></div>`}`;
 }
 
@@ -1964,6 +1995,7 @@ function postCard(p, pinned = false) {
     </div>
     ${menu ? `<div class="post-menu">
       ${canEdit && !editing ? `<button class="btn ghost small" data-act="editpost" data-id="${esc(p.id)}">Изменить</button>` : ''}
+      <button class="btn ghost small" data-act="savepost" data-id="${esc(p.id)}">${(me.saved || []).includes(p.id) ? 'Убрать из закладок' : '🔖 В закладки'}</button>
       ${canPin ? `<button class="btn ghost small" data-act="pinpost" data-id="${isPinned ? '' : esc(p.id)}">${isPinned ? 'Открепить' : 'Закрепить'}</button>` : ''}
       ${canDel ? `<button class="btn ${S.confirm === confirmKey ? 'danger' : 'ghost'} small" data-act="delpost" data-id="${esc(p.id)}">${S.confirm === confirmKey ? 'Точно удалить?' : 'Удалить'}</button>` : ''}
       ${p.authorId !== me.id ? `<button class="btn ghost small" data-act="report" data-type="post" data-id="${esc(p.id)}" data-user="${esc(p.authorId)}" data-post="${esc(p.id)}" data-text="${esc((p.text || '').slice(0, 300))}">Пожаловаться</button>` : ''}
@@ -1992,6 +2024,33 @@ function postCard(p, pinned = false) {
       <form class="cform" data-form="comment" data-post="${esc(p.id)}">${avatar(me, 32, false)}<input id="c_${esc(p.id)}" placeholder="Написать комментарий…" maxlength="1000" autocomplete="off"><button class="icon-btn" aria-label="Отправить комментарий">${I.send}</button></form>
     </div>` : n ? `<button class="more small" data-act="togglec" data-id="${esc(p.id)}">Показать ${n} ${plural(n, 'комментарий', 'комментария', 'комментариев')}</button>` : ''}
   </article>`;
+}
+
+/* QR-код: библиотека грузится с cdnjs только при первом нажатии */
+let qrLib = null;
+function qrDataUrl(text) {
+  qrLib ||= new Promise((res, rej) => { const sc = document.createElement('script'); sc.src = 'https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js'; sc.onload = () => res(window.QRCode); sc.onerror = rej; document.head.appendChild(sc); });
+  return qrLib.then(QR => {
+    const box = document.createElement('div');
+    new QR(box, { text, width: 480, height: 480, colorDark: '#151A27', colorLight: '#FFFFFF', correctLevel: QR.CorrectLevel.M });
+    const cv = box.querySelector('canvas'); return cv ? cv.toDataURL('image/png') : box.querySelector('img')?.src || '';
+  });
+}
+
+/* Достижения: считаются на лету из того, что уже загружено (без записей в базу) */
+function badges(u, friends, posts, likes) {
+  const out = [], days = u.createdAt ? (Date.now() - ms(u.createdAt)) / 864e5 : 0, gifts = cache.gifts.length;
+  if (isAdm(u)) out.push(['👑', 'Администратор', 'Следит за порядком на VСмске']);
+  if (days >= 365) out.push(['🏛', 'Старожил', 'На VСмске больше года']);
+  else if (days < 7) out.push(['🌱', 'Новичок', 'Зарегистрировался на этой неделе']);
+  if (friends >= 50) out.push(['🤝', 'Душа компании', '50 и больше друзей']); else if (friends >= 10) out.push(['👋', 'Общительный', '10 и больше друзей']);
+  if (posts >= 20) out.push(['✍️', 'Писатель', '20 и больше записей на стене']);
+  if (likes >= 100) out.push(['🌟', 'Звезда', '100 и больше лайков на стене']); else if (likes >= 20) out.push(['❤️', 'Любимчик', '20 и больше лайков на стене']);
+  if (gifts >= 5) out.push(['🎁', 'Счастливчик', '5 и больше подарков']);
+  if ((u.tracks || []).length >= 10) out.push(['🎧', 'Меломан', '10 и больше треков в музыке']);
+  if ((u.groups || []).length >= 5) out.push(['🏘', 'Активист', 'Подписан на 5 и больше сообществ']);
+  if (isBdayToday(u.bday)) out.push(['🎂', 'Именинник', 'Сегодня день рождения']);
+  return out;
 }
 
 /* Отношения с человеком */
@@ -2033,11 +2092,12 @@ function viewProfile() {
         ${!own && seenText(u) ? `<div class="seen small ${isOnline(u) ? 'on' : ''}">${seenText(u)}</div>` : ''}
         ${banOf(u) ? `<span class="chip ban-chip">⛔ Заблокирован ${banText(banOf(u))}</span>` : ''}
         ${!own && iBlocked(u.id) ? `<span class="chip">Вы заблокировали этого человека</span>` : ''}</div>
-      <div class="prof-btns">${own ? `<a class="btn sec" href="#edit">Редактировать</a>` : `${iBlocked(u.id) ? '' : `<a class="btn" href="#im/${esc(u.id)}">Написать</a>${relButtons(u.id)}`}
+      <div class="prof-btns">${own ? `<a class="btn sec" href="#edit">Редактировать</a><button class="icon-btn" data-act="qr" data-id="${esc(u.id)}" aria-label="QR-код моей страницы" title="QR-код моей страницы">${I.qr}</button>` : `${iBlocked(u.id) ? '' : `<a class="btn" href="#im/${esc(u.id)}">Написать</a>${relButtons(u.id)}`}
         <button class="icon-btn" data-act="profmenu" aria-label="Ещё" aria-expanded="${!!S.profMenu}">${I.more}</button>`}</div>
     </div>
     ${!own && S.profMenu ? `<div class="post-menu" style="padding:0 20px 14px">
       <button class="btn ghost small" data-act="${iBlocked(u.id) ? 'unblock' : 'block'}" data-id="${esc(u.id)}">${iBlocked(u.id) ? 'Разблокировать' : S.confirm === 'block:' + u.id ? 'Точно заблокировать?' : 'Заблокировать'}</button>
+      <button class="btn ghost small" data-act="qr" data-id="${esc(u.id)}">QR-код страницы</button>
       <button class="btn ghost small" data-act="report" data-type="user" data-id="${esc(u.id)}" data-user="${esc(u.id)}" data-text="${esc(u.name)}">Пожаловаться</button>
       ${isSiteAdmin() && !adm ? `<button class="btn ghost small" data-act="modopen">Модерация</button>` : ''}
     </div>` : ''}
@@ -2059,6 +2119,7 @@ function viewProfile() {
       <div><b>${posts.length}</b><span>${plural(posts.length, 'запись', 'записи', 'записей')}</span></div>
       <div><b>${likes}</b><span>${plural(likes, 'отметка', 'отметки', 'отметок')} «нравится»</span></div>
     </div>
+    ${(() => { const b = badges(u, friendIds.length, posts.length, likes); return b.length ? `<div class="badges">${b.map(([e, t, d]) => `<span class="badge-a" title="${esc(d)}">${e} ${esc(t)}</span>`).join('')}</div>` : ''; })()}
   </div>
   <div class="two">
     <div>
@@ -2176,8 +2237,9 @@ function msgHtml(m, id, peerRead, room = false) {
   const who = room && !mine ? `<a class="msg-from" href="#id/${esc(m.from)}">${esc(U(m.from)?.name || '…')}</a>` : '';
   const fwd = fw ? `<div class="fwd"><div class="small">↪ Переслано${fw.name ? ` от <b>${esc(fw.name)}</b>` : ''}</div>${fw.text ? `<span>${linkify(fw.text)}</span>` : ''}</div>` : '';
   const jumbo = !img && !m.audio && !fw && !rp && isJumbo(m.text);
-  return `<div class="msg ${mine ? 'me' : ''} ${img ? 'has-img' : ''} ${sel ? 'sel' : ''} ${jumbo ? 'jumbo' : ''}" data-act="selmsg" data-id="${esc(m.id)}">${who}${quote}${fwd}${img ? `<img class="msg-img" src="${esc(img)}" alt="Фото" data-act="viewimg" data-kind="msg" data-id="${esc(m.id)}">` : ''}${typeof m.audio === 'string' && m.audio.startsWith('data:audio/') ? voiceHtml(m) : ''}${m.text ? `<span>${linkify(m.text)}</span>` : ''}${reactsHtml(m, id)}<time>${hm(new Date(ms(m.createdAt)))}${ticks}</time>${sel ? `<div class="react-pick">${REACTS.map(e => `<button data-act="react" data-id="${esc(m.id)}" data-e="${e}" aria-label="Реакция ${e}">${e}</button>`).join('')}</div><div class="msg-acts"><button data-act="replymsg" data-id="${esc(m.id)}">${I.reply}Ответить</button><button data-act="fwdmsg" data-id="${esc(m.id)}">↪ Переслать</button>${mine ? `<button data-act="delmsg" data-id="${esc(m.id)}">${S.confirm === 'msg:' + m.id ? 'Удалить у всех?' : 'Удалить'}</button>` : ''}</div>` : ''}</div>`;
+  return `<div class="msg ${mine ? 'me' : ''} ${img ? 'has-img' : ''} ${sel ? 'sel' : ''} ${jumbo ? 'jumbo' : ''}" data-act="selmsg" data-id="${esc(m.id)}">${who}${quote}${fwd}${img ? `<img class="msg-img" src="${esc(img)}" alt="Фото" data-act="viewimg" data-kind="msg" data-id="${esc(m.id)}">` : ''}${typeof m.audio === 'string' && m.audio.startsWith('data:audio/') ? voiceHtml(m) : ''}${m.text ? `<span>${linkify(m.text)}</span>` : ''}${reactsHtml(m, id)}<time>${m.edited ? 'изменено · ' : ''}${hm(new Date(ms(m.createdAt)))}${ticks}</time>${sel ? `<div class="react-pick">${REACTS.map(e => `<button data-act="react" data-id="${esc(m.id)}" data-e="${e}" aria-label="Реакция ${e}">${e}</button>`).join('')}</div><div class="msg-acts"><button data-act="replymsg" data-id="${esc(m.id)}">${I.reply}Ответить</button><button data-act="fwdmsg" data-id="${esc(m.id)}">↪ Переслать</button>${mine && m.text && !fw ? `<button data-act="editmsg" data-id="${esc(m.id)}">✏️ Изменить</button>` : ''}${mine ? `<button data-act="delmsg" data-id="${esc(m.id)}">${S.confirm === 'msg:' + m.id ? 'Удалить у всех?' : 'Удалить'}</button>` : ''}</div>` : ''}</div>`;
 }
+const searchBar = () => `<div class="msg-search">${I.search}<input id="mq" type="search" placeholder="Поиск в этом диалоге" autocomplete="off" value="${esc(S.mq || '')}"><button class="icon-btn" data-act="mqtoggle" aria-label="Закрыть поиск">✕</button></div>`;
 const roomAvatar = (c, size) => `<span class="av room-av" style="width:${size}px;height:${size}px;font-size:${Math.round(size * .38)}px">${esc(initials(c?.name || 'Б'))}</span>`;
 
 // Поле ввода внизу чата (общее для диалога и беседы)
@@ -2211,7 +2273,9 @@ function viewMessages() {
   if (key && !room && !list.some(c => c.id === chatId(id, key))) list.unshift({ id: chatId(id, key), members: [id, key], fresh: true });
   let chatHtml = `<div class="empty" style="height:100%">Выберите диалог<br><span class="small">или напишите человеку с его страницы</span></div>`;
   const rp = S.replyTo;
-  const replyBar = name => rp ? `<div class="reply-bar">${I.reply}<div class="grow" style="min-width:0"><b>${esc(rp.from === id ? 'Вы' : name)}</b><div class="muted small" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(rp.text)}</div></div><button class="icon-btn" data-act="noreply" aria-label="Не отвечать">✕</button></div>` : '';
+  const em = S.editMsg && cache.messages.find(x => x.id === S.editMsg);
+  const replyBar = name => em ? `<div class="reply-bar">✏️<div class="grow" style="min-width:0"><b>Редактирование</b><div class="muted small" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(em.text)}</div></div><button class="icon-btn" data-act="noreply" aria-label="Отменить правку">✕</button></div>`
+    : rp ? `<div class="reply-bar">${I.reply}<div class="grow" style="min-width:0"><b>${esc(rp.from === id ? 'Вы' : name)}</b><div class="muted small" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(rp.text)}</div></div><button class="icon-btn" data-act="noreply" aria-label="Не отвечать">✕</button></div>` : '';
   const body = (peerRead, empty) => {
     let lastDay = '';
     return S.loading ? '<div class="loading"><div class="spin"></div></div>' : cache.messages.map(m => {
@@ -2219,14 +2283,20 @@ function viewMessages() {
       return sep + msgHtml(m, id, peerRead, room);
     }).join('') || `<div class="empty">${empty}</div>`;
   };
+  const mq = (S.mq || '').trim().toLowerCase();
+  const found = () => {
+    const list = cache.messages.filter(m => (m.text || m.fwd?.text || '').toLowerCase().includes(mq));
+    return list.length ? list.map(m => msgHtml(m, id, null, room)).join('') : `<div class="empty">Ничего не нашли</div>`;
+  };
   if (room) {
     const c = cache.chats.find(x => x.id === key);
     if (!c) chatHtml = S.chatsLoaded ? `<div class="empty" style="height:100%">Беседа не найдена или вас в ней больше нет<a class="btn sec" href="#im">К диалогам</a></div>` : '<div class="loading"><div class="spin"></div></div>';
     else chatHtml = `<div class="chat-head"><a class="icon-btn back" href="#im" aria-label="К диалогам">${I.back}</a>${roomAvatar(c, 38)}
         <div class="grow"><b>${esc(c.name)}</b><div class="small muted">${c.members.length} ${plural(c.members.length, 'участник', 'участника', 'участников')}</div></div>
+        <button class="icon-btn" data-act="mqtoggle" aria-label="Поиск по сообщениям">${I.search}</button>
         <button class="icon-btn" data-act="roominfo" aria-label="Участники" aria-expanded="${!!S.roomInfo}">${I.friends}</button></div>
       ${S.roomInfo ? roomPanel(c) : ''}
-      <div class="msgs">${body(null, 'Напишите первое сообщение в беседу')}</div>
+      ${S.mqOpen ? searchBar() : ''}<div class="msgs">${mq ? found() : body(null, 'Напишите первое сообщение в беседу')}</div>
       ${replyBar((U(rp?.from)?.name || '').split(' ')[0])}${emojiPanel('msgInput')}${chatForm(key)}`;
   } else {
     const o = key && U(key), self = key === id;
@@ -2235,8 +2305,9 @@ function viewMessages() {
       const chat = cache.chats.find(c => c.id === chatId(id, key));
       const peerRead = self ? null : chat?.read?.[key] ? ms(chat.read[key]) : 0;
       chatHtml = `<div class="chat-head"><a class="icon-btn back" href="#im" aria-label="К диалогам">${I.back}</a>${self ? `<span class="av fav" style="width:38px;height:38px">★</span>` : avatar(o, 38)}
-        <div class="grow">${self ? '<b>Избранное</b>' : nameLink(o)}<div class="small seen ${!self && isOnline(o) ? 'on' : ''}">${self ? 'Только для вас' : esc(seenText(o) || o.city || '@' + (o.nick || ''))}</div></div></div>
-        <div class="msgs">${body(peerRead, self ? 'Сохраняйте сюда заметки, ссылки и фото — их видите только вы' : 'Напишите ' + esc(o.name.split(' ')[0]) + ' первым')}</div>
+        <div class="grow">${self ? '<b>Избранное</b>' : nameLink(o)}<div class="small seen ${!self && isOnline(o) ? 'on' : ''}">${self ? 'Только для вас' : esc(seenText(o) || o.city || '@' + (o.nick || ''))}</div></div>
+        <button class="icon-btn" data-act="mqtoggle" aria-label="Поиск по сообщениям">${I.search}</button></div>
+        ${S.mqOpen ? searchBar() : ''}<div class="msgs">${mq ? found() : body(peerRead, self ? 'Сохраняйте сюда заметки, ссылки и фото — их видите только вы' : 'Напишите ' + esc(o.name.split(' ')[0]) + ' первым')}</div>
         ${replyBar(o.name.split(' ')[0])}${emojiPanel('msgInput')}
         ${o.deleted ? '' : banOf(S.me) ? chatForm(key)
           : !self && iBlocked(o.id) ? `<div class="chat-form muted small" style="justify-content:center">Вы заблокировали этого человека · <button class="linkbtn" data-act="unblock" data-id="${esc(o.id)}">разблокировать</button></div>`
@@ -2265,7 +2336,7 @@ function viewMessages() {
     <div class="chat">${chatHtml}</div></div>`;
 }
 
-document.addEventListener('input', e => { if (e.target.id === 'dq') { S.dq = e.target.value; render(); } });
+document.addEventListener('input', e => { if (e.target.id === 'dq') { S.dq = e.target.value; render(); } else if (e.target.id === 'mq') { S.mq = e.target.value; render(); } });
 
 /* ---------- Действия ---------- */
 let pickTarget = null;
@@ -2275,8 +2346,8 @@ document.addEventListener('click', async e => {
   const { act, id } = b.dataset;
   const twoStep = key => { if (S.confirm === key) { S.confirm = null; return true; } S.confirm = key; render(); return false; };
   if (!['delpost', 'unfriend', 'delvideo', 'delalbum', 'delfile', 'delphoto', 'delmsg', 'postmenu', 'block', 'rpost', 'profmenu', 'roomdel', 'roominfo', 'storydel', 'qdel', 'maildel', 'notedel', 'lotdel', 'tdel'].includes(act)) S.confirm = null;
-  if (!['selmsg', 'delmsg', 'replymsg', 'playvoice', 'fwdmsg'].includes(act)) S.msgSel = null;
-  if (!['profmenu', 'block', 'modopen', 'ban', 'unban', 'report'].includes(act)) S.profMenu = false;
+  if (!['selmsg', 'delmsg', 'replymsg', 'playvoice', 'fwdmsg', 'editmsg'].includes(act)) S.msgSel = null;
+  if (!['profmenu', 'block', 'modopen', 'ban', 'unban', 'report', 'qr'].includes(act)) S.profMenu = false;
   if (!['postmenu', 'delpost', 'pinpost'].includes(act)) S.postMenu = null;
   if (!['emoji', 'emojis'].includes(act)) S.emoji = null;
   try {
@@ -2405,7 +2476,19 @@ document.addEventListener('click', async e => {
         S.replyTo = { id: m.id, from: m.from, text: (m.text || (m.image ? '📷 Фото' : '')).slice(0, 100) };
         S.msgSel = null; render(); document.getElementById('msgInput')?.focus(); break;
       }
-      case 'noreply': S.replyTo = null; render(); break;
+      case 'mqtoggle': S.mqOpen = !S.mqOpen; S.mq = ''; render(); if (S.mqOpen) document.getElementById('mq')?.focus(); break;
+      case 'noreply': S.replyTo = null; S.editMsg = null; render(); break;
+      case 'editmsg': {
+        const m = cache.messages.find(x => x.id === id); if (!m) return;
+        S.editMsg = id; S.replyTo = null; S.msgSel = null; render();
+        const el = document.getElementById('msgInput'); if (el) { el.value = m.text; el.focus(); }
+        break;
+      }
+      case 'savepost': {
+        const has = (S.me.saved || []).includes(id);
+        await updateDoc(doc(db, 'users', uid()), { saved: has ? arrayRemove(id) : arrayUnion(id) });
+        S.postMenu = null; toast(has ? 'Убрано из закладок' : 'Сохранено в закладки'); break;
+      }
       case 'postmenu': S.postMenu = S.postMenu === id ? null : id; S.confirm = null; render(); break;
       case 'pinpost':
         await updateDoc(doc(db, 'users', uid()), { pinned: id || '' });
@@ -2526,7 +2609,13 @@ document.addEventListener('click', async e => {
         const w = tttWin(t.b); if (w === 'X') t.wins++; else if (w === 'O') t.losses++; else if (w === 'draw') t.draws++;
         render(); break;
       }
-      case 'ovx': S.newRoom = null; S.fwd = null; S.storyDraft = null; S.giftFor = null; render(); break;
+      case 'ovx': S.newRoom = null; S.fwd = null; S.storyDraft = null; S.giftFor = null; S.qr = null; render(); break;
+      case 'qr': {
+        const url = location.origin + location.pathname + '#id/' + id;
+        S.qr = { id, url, img: '' }; S.profMenu = false; render();
+        try { S.qr.img = await qrDataUrl(url); } catch (e) { console.error(e); toast('Не получилось сделать QR-код'); S.qr = null; }
+        render(); break;
+      }
       case 'giftopen': S.giftFor = id; S.giftSel = null; render(); break;
       case 'giftsel': S.giftSel = b.dataset.k; render(); break;
       case 'giftsend': {
@@ -2806,6 +2895,7 @@ async function openLightbox(i) {
 }
 document.addEventListener('keydown', e => {
   if (S.story) { if (e.key === 'Escape') { clearTimeout(storyTimer); S.story = null; render(); } else if (e.key === 'ArrowRight') storyStep(1); else if (e.key === 'ArrowLeft') storyStep(-1); return; }
+  if (e.key === 'Escape' && (S.qr || S.giftFor || S.newRoom || S.fwd || S.storyDraft || S.report)) { S.qr = S.giftFor = S.newRoom = S.fwd = S.storyDraft = S.report = null; render(); return; }
   if (S.lightbox === null && !S.preview && !S.viewImg) return;
   if (e.key === 'Escape') { S.lightbox = null; S.lightboxImg = null; S.preview = null; S.viewImg = null; render(); }
   else if (S.lightbox !== null && (e.key === 'ArrowRight' || e.key === 'ArrowLeft')) {
@@ -2972,6 +3062,11 @@ document.addEventListener('submit', async e => {
       case 'msg': {
         const text = v('msgInput'); if (!text) return;
         clear('msgInput'); S.emoji = null;
+        if (S.editMsg) {
+          const mid = S.editMsg; S.editMsg = null;
+          await updateDoc(doc(db, 'chats', chatKeyId(f.dataset.to), 'messages', mid), { text: text.slice(0, 2000), edited: serverTimestamp() });
+          render(); break;
+        }
         await sendMessage(f.dataset.to, text);
         break;
       }
