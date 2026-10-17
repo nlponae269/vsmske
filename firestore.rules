@@ -348,8 +348,10 @@ service cloud.firestore {
         && d().ownerId == me() && str(d().title, 1, 120) && str(d().artist, 0, 120) && str(d().type, 0, 60)
         && d().duration is number && d().size is int && now(d().createdAt)
         && get(path('files', d().fileId)).data.ownerId == me() && get(path('files', d().fileId)).data.kind == 'music';
-      allow update: if signed() && resource.data.ownerId == me() && onlyChanged(['title', 'artist'])
-        && str(d().title, 1, 120) && str(d().artist, 0, 120);
+      // автор трека меняет название, исполнителя, текст песни (можно с тайм-кодами) и обложку
+      allow update: if signed() && resource.data.ownerId == me() && onlyChanged(['title', 'artist', 'lyrics', 'cover'])
+        && str(d().title, 1, 120) && str(d().artist, 0, 120) && str(d().get('lyrics', ''), 0, 20000)
+        && str(d().get('cover', ''), 0, 300000) && imgOk(d().get('cover', ''));
       allow delete: if signed() && (resource.data.ownerId == me() || isAdmin());
     }
 
