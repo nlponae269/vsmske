@@ -44,7 +44,7 @@ const MAX_POST_IMG = 700000;   // символов dataURL (~520 КБ), лими
 const MAX_AVATAR = 120000;
 const CHUNK = 700000;                                   // символов base64 в одном куске (кратно 4)
 const LIMITS = { disk: 10 * 1024 * 1024, video: 20 * 1024 * 1024, music: 12 * 1024 * 1024 };
-const VERSION = '3.0';
+const VERSION = '3.1';
 const MAX_MSG_IMG = 380000;    // фото в сообщении
 const ONLINE_MS = 5 * 60 * 1000; // «в сети», если заходил не раньше 5 минут назад
 
@@ -307,6 +307,10 @@ const I = {
   gear:'<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>',
   poll:'<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M5 20V10M12 20V4M19 20v-7"/></svg>',
   eye:'<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg>',
+  down:'<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>',
+  repeat:'<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 2l4 4-4 4"/><path d="M3 11V9a3 3 0 0 1 3-3h15"/><path d="M7 22l-4-4 4-4"/><path d="M21 13v2a3 3 0 0 1-3 3H3"/></svg>',
+  shuffle:'<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 3h5v5M4 20L21 3M21 16v5h-5M15 15l6 6M4 4l5 5"/></svg>',
+  lyrics:'<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 6h10M4 10h10M4 14h6"/><circle cx="17" cy="17" r="3"/><path d="M20 17V6l2-1"/></svg>',
   radio:'<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="8" width="18" height="12" rx="2"/><path d="M7 8l10-5"/><circle cx="8" cy="14" r="2"/><path d="M14 13h4M14 16h4"/></svg>',
   cal:'<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/></svg>',
   rate:'<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h13l-3-3M20 17H7l3 3"/></svg>',
@@ -1105,6 +1109,7 @@ function shell() {
       ${banOf(me).reason ? `<div class="small">Причина: ${esc(banOf(me).reason)}</div>` : ''}<div class="small">Пока действует блокировка, нельзя писать записи, комментарии и сообщения.</div></div>` : ''}${up}${main}</main>
   </div>
   ${musicBar()}
+  ${S.fullPlayer ? fullPlayer() : ''}
   ${overlay()}`;
 }
 
@@ -1530,16 +1535,38 @@ function viewApps() {
 
 /* ---------- ВС Музыка ---------- */
 // Плеер живёт вне #app, поэтому играет при переходах по сайту
-const player = { audio: new Audio(), queue: [], i: -1, loading: false };
+const player = { audio: new Audio(), queue: [], i: -1, loading: false, repeat: lsGet('vs_repeat') || 'off', shuffle: lsGet('vs_shuffle') === '1', label: '' };
 player.audio.preload = 'auto';
 const curTrack = () => player.queue[player.i];
 player.audio.addEventListener('timeupdate', () => {
-  const a = player.audio, fill = document.getElementById('mbarFill'), t = document.getElementById('mbarTime');
-  if (fill && a.duration) fill.style.width = (a.currentTime / a.duration * 100) + '%';
-  if (t && !curTrack()?.radio) t.textContent = fmtDur(a.currentTime) + ' / ' + fmtDur(a.duration || curTrack()?.duration);
+  const a = player.audio, t = curTrack(), pct = a.duration ? a.currentTime / a.duration * 100 : 0;
+  const fill = document.getElementById('mbarFill'), mt = document.getElementById('mbarTime');
+  if (fill) fill.style.width = pct + '%';
+  if (mt && !t?.radio) mt.textContent = fmtDur(a.currentTime) + ' / ' + fmtDur(a.duration || t?.duration);
+  // полноэкранный плеер: ползунок, время и строка текста — без перерисовки всей страницы
+  const seek = document.getElementById('fpSeek'), cur = document.getElementById('fpCur'), left = document.getElementById('fpLeft');
+  if (seek && !seek.matches(':active')) { seek.value = String(Math.round(pct * 10)); seek.style.setProperty('--p', pct + '%'); }
+  if (cur) cur.textContent = fmtDur(a.currentTime);
+  if (left && a.duration) left.textContent = fmtDur(a.duration);
+  syncLyrics();
 });
 ['play', 'pause'].forEach(ev => player.audio.addEventListener(ev, () => render()));
-player.audio.addEventListener('ended', () => playAt(player.i + 1));
+player.audio.addEventListener('ended', () => {
+  if (player.repeat === 'one') { player.audio.currentTime = 0; player.audio.play(); return; }
+  nextTrack(true);
+});
+// следующий трек с учётом «перемешать» и «повторять всё»
+function nextTrack(auto = false) {
+  const n = player.queue.length; if (!n) return;
+  if (player.shuffle && n > 1) { let j; do j = Math.floor(Math.random() * n); while (j === player.i); return playAt(j); }
+  if (player.i + 1 < n) return playAt(player.i + 1);
+  if (player.repeat === 'all' || !auto) return playAt(0);
+  player.audio.pause();
+}
+function prevTrack() {
+  if (player.audio.currentTime > 3 || player.queue.length < 2) { player.audio.currentTime = 0; return; }
+  playAt(player.i > 0 ? player.i - 1 : player.queue.length - 1);
+}
 async function playAt(i) {
   if (i < 0 || i >= player.queue.length) { player.audio.pause(); return; }
   player.i = i; player.loading = true; render();
@@ -1550,9 +1577,9 @@ async function playAt(i) {
     player.audio.src = url; await player.audio.play();
     shareListening(t);
     if ('mediaSession' in navigator) {
-      navigator.mediaSession.metadata = new MediaMetadata({ title: t.title, artist: t.artist || '', album: 'ВС Музыка' });
-      navigator.mediaSession.setActionHandler('nexttrack', () => playAt(player.i + 1));
-      navigator.mediaSession.setActionHandler('previoustrack', () => playAt(player.i - 1));
+      navigator.mediaSession.metadata = new MediaMetadata({ title: t.title, artist: t.artist || '', album: 'ВС Музыка', artwork: safeImg(t.cover) ? [{ src: t.cover, sizes: '600x600', type: 'image/jpeg' }] : [] });
+      navigator.mediaSession.setActionHandler('nexttrack', () => nextTrack());
+      navigator.mediaSession.setActionHandler('previoustrack', () => prevTrack());
     }
   } catch (e) { console.error(e); toast(t.radio ? 'Станция сейчас недоступна, попробуйте другую' : 'Не получилось включить трек'); }
   finally { player.loading = false; render(); }
@@ -1566,10 +1593,78 @@ function shareListening(t) {
   updateDoc(doc(db, 'users', uid()), { listening: t ? { title: (t.radio ? '📻 ' + t.title : t.title).slice(0, 120), artist: (t.artist || '').slice(0, 120), at: serverTimestamp() } : null }).catch(console.error);
 }
 const listeningOf = u => u?.listening && u.listening.title && Date.now() - ms(u.listening.at) < 20 * 60 * 1000 ? u.listening : null;
-function playList(list, i) {
+function playList(list, i, label = '') {
   const t = list[i];
   if (curTrack()?.id === t.id) { player.audio.paused ? player.audio.play() : player.audio.pause(); return; }
-  player.queue = list.slice(); playAt(i);
+  player.queue = list.slice(); player.label = label; playAt(i);
+}
+
+/* Текст песни: строки «[мм:сс.хх] текст» — синхронно с музыкой, иначе обычный текст */
+function parseLyrics(text) {
+  const lines = String(text || '').split('\n'), out = [];
+  let timed = false;
+  for (const raw of lines) {
+    const tags = [...raw.matchAll(/\[(\d{1,2}):(\d{2})(?:[.:](\d{1,3}))?\]/g)];
+    const body = raw.replace(/\[\d{1,2}:\d{2}(?:[.:]\d{1,3})?\]/g, '').trim();
+    if (tags.length) { timed = true; tags.forEach(m => out.push({ t: Number(m[1]) * 60 + Number(m[2]) + (m[3] ? Number('0.' + m[3].padEnd(3, '0')) : 0), text: body })); }
+    else if (!/^\[[a-z]+:.*\]$/i.test(raw.trim())) out.push({ t: null, text: raw.trim() });   // [ar:...], [ti:...] — служебные строки LRC
+  }
+  if (timed) return { timed: true, lines: out.filter(l => l.t !== null).sort((a, b) => a.t - b.t) };
+  while (out.length && !out[0].text) out.shift();
+  while (out.length && !out[out.length - 1].text) out.pop();
+  return { timed: false, lines: out };
+}
+let lyricIdx = -1;
+function syncLyrics() {
+  const box = document.getElementById('fpLyrics'); if (!box || box.dataset.timed !== '1') return;
+  const t = player.audio.currentTime, rows = box.querySelectorAll('[data-t]');
+  let idx = -1; rows.forEach((r, k) => { if (Number(r.dataset.t) <= t + 0.15) idx = k; });
+  if (idx === lyricIdx && box.querySelector('.cur')) return;
+  lyricIdx = idx;
+  rows.forEach((r, k) => { r.classList.toggle('cur', k === idx); r.classList.toggle('past', k < idx); });
+  if (idx >= 0 && !box.matches(':hover')) rows[idx].scrollIntoView({ block: 'center', behavior: 'smooth' });
+}
+
+/* Полноэкранный плеер */
+const REPEAT_LABEL = { off: 'Повтор выключен', all: 'Повторять весь список', one: 'Повторять трек' };
+function fullPlayer() {
+  const t = curTrack(); if (!t) { S.fullPlayer = false; return ''; }
+  const a = player.audio, dur = a.duration || t.duration || 0, pct = dur ? a.currentTime / dur * 100 : 0;
+  const own = !t.radio && t.ownerId === uid(), saved = !t.radio && ((S.me.tracks || []).includes(t.id) || own), owner = t.radio ? null : U(t.ownerId);
+  if (owner === undefined && t.ownerId) ensureUsers([t.ownerId]);
+  const cover = safeImg(t.cover), lyr = t.radio ? null : parseLyrics(t.lyrics);
+  const showLyrics = S.fpLyrics && !t.radio;
+  const head = `<div class="fp-top"><button class="icon-btn fp-x" data-act="fpclose" aria-label="Свернуть плеер">${I.down}</button>
+      <span class="fp-label">${t.radio ? 'ВС Радио · прямой эфир' : esc(player.label || 'ВС Музыка')}</span>
+      ${own ? `<button class="icon-btn" data-act="fpcover" aria-label="Сменить обложку" title="Сменить обложку">${I.photo}</button>` : '<span style="width:36px"></span>'}</div>`;
+  const art = cover ? `<img class="fp-cover" src="${esc(cover)}" alt="Обложка">` : `<div class="fp-cover fp-cover-empty" style="${t.radio ? `--rc:${t.c}` : ''}">${t.radio ? '📻' : '🎵'}</div>`;
+  const lyricsBox = showLyrics ? (S.lyrEdit ? `<form class="fp-lyrics form" data-form="lyrics">
+        <textarea id="lyrText" rows="12" maxlength="20000" placeholder="Текст песни. Для синхронизации с музыкой начинайте строки с тайм-кода: [00:12.50] Первая строка">${esc(t.lyrics || '')}</textarea>
+        <div class="row"><button type="button" class="btn ghost small" data-act="lyrstamp">⏱ Вставить текущее время</button><span class="grow"></span>
+          <button type="button" class="btn ghost small" data-act="lyredit">Отмена</button><button class="btn small">Сохранить</button></div>
+        <p class="hint" style="margin:0">Тайм-код ставится в начало строки в формате [минуты:секунды.сотые]. Включите песню и жмите «Вставить текущее время» перед каждой строкой.</p></form>`
+      : lyr.lines.length ? `<div class="fp-lyrics ${lyr.timed ? 'timed' : ''}" id="fpLyrics" data-timed="${lyr.timed ? 1 : 0}">${lyr.lines.map(l => lyr.timed ? `<p data-t="${l.t}" data-act="lyrseek">${esc(l.text) || '♪'}</p>` : `<p>${esc(l.text) || '&nbsp;'}</p>`).join('')}
+          ${own ? `<button class="btn ghost small" data-act="lyredit">Изменить текст</button>` : ''}</div>`
+      : `<div class="fp-lyrics fp-empty"><b>Текста пока нет</b>${own ? `<span class="small">Добавьте слова, можно с тайм-кодами — тогда они будут идти вместе с музыкой</span><button class="btn small" data-act="lyredit">Добавить текст</button>` : '<span class="small">Добавить текст может только автор трека</span>'}</div>`) : '';
+  return `<div class="fp" role="dialog" aria-label="Плеер"><div class="fp-bg" style="${cover ? `background-image:url('${esc(cover)}')` : ''}"></div><div class="fp-in">
+    ${head}
+    <div class="fp-main">${showLyrics ? lyricsBox : art}</div>
+    <div class="fp-info"><div class="grow" style="min-width:0"><div class="fp-title">${esc(t.title)}</div>
+        <div class="fp-artist">${esc(t.artist || (t.radio ? '' : 'Неизвестный исполнитель'))}${owner ? ` · <a href="#music/${esc(owner.id)}" data-act="fpclose">${esc(owner.name)}</a>` : ''}</div></div>
+      ${t.radio ? '' : `<button class="icon-btn fp-ic" data-act="copy" data-text="${esc(t.title + (t.artist ? ' — ' + t.artist : ''))}" aria-label="Скопировать название">${I.link}</button>`}</div>
+    ${t.radio ? `<div class="fp-live">● Прямой эфир</div>` : `<div class="fp-seek"><input id="fpSeek" type="range" min="0" max="1000" value="${Math.round(pct * 10)}" style="--p:${pct}%" aria-label="Перемотка">
+      <div class="fp-times tnum"><span id="fpCur">${fmtDur(a.currentTime)}</span><span id="fpLeft">${fmtDur(dur)}</span></div></div>`}
+    <div class="fp-ctrl">
+      <button class="icon-btn fp-ic ${saved ? 'on' : ''}" data-act="fplike" ${t.radio || own ? 'disabled' : ''} aria-label="${saved ? 'В моей музыке' : 'Добавить в мою музыку'}">${saved ? I.heart : I.heartO}</button>
+      <button class="icon-btn fp-big" data-act="mprev" aria-label="Предыдущий">${I.prev}</button>
+      <button class="fp-play" data-act="mplay" aria-label="${a.paused ? 'Играть' : 'Пауза'}">${player.loading ? '<span class="spin"></span>' : a.paused ? I.play : I.pause}</button>
+      <button class="icon-btn fp-big" data-act="mnext" aria-label="Следующий">${I.next}</button>
+      <button class="icon-btn fp-ic" data-act="fpclose" aria-label="Свернуть">${I.down}</button></div>
+    <div class="fp-row">
+      <button class="fp-chip ${player.repeat !== 'off' ? 'on' : ''}" data-act="fprepeat" aria-label="${REPEAT_LABEL[player.repeat]}" title="${REPEAT_LABEL[player.repeat]}">${I.repeat}${player.repeat === 'one' ? '<sup>1</sup>' : ''}</button>
+      <button class="fp-chip ${showLyrics ? 'on' : ''}" data-act="fplyrics" ${t.radio ? 'disabled' : ''} aria-label="Текст песни" title="Текст песни">${I.lyrics}</button>
+      <button class="fp-chip ${player.shuffle ? 'on' : ''}" data-act="fpshuffle" aria-label="Перемешать" title="Перемешать">${I.shuffle}</button></div>
+  </div></div>`;
 }
 function musicBar() {
   const t = curTrack(); if (!t) return '';
@@ -1578,7 +1673,7 @@ function musicBar() {
     <button class="icon-btn" data-act="mprev" aria-label="Предыдущий">${I.prev}</button>
     <button class="mbar-play" data-act="mplay" aria-label="${a.paused ? 'Играть' : 'Пауза'}">${player.loading ? '<span class="spin sm"></span>' : a.paused ? I.play : I.pause}</button>
     <button class="icon-btn" data-act="mnext" aria-label="Следующий">${I.next}</button>
-    <a class="grow mbar-info" href="#${t.radio ? 'radio' : 'music'}"><b>${esc(t.title)}</b><span class="muted small">${esc(t.artist || 'Неизвестный исполнитель')}</span></a>
+    <button class="grow mbar-info" data-act="fpopen" aria-label="Открыть плеер">${safeImg(t.cover) ? `<img class="mbar-cover" src="${esc(t.cover)}" alt="">` : ''}<span class="mbar-txt"><b>${esc(t.title)}</b><span class="muted small">${esc(t.artist || (t.radio ? 'Прямой эфир' : 'Неизвестный исполнитель'))}</span></span></button>
     <span class="small muted tnum" id="mbarTime">${t.radio ? '● Прямой эфир' : fmtDur(a.currentTime) + ' / ' + fmtDur(a.duration || t.duration)}</span>
     <button class="icon-btn" data-act="mclose" aria-label="Закрыть плеер">✕</button></div>`;
 }
@@ -2626,6 +2721,9 @@ function viewMessages() {
 }
 
 document.addEventListener('change', e => { if (e.target.id === 'cvFrom') { S.cvFrom = e.target.value; render(); } else if (e.target.id === 'cvTo') { S.cvTo = e.target.value; render(); } });
+document.addEventListener('input', e => {
+  if (e.target.id === 'fpSeek') { const a = player.audio; if (a.duration) { a.currentTime = Number(e.target.value) / 1000 * a.duration; e.target.style.setProperty('--p', (Number(e.target.value) / 10) + '%'); } }
+});
 document.addEventListener('input', e => { if (e.target.id === 'cvAmt') { S.cvAmt = e.target.value; render(); return; } if (e.target.id === 'dq') { S.dq = e.target.value; render(); } else if (e.target.id === 'mq') { S.mq = e.target.value; render(); } });
 
 /* ---------- Действия ---------- */
@@ -2838,11 +2936,31 @@ document.addEventListener('click', async e => {
       case 'sign': S.sign = b.dataset.s; render(); break;
       // ---- ВС Музыка
       case 'pickmusic': pick('music', 'audio/*', false); break;
-      case 'tplay': playList(cache.tracks || [], Number(b.dataset.i)); break;
+      case 'tplay': playList(cache.tracks || [], Number(b.dataset.i), S.musicTab === 'my' ? 'Моя музыка' : S.musicTab === 'all' ? 'Новое в ВС Музыке' : 'Музыка: ' + (U(S.musicTab)?.name || '')); break;
       case 'mplay': if (player.audio.src) player.audio.paused ? player.audio.play() : player.audio.pause(); break;
-      case 'mnext': playAt(player.i + 1); break;
-      case 'mprev': if (player.audio.currentTime > 3) player.audio.currentTime = 0; else playAt(player.i - 1); break;
-      case 'mclose': player.audio.pause(); player.queue = []; player.i = -1; if (lastShared) shareListening(null); render(); break;
+      case 'mnext': nextTrack(); break;
+      case 'mprev': prevTrack(); break;
+      case 'fpopen': S.fullPlayer = true; S.lyrEdit = false; lyricIdx = -1; render(); break;
+      case 'fpclose': S.fullPlayer = false; S.lyrEdit = false; render(); break;
+      case 'fprepeat': player.repeat = { off: 'all', all: 'one', one: 'off' }[player.repeat]; lsSet('vs_repeat', player.repeat); toast(REPEAT_LABEL[player.repeat]); render(); break;
+      case 'fpshuffle': player.shuffle = !player.shuffle; lsSet('vs_shuffle', player.shuffle ? '1' : '0'); toast(player.shuffle ? 'Перемешивание включено' : 'Перемешивание выключено'); render(); break;
+      case 'fplyrics': S.fpLyrics = !S.fpLyrics; S.lyrEdit = false; lyricIdx = -1; render(); setTimeout(syncLyrics, 50); break;
+      case 'lyredit': S.lyrEdit = !S.lyrEdit; render(); if (S.lyrEdit) document.getElementById('lyrText')?.focus(); break;
+      case 'lyrseek': if (b.dataset.t) { player.audio.currentTime = Number(b.dataset.t); if (player.audio.paused) player.audio.play(); } break;
+      case 'lyrstamp': {
+        const ta = document.getElementById('lyrText'); if (!ta) return;
+        const tm = player.audio.currentTime, stamp = `[${pad2(Math.floor(tm / 60))}:${pad2(Math.floor(tm % 60))}.${pad2(Math.floor((tm % 1) * 100))}] `;
+        const at = ta.selectionStart ?? ta.value.length, lineStart = ta.value.lastIndexOf('\n', at - 1) + 1;
+        const cleaned = ta.value.slice(lineStart).replace(/^\[\d{1,2}:\d{2}(?:[.:]\d{1,3})?\]\s*/, '');
+        ta.value = ta.value.slice(0, lineStart) + stamp + cleaned;
+        const nextNl = ta.value.indexOf('\n', lineStart); const pos = nextNl < 0 ? ta.value.length : nextNl + 1;
+        ta.focus(); ta.setSelectionRange(pos, pos); break;
+      }
+      case 'fpcover': pick('tcover', 'image/*', false); break;
+      case 'fplike': { const t = curTrack(); if (!t || t.radio || t.ownerId === uid()) return;
+        const has = (S.me.tracks || []).includes(t.id);
+        await updateDoc(doc(db, 'users', uid()), { tracks: has ? arrayRemove(t.id) : arrayUnion(t.id) }); toast(has ? 'Убрано из вашей музыки' : 'Добавлено в вашу музыку'); break; }
+      case 'mclose': player.audio.pause(); player.queue = []; player.i = -1; S.fullPlayer = false; if (lastShared) shareListening(null); render(); break;
       case 'tsave': {
         const has = (S.me.tracks || []).includes(id);
         await updateDoc(doc(db, 'users', uid()), { tracks: has ? arrayRemove(id) : arrayUnion(id) }); toast(has ? 'Убрано из вашей музыки' : 'Добавлено в вашу музыку'); break;
@@ -3220,6 +3338,7 @@ async function openLightbox(i) {
 }
 document.addEventListener('keydown', e => {
   if (S.story) { if (e.key === 'Escape') { clearTimeout(storyTimer); S.story = null; render(); } else if (e.key === 'ArrowRight') storyStep(1); else if (e.key === 'ArrowLeft') storyStep(-1); return; }
+  if (e.key === 'Escape' && S.fullPlayer && !S.lyrEdit) { S.fullPlayer = false; render(); return; }
   if (e.key === 'Escape' && (S.qr || S.giftFor || S.newRoom || S.fwd || S.storyDraft || S.report)) { S.qr = S.giftFor = S.newRoom = S.fwd = S.storyDraft = S.report = null; render(); return; }
   if (S.lightbox === null && !S.preview && !S.viewImg) return;
   if (e.key === 'Escape') { S.lightbox = null; S.lightboxImg = null; S.preview = null; S.viewImg = null; render(); }
@@ -3260,6 +3379,13 @@ document.getElementById('filePick').addEventListener('change', async e => {
       render();
     }
     else if (pickTarget === 'photos') await uploadPhotos(files);
+    else if (pickTarget === 'tcover') {
+      const t = curTrack(); if (!t || t.ownerId !== uid()) return;
+      const cover = await compress(f, 600, 250000, true);
+      await updateDoc(doc(db, 'tracks', t.id), { cover }); t.cover = cover;
+      const c2 = (cache.tracks || []).find(x => x.id === t.id); if (c2) c2.cover = cover;
+      toast('Обложка обновлена'); render();
+    }
     else if (pickTarget === 'evcover') { S.evCover = await compress(f, 1280, 420000); render(); }
     else if (pickTarget === 'lot') { S.lotImage = await compress(f, 1080, 420000); render(); }
     else if (pickTarget === 'music') await uploadTrack(f);
@@ -3395,6 +3521,13 @@ document.addEventListener('submit', async e => {
         }
         await sendMessage(f.dataset.to, text);
         break;
+      }
+      case 'lyrics': {
+        const t = curTrack(); if (!t || t.ownerId !== uid()) return;
+        const lyrics = (document.getElementById('lyrText')?.value || '').slice(0, 20000);
+        await updateDoc(doc(db, 'tracks', t.id), { lyrics }); t.lyrics = lyrics;
+        const c2 = (cache.tracks || []).find(x => x.id === t.id); if (c2) c2.lyrics = lyrics;
+        S.lyrEdit = false; lyricIdx = -1; toast(parseLyrics(lyrics).timed ? 'Текст сохранён — будет идти вместе с музыкой' : 'Текст сохранён'); render(); setTimeout(syncLyrics, 50); break;
       }
       case 'event': {
         const title = v('evTitle'), at = new Date(v('evAt'));

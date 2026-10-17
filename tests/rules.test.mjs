@@ -610,3 +610,15 @@ test('эмодзи-статус и «сейчас слушает»', async () =>
   await assertFails(updateDoc(doc(db(A), 'users', A), { emoji: 'x'.repeat(40) }));
   await assertFails(updateDoc(doc(db(A), 'users', A), { listening: { title: 'x', evil: 1 } }));
 });
+
+/* ---------- 3.1: текст песни и обложка трека ---------- */
+test('текст песни и обложку меняет только автор трека', async () => {
+  const f = db(A), file = doc(collection(f, 'files'));
+  await setDoc(file, { ownerId: A, kind: 'music', name: 's.mp3', size: 10, type: 'audio/mpeg', chunks: 1, status: 'uploading', createdAt: serverTimestamp() });
+  const t = doc(collection(f, 'tracks'));
+  await setDoc(t, { ownerId: A, title: 'Элло', artist: 'Группа', fileId: file.id, type: 'audio/mpeg', duration: 186, size: 10, createdAt: serverTimestamp() });
+  await assertSucceeds(updateDoc(t, { lyrics: '[00:12.50] Первая строка\n[00:15.00] Вторая', cover: 'data:image/jpeg;base64,AAAA' }));
+  await assertFails(updateDoc(doc(db(B), 'tracks', t.id), { lyrics: 'чужой текст' }));
+  await assertFails(updateDoc(t, { cover: 'https://evil.example/c.jpg' }));
+  await assertFails(updateDoc(t, { lyrics: 'x'.repeat(20001) }));
+});

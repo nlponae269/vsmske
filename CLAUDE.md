@@ -38,6 +38,9 @@
 `events` (ВС События: `title`, `text`, `place`, `at`, `cover`, `going[]`),
 `gifts` (подарки: `from`, `to`, `gift` — ключ из `GIFTS`, `text`), `market` (ВС Маркет: `title`, `price`, `category`, `city`, `text`, `image`, `sold`).
 Плеер музыки (`player`) живёт вне `#app` и играет при переходах; панель — `musicBar()`.
+Поля 3.1: `tracks.lyrics` (текст песни до 20 000 символов, строки LRC `[мм:сс.сс]` дают синхронизацию — `parseLyrics()`, `syncLyrics()`)
+и `tracks.cover` (обложка, dataURL до 300 000). Меняет только автор трека. Полноэкранный плеер — `fullPlayer()` (`S.fullPlayer`, открывается
+по нажатию на мини-панель), повтор (`player.repeat`: off/all/one, localStorage `vs_repeat`) и перемешивание (`vs_shuffle`).
 @упоминания в записях и комментариях дают уведомление `mention` (`notifyMentions()`); цвет оформления — `data-accent` на `<html>` (localStorage `vs_accent`).
 ВС Погода берёт данные из бесплатного Open-Meteo (без ключа), ВС Игры (2048, крестики-нолики) работают без базы, рекорд — в localStorage.
 
