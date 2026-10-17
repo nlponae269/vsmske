@@ -44,7 +44,7 @@ const MAX_POST_IMG = 700000;   // символов dataURL (~520 КБ), лими
 const MAX_AVATAR = 120000;
 const CHUNK = 700000;                                   // символов base64 в одном куске (кратно 4)
 const LIMITS = { disk: 10 * 1024 * 1024, video: 20 * 1024 * 1024, music: 12 * 1024 * 1024 };
-const VERSION = '2.1';
+const VERSION = '3.0';
 const MAX_MSG_IMG = 380000;    // фото в сообщении
 const ONLINE_MS = 5 * 60 * 1000; // «в сети», если заходил не раньше 5 минут назад
 
@@ -145,7 +145,26 @@ function loadImage(file) {
     r.onerror = rej; r.readAsDataURL(file);
   });
 }
-async function compress(file, maxSide, maxLen, square = false) {
+// Фильтры для фото: попиксельно (ctx.filter работает не во всех браузерах)
+const PHOTO_FILTERS = { none: 'Без фильтра', bw: 'Ч/Б', sepia: 'Сепия', warm: 'Тёплый', cool: 'Холодный', bright: 'Ярче', vivid: 'Сочный' };
+const FILTER_CSS = { none: 'none', bw: 'grayscale(1)', sepia: 'sepia(.85)', warm: 'sepia(.25) saturate(1.3) hue-rotate(-10deg)', cool: 'saturate(1.1) hue-rotate(12deg) brightness(1.03)', bright: 'brightness(1.18) contrast(1.05)', vivid: 'saturate(1.6) contrast(1.1)' };
+function applyFilter(ctx, w, h, f) {
+  if (!f || f === 'none') return;
+  const d = ctx.getImageData(0, 0, w, h), p = d.data;
+  for (let i = 0; i < p.length; i += 4) {
+    let r = p[i], g = p[i + 1], b = p[i + 2];
+    const y = 0.299 * r + 0.587 * g + 0.114 * b;
+    if (f === 'bw') r = g = b = y;
+    else if (f === 'sepia') { r = y * 1.07 + 30; g = y * 0.95 + 12; b = y * 0.78; }
+    else if (f === 'warm') { r = r * 1.08 + 10; g = g * 1.02; b = b * 0.88; }
+    else if (f === 'cool') { r = r * 0.9; g = g * 1.0; b = b * 1.1 + 10; }
+    else if (f === 'bright') { r = r * 1.15 + 8; g = g * 1.15 + 8; b = b * 1.15 + 8; }
+    else if (f === 'vivid') { r = y + (r - y) * 1.6; g = y + (g - y) * 1.6; b = y + (b - y) * 1.6; r = (r - 128) * 1.1 + 128; g = (g - 128) * 1.1 + 128; b = (b - 128) * 1.1 + 128; }
+    p[i] = r < 0 ? 0 : r > 255 ? 255 : r; p[i + 1] = g < 0 ? 0 : g > 255 ? 255 : g; p[i + 2] = b < 0 ? 0 : b > 255 ? 255 : b;
+  }
+  ctx.putImageData(d, 0, 0);
+}
+async function compress(file, maxSide, maxLen, square = false, filter = 'none') {
   const img = await loadImage(file);
   let side = maxSide, q = 0.8, out = '';
   for (let i = 0; i < 8; i++) {
@@ -158,6 +177,7 @@ async function compress(file, maxSide, maxLen, square = false) {
       c.width = Math.round(img.width * k); c.height = Math.round(img.height * k);
       ctx.drawImage(img, 0, 0, c.width, c.height);
     }
+    applyFilter(ctx, c.width, c.height, filter);
     out = c.toDataURL('image/jpeg', q);
     if (out.length <= maxLen) return out;
     q = Math.max(0.5, q - 0.1); side = Math.round(side * 0.85);
@@ -287,6 +307,10 @@ const I = {
   gear:'<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>',
   poll:'<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M5 20V10M12 20V4M19 20v-7"/></svg>',
   eye:'<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg>',
+  radio:'<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="8" width="18" height="12" rx="2"/><path d="M7 8l10-5"/><circle cx="8" cy="14" r="2"/><path d="M14 13h4M14 16h4"/></svg>',
+  cal:'<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/></svg>',
+  rate:'<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h13l-3-3M20 17H7l3 3"/></svg>',
+  star:'<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M12 3l2.6 5.6 6 .7-4.5 4.1 1.2 6L12 16.9 6.7 19.4l1.2-6L3.4 9.3l6-.7z"/></svg>',
   bookmark:'<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M6 3h12v18l-6-4-6 4z"/></svg>',
   qr:'<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><path d="M14 14h3v3h-3zM18 18h3v3h-3zM14 20h2M20 14v2"/></svg>',
   music:'<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18V5l11-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="17" cy="16" r="3"/></svg>',
@@ -549,6 +573,7 @@ function route() {
   else if (v === 'club' && arg) { S.view = 'club'; S.clubId = arg; }
   else if (v === 'q' && arg) { S.view = 'question'; S.qId = arg; }
   else if (v === 'saved') { S.view = 'saved'; }
+  else if (v === 'event' && arg) { S.view = 'event'; S.eventId = arg; }
   else if (v === 'market') { S.view = 'market'; S.mktCat = arg || 'all'; }
   else if (v === 'lot' && arg) { S.view = 'lot'; S.lotId = arg; }
   else if (v === 'music') { S.view = 'music'; S.musicTab = arg || 'my'; }
@@ -557,13 +582,14 @@ function route() {
   else if (v === 'mail') { S.view = 'mail'; S.mailBox = arg === 'sent' ? 'sent' : arg === 'new' ? 'new' : 'in'; S.mailId = arg && !['sent', 'new', 'in'].includes(arg) ? arg : null; }
   else if (v === 'games') { S.view = 'games'; S.game = arg || null; }
   else if (v === 'tag' && arg) { S.view = 'tag'; try { S.tag = decodeURIComponent(arg).toLowerCase(); } catch (e) { S.tag = arg; } }
-  else if (['feed', 'friends', 'people', 'edit', 'disk', 'vid', 'settings', 'more', 'notif', 'clubs', 'admin', 'guests', 'apps', 'notes', 'weather'].includes(v)) S.view = v;
+  else if (['feed', 'friends', 'people', 'edit', 'disk', 'vid', 'settings', 'more', 'notif', 'clubs', 'admin', 'guests', 'apps', 'notes', 'weather', 'events', 'rates', 'radio', 'horo'].includes(v)) S.view = v;
   else S.view = 'feed';
-  if (S.view !== 'edit') { S.editColor = null; S.editCover = null; S.editPhoto = undefined; }
+  if (S.view !== 'edit') { S.editColor = null; S.editCover = null; S.editPhoto = undefined; S.editEmoji = undefined; }
   if (S.view !== 'watch') { S.videoSrc = null; S.videoErr = null; }
   S.lightbox = null; S.lightboxImg = null; S.preview = null; S.linkForm = false; S.newAlbum = false;
   S.viewImg = null; S.postMenu = null; S.emoji = null; S.msgSel = null; S.profMenu = false; S.modOpen = false; S.report = null;
-  S.newQ = false; S.noteEdit = null; S.giftFor = null; S.newLot = false; if (S.view !== 'mail') S.mailDraft = null;
+  if (S.view !== 'games' || S.game !== 'snake') { clearInterval(snakeTimer); snakeTimer = null; if (snake && !snake.over) snake = null; }
+  S.newQ = false; S.noteEdit = null; S.giftFor = null; S.newLot = false; S.newEvent = false; if (S.view !== 'mail') S.mailDraft = null;
   S.newRoom = null; S.fwd = null; S.roomInfo = false; S.story = null; S.storyDraft = null; clearTimeout(storyTimer); S.clubEdit = false; S.editGroupPhoto = undefined; S.editGroupCover = null;
   if (S.view !== 'messages') S.replyTo = null;
   S.editMsg = null; S.mqOpen = false; S.mq = '';
@@ -684,6 +710,16 @@ function attachView() {
       cache.post = s.exists() ? data(s) : { id: pid, missing: true }; S.loading = false;
       if (!cache.post.missing) ensureUsers([cache.post.authorId, cache.post.wallId]); render();
     }, onViewErr));
+  } else if (S.view === 'events') {
+    cache.events = [];
+    viewUnsubs.push(onSnapshot(query(collection(db, 'events'), where('at', '>=', new Date(Date.now() - 3 * 3600e3)), orderBy('at', 'asc'), limit(60)), s => {
+      cache.events = s.docs.map(data); S.loading = false; render();
+    }, onViewErr));
+  } else if (S.view === 'event') {
+    cache.event = null;
+    viewUnsubs.push(onSnapshot(doc(db, 'events', S.eventId), s => { cache.event = s.exists() ? data(s) : { id: S.eventId, missing: true }; if (s.exists()) ensureUsers([cache.event.ownerId]); S.loading = false; render(); }, onViewErr));
+  } else if (S.view === 'rates') {
+    S.loading = false; if (!S.rates?.v) loadRates();
   } else if (S.view === 'saved') {
     cache.savedPosts = [];
     const ids = (S.me.saved || []).slice(-100).reverse();
@@ -896,7 +932,9 @@ const GIFTS = { gift: ['🎁', 'Подарок'], rose: ['🌹', 'Роза'], be
   cup: ['🏆', 'Кубок'], star: ['🌟', 'Звезда'], coffee: ['☕', 'Кофе'], cat: ['🐱', 'Котик'], pizza: ['🍕', 'Пицца'], car: ['🏎️', 'Машина'],
   crown: ['👑', 'Корона'], balloon: ['🎈', 'Шарик'], diamond: ['💎', 'Бриллиант'], rocket: ['🚀', 'Ракета'] };
 const BAN_DAYS = [[1, '1 день'], [7, 'Неделя'], [30, 'Месяц'], [0, 'Навсегда']];
-const nameLink = u => u && !u.deleted ? `<a class="name" href="#id/${esc(u.id)}" style="color:var(--fg);font-weight:600">${esc(u.name)}</a>${admBadge(u)}` : `<span class="name">${esc(u?.name || '…')}</span>`;
+const emojiOf = u => typeof u?.emoji === 'string' && u.emoji && u.emoji.length <= 16 && /\p{Extended_Pictographic}/u.test(u.emoji) && !/[<>"'&]/.test(u.emoji) ? u.emoji : '';
+const emojiTag = u => emojiOf(u) ? `<span class="emoji-st" title="Статус">${emojiOf(u)}</span>` : '';
+const nameLink = u => u && !u.deleted ? `<a class="name" href="#id/${esc(u.id)}" style="color:var(--fg);font-weight:600">${esc(u.name)}</a>${emojiTag(u)}${admBadge(u)}` : `<span class="name">${esc(u?.name || '…')}</span>`;
 const loadingBox = () => `<div class="card loading"><div class="spin"></div></div>`;
 
 const playerKey = () => { const v = cache.video; return `${S.watchId}:${v ? (v.missing ? 'x' : v.source) : '-'}:${S.videoSrc ? 1 : 0}:${S.videoErr ? 1 : 0}`; };
@@ -984,10 +1022,10 @@ function viewOnboarding() {
 
 function navHtml() {
   const me = S.me, unread = cache.chats.filter(isUnread).length, reqs = cache.incoming.length;
-  const groups = { video: ['video', 'watch'], albums: ['albums', 'album'], clubs: ['clubs', 'club'], apps: ['apps', 'answers', 'question', 'mail', 'notes', 'weather', 'games', 'market', 'lot'], music: ['music'] };
+  const groups = { video: ['video', 'watch'], albums: ['albums', 'album'], clubs: ['clubs', 'club'], apps: ['apps', 'answers', 'question', 'mail', 'notes', 'weather', 'games', 'market', 'lot', 'events', 'event', 'rates', 'radio', 'horo'], music: ['music'] };
   const on = v => (groups[v] ? groups[v].includes(S.view) : S.view === v) && (v !== 'profile' || S.profileId === me.id) ? 'on' : '';
   const nav = (v, href, icon, label, badge = 0, cls = '') => `<a class="navlink ${on(v)} ${cls}" href="#${href}">${icon}<span>${label}</span>${badge ? `<span class="badge">${badge}</span>` : ''}</a>`;
-  const moreOn = ['more', 'profile', 'people', 'albums', 'album', 'disk', 'vid', 'settings', 'edit', 'notif', 'post', 'clubs', 'club', 'admin', 'guests', 'tag', 'apps', 'answers', 'question', 'mail', 'notes', 'weather', 'games', 'market', 'lot', 'music', 'saved'].includes(S.view) ? 'on' : '';
+  const moreOn = ['more', 'profile', 'people', 'albums', 'album', 'disk', 'vid', 'settings', 'edit', 'notif', 'post', 'clubs', 'club', 'admin', 'guests', 'tag', 'apps', 'answers', 'question', 'mail', 'notes', 'weather', 'games', 'market', 'lot', 'music', 'saved', 'events', 'event', 'rates', 'radio', 'horo'].includes(S.view) ? 'on' : '';
   return `<nav class="nav">
       ${nav('profile', 'id/' + me.id, I.home, 'Моя страница', 0, 'm-hide')}
       ${nav('feed', 'feed', I.feed, 'Новости')}
@@ -1034,6 +1072,11 @@ function shell() {
   else if (S.view === 'guests') main = viewGuests();
   else if (S.view === 'apps') main = viewApps();
   else if (S.view === 'market') main = viewMarket();
+  else if (S.view === 'events') main = viewEvents();
+  else if (S.view === 'event') main = viewEvent();
+  else if (S.view === 'rates') main = viewRates();
+  else if (S.view === 'radio') main = viewRadio();
+  else if (S.view === 'horo') main = viewHoro();
   else if (S.view === 'saved') main = `<div class="card pad"><h1 class="h brandh">Закладки</h1><div class="muted small">Записи, которые вы сохранили. Видите только вы.</div></div>
     ${S.loading ? loadingBox() : cache.savedPosts?.length ? cache.savedPosts.map(p => postCard(p)).join('') : '<div class="card empty"><b>Закладок пока нет</b><span>Нажмите «⋯» у записи → «В закладки».</span></div>'}`;
   else if (S.view === 'lot') main = viewLot();
@@ -1314,6 +1357,8 @@ function viewSettings() {
       <div class="set-row"><span class="grow">Цвет</span><div class="accents" role="radiogroup">${ACCENTS.map(([k, l, c]) => `<button role="radio" aria-checked="${(lsGet('vs_accent') || 'blue') === k}" aria-label="${l}" title="${l}" class="${(lsGet('vs_accent') || 'blue') === k ? 'on' : ''}" style="background:${c}" data-act="accent" data-v="${k}"></button>`).join('')}</div></div>
       <p class="hint" style="margin:0">Сохраняется на этом устройстве.</p></div>
     ${installCard()}
+    <div class="card pad set"><h2 class="h" style="font-size:16px">Музыка</h2>
+      <div class="set-row"><span class="grow">Показывать в профиле, что я слушаю</span>${seg('listen', lsGet('vs_listen') === '0' ? 'off' : 'on', [['on', 'Да'], ['off', 'Нет']])}</div></div>
     ${canNotify() ? `<div class="card pad set"><h2 class="h" style="font-size:16px">Уведомления</h2>
       <div class="set-row"><span class="grow">Новые сообщения, когда вкладка VСмске в фоне</span>${
         Notification.permission === 'denied' ? '<span class="muted small">Запрещены в настройках браузера</span>'
@@ -1466,6 +1511,10 @@ function viewApps() {
     <div class="app-grid">
       ${tile('mail', I.mail, 'ВС Почта', mailAddr(S.me), 'c-mail', unreadMail())}
       ${tile('music', I.music, 'ВС Музыка', 'Ваши треки и плеер', 'c-music')}
+      ${tile('radio', I.radio, 'ВС Радио', 'Онлайн-радиостанции', 'c-radio')}
+      ${tile('events', I.cal, 'ВС События', 'Встречи и вечеринки', 'c-event')}
+      ${tile('rates', I.rate, 'ВС Курсы', 'Курсы валют и конвертер', 'c-rate')}
+      ${tile('horo', I.star, 'ВС Гороскоп', 'Прогноз на сегодня', 'c-horo')}
       ${tile('market', I.cart, 'ВС Маркет', 'Купить и продать', 'c-market')}
       ${tile('answers', I.ask, 'ВС Ответы', 'Задайте вопрос — ответят люди', 'c-ask')}
       ${tile('notes', I.note, 'ВС Заметки', 'Списки и мысли — только для вас', 'c-note')}
@@ -1487,7 +1536,7 @@ const curTrack = () => player.queue[player.i];
 player.audio.addEventListener('timeupdate', () => {
   const a = player.audio, fill = document.getElementById('mbarFill'), t = document.getElementById('mbarTime');
   if (fill && a.duration) fill.style.width = (a.currentTime / a.duration * 100) + '%';
-  if (t) t.textContent = fmtDur(a.currentTime) + ' / ' + fmtDur(a.duration || curTrack()?.duration);
+  if (t && !curTrack()?.radio) t.textContent = fmtDur(a.currentTime) + ' / ' + fmtDur(a.duration || curTrack()?.duration);
 });
 ['play', 'pause'].forEach(ev => player.audio.addEventListener(ev, () => render()));
 player.audio.addEventListener('ended', () => playAt(player.i + 1));
@@ -1496,17 +1545,27 @@ async function playAt(i) {
   player.i = i; player.loading = true; render();
   const t = curTrack();
   try {
-    const url = await getFileUrl(t.fileId, t.type || 'audio/mpeg');
+    const url = t.radio ? t.url : await getFileUrl(t.fileId, t.type || 'audio/mpeg');
     if (curTrack() !== t) return;
     player.audio.src = url; await player.audio.play();
+    shareListening(t);
     if ('mediaSession' in navigator) {
       navigator.mediaSession.metadata = new MediaMetadata({ title: t.title, artist: t.artist || '', album: 'ВС Музыка' });
       navigator.mediaSession.setActionHandler('nexttrack', () => playAt(player.i + 1));
       navigator.mediaSession.setActionHandler('previoustrack', () => playAt(player.i - 1));
     }
-  } catch (e) { console.error(e); toast('Не получилось включить трек'); }
+  } catch (e) { console.error(e); toast(t.radio ? 'Станция сейчас недоступна, попробуйте другую' : 'Не получилось включить трек'); }
   finally { player.loading = false; render(); }
 }
+// «Сейчас слушает» в профиле: пишем название трека (не чаще одного раза на трек), если не выключено в настройках
+let lastShared = '';
+function shareListening(t) {
+  if (lsGet('vs_listen') === '0' || !uid()) return;
+  const key = t ? (t.radio ? '📻 ' + t.title : t.title) + '|' + (t.artist || '') : '';
+  if (key === lastShared) return; lastShared = key;
+  updateDoc(doc(db, 'users', uid()), { listening: t ? { title: (t.radio ? '📻 ' + t.title : t.title).slice(0, 120), artist: (t.artist || '').slice(0, 120), at: serverTimestamp() } : null }).catch(console.error);
+}
+const listeningOf = u => u?.listening && u.listening.title && Date.now() - ms(u.listening.at) < 20 * 60 * 1000 ? u.listening : null;
 function playList(list, i) {
   const t = list[i];
   if (curTrack()?.id === t.id) { player.audio.paused ? player.audio.play() : player.audio.pause(); return; }
@@ -1519,8 +1578,8 @@ function musicBar() {
     <button class="icon-btn" data-act="mprev" aria-label="Предыдущий">${I.prev}</button>
     <button class="mbar-play" data-act="mplay" aria-label="${a.paused ? 'Играть' : 'Пауза'}">${player.loading ? '<span class="spin sm"></span>' : a.paused ? I.play : I.pause}</button>
     <button class="icon-btn" data-act="mnext" aria-label="Следующий">${I.next}</button>
-    <a class="grow mbar-info" href="#music"><b>${esc(t.title)}</b><span class="muted small">${esc(t.artist || 'Неизвестный исполнитель')}</span></a>
-    <span class="small muted tnum" id="mbarTime">${fmtDur(a.currentTime)} / ${fmtDur(a.duration || t.duration)}</span>
+    <a class="grow mbar-info" href="#${t.radio ? 'radio' : 'music'}"><b>${esc(t.title)}</b><span class="muted small">${esc(t.artist || 'Неизвестный исполнитель')}</span></a>
+    <span class="small muted tnum" id="mbarTime">${t.radio ? '● Прямой эфир' : fmtDur(a.currentTime) + ' / ' + fmtDur(a.duration || t.duration)}</span>
     <button class="icon-btn" data-act="mclose" aria-label="Закрыть плеер">✕</button></div>`;
 }
 async function loadMusic() {
@@ -1579,6 +1638,125 @@ function viewMusic() {
           : `<button class="icon-btn ${saved ? 'on' : ''}" data-act="tsave" data-id="${esc(t.id)}" aria-label="${saved ? 'Убрать из моей музыки' : 'Добавить в мою музыку'}" title="${saved ? 'Убрать из моей музыки' : 'Добавить в мою музыку'}">${saved ? '✓' : '＋'}</button>`}
         ${isSiteAdmin() && !mine ? `<button class="icon-btn" data-act="tdel" data-id="${esc(t.id)}" aria-label="Удалить трек (админ)">${S.confirm === 'track:' + t.id ? 'Удалить?' : '🗑'}</button>` : ''}</div>`;
     }).join('') : `<div class="empty">${tab === 'my' ? 'Здесь будут ваши треки. Загрузите первый или добавьте из «Нового».' : 'Треков пока нет'}</div>`}</div>`;
+}
+
+/* ---------- ВС События ---------- */
+const evDate = t => { const d = new Date(ms(t)); return d.getDate() + ' ' + MONTHS_FULL[d.getMonth()] + ', ' + DAYS[d.getDay()] + ' в ' + hm(d); };
+function viewEvents() {
+  const list = cache.events || [];
+  return `<div class="card pad"><div class="row" style="flex-wrap:wrap"><div class="grow"><h1 class="h brandh">ВС События</h1><div class="muted small">Встречи, праздники и вечеринки</div></div>
+      ${banOf(S.me) ? '' : `<button class="btn" data-act="newevent">Создать событие</button>`}</div>
+    ${S.newEvent ? `<form class="form" data-form="event" style="margin-top:14px">
+      <div class="lot-photo">${S.evCover ? `<img src="${esc(S.evCover)}" alt="Обложка">` : `<span class="muted small">Обложка</span>`}<button type="button" class="btn sec small" data-act="evcover">${S.evCover ? 'Другая' : 'Добавить обложку'}</button></div>
+      <div class="field"><label for="evTitle">Название</label><input id="evTitle" required minlength="2" maxlength="100" placeholder="Пикник в парке"></div>
+      <div class="row" style="gap:10px;flex-wrap:wrap"><div class="field grow"><label for="evAt">Когда</label><input id="evAt" type="datetime-local" required></div>
+        <div class="field grow"><label for="evPlace">Где</label><input id="evPlace" maxlength="120" placeholder="Парк Горького, у фонтана"></div></div>
+      <div class="field"><label for="evText">Подробности</label><textarea id="evText" rows="3" maxlength="2000"></textarea></div>
+      <div class="row"><button class="btn" type="submit" ${S.busy ? 'disabled' : ''}>Создать</button><button type="button" class="btn ghost" data-act="newevent">Отмена</button></div></form>` : ''}</div>
+    ${S.loading ? loadingBox() : list.length ? `<div class="ev-list">${list.map(e => {
+      const d = new Date(ms(e.at)), going = (e.going || []).includes(S.me.id);
+      return `<a class="card ev-card" href="#event/${esc(e.id)}">${safeImg(e.cover) ? `<img class="ev-cover" src="${esc(e.cover)}" alt="" loading="lazy">` : ''}
+        <div class="ev-date"><b>${d.getDate()}</b><span>${MONTHS[d.getMonth()]}</span></div>
+        <div class="ev-body"><b>${esc(e.title)}</b><span class="muted small">${DAYS[d.getDay()]}, ${hm(d)}${e.place ? ' · ' + esc(e.place) : ''}</span>
+          <span class="small ${going ? 'ok' : 'muted'}">${going ? '✓ Вы идёте · ' : ''}${(e.going || []).length} ${plural((e.going || []).length, 'идёт', 'идут', 'идут')}</span></div></a>`;
+    }).join('')}</div>` : `<div class="card empty"><b>Ближайших событий нет</b><span>Создайте первое — позовите друзей!</span></div>`}`;
+}
+function viewEvent() {
+  const e = cache.event;
+  if (!e) return loadingBox();
+  if (e.missing) return `<div class="card empty"><b>Событие удалено</b><a class="btn sec" href="#events">Все события</a></div>`;
+  const own = e.ownerId === S.me.id, going = (e.going || []).includes(S.me.id), u = U(e.ownerId), people = (e.going || []).slice(0, 30).map(U).filter(Boolean);
+  ensureUsers((e.going || []).slice(0, 30));
+  const past = ms(e.at) < Date.now();
+  return `<div class="card ev-page">${safeImg(e.cover) ? `<img class="ev-hero" src="${esc(e.cover)}" alt="">` : `<div class="ev-hero ev-hero-empty">📅</div>`}
+    <div class="pad" style="display:flex;flex-direction:column;gap:12px">
+      <div class="row"><a class="icon-btn" href="#events" aria-label="Все события">${I.back}</a>${past ? '<span class="chip">Прошло</span>' : ''}</div>
+      <h1 class="h" style="font-size:24px">${esc(e.title)}</h1>
+      <div class="ev-facts"><div>🕒 <b>${esc(evDate(e.at))}</b></div>${e.place ? `<div>📍 ${esc(e.place)}</div>` : ''}<div>👤 Организатор: ${nameLink(u)}</div></div>
+      ${e.text ? `<div class="post-text">${linkify(e.text)}</div>` : ''}
+      <div class="row" style="flex-wrap:wrap">${past || banOf(S.me) ? '' : `<button class="btn ${going ? 'sec' : ''}" data-act="evgo" data-id="${esc(e.id)}">${going ? '✓ Я иду · отменить' : 'Пойду'}</button>`}
+        ${own || isSiteAdmin() ? `<button class="btn ${S.confirm === 'ev:' + e.id ? 'danger' : 'ghost'}" data-act="evdel" data-id="${esc(e.id)}">${S.confirm === 'ev:' + e.id ? 'Удалить событие?' : 'Удалить'}</button>` : ''}</div>
+      <b>Идут · ${(e.going || []).length}</b>
+      <div class="ev-people">${people.map(p => `<a href="#id/${esc(p.id)}" title="${esc(p.name)}">${avatar(p, 40, false)}</a>`).join('')}</div>
+    </div></div>`;
+}
+
+/* ---------- ВС Курсы (ЦБ РФ через cbr-xml-daily.ru, бесплатно) ---------- */
+const CUR_MAIN = ['USD', 'EUR', 'CNY', 'GBP', 'JPY', 'TRY', 'KZT', 'BYN', 'AED', 'CHF', 'AMD', 'UZS'];
+const CUR_FLAG = { RUB: '🇷🇺', USD: '🇺🇸', EUR: '🇪🇺', CNY: '🇨🇳', GBP: '🇬🇧', JPY: '🇯🇵', TRY: '🇹🇷', KZT: '🇰🇿', BYN: '🇧🇾', AED: '🇦🇪', CHF: '🇨🇭', AMD: '🇦🇲', UZS: '🇺🇿' };
+async function loadRates() {
+  S.rates = { loading: true }; render();
+  try {
+    const j = await (await fetch('https://www.cbr-xml-daily.ru/daily_json.js')).json();
+    S.rates = { date: j.Date, v: j.Valute };
+  } catch (e) { console.error(e); S.rates = { error: 'Не удалось загрузить курсы. Проверьте интернет.' }; }
+  render();
+}
+const rubPer = (r, code) => code === 'RUB' ? 1 : r.v[code] ? r.v[code].Value / r.v[code].Nominal : NaN;
+function viewRates() {
+  const r = S.rates || {};
+  if (!r.v) return `<div class="card pad"><h1 class="h brandh">ВС Курсы</h1></div>${r.error ? `<div class="card empty">${esc(r.error)}<button class="btn sec" data-act="ratesreload">Ещё раз</button></div>` : loadingBox()}`;
+  const amt = Number(S.cvAmt ?? 100) || 0, from = S.cvFrom || 'USD', to = S.cvTo || 'RUB';
+  const res = amt * rubPer(r, from) / rubPer(r, to);
+  const opts = sel => ['RUB', ...CUR_MAIN].filter(c => c === 'RUB' || r.v[c]).map(c => `<option value="${c}" ${c === sel ? 'selected' : ''}>${CUR_FLAG[c] || ''} ${c}</option>`).join('');
+  return `<div class="card pad"><h1 class="h brandh">ВС Курсы</h1><div class="muted small">Официальный курс ЦБ РФ на ${new Date(r.date).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long' })}</div></div>
+    <div class="card pad cv"><div class="cv-row"><input id="cvAmt" class="inp" type="number" min="0" step="any" inputmode="decimal" value="${esc(String(S.cvAmt ?? 100))}"><select id="cvFrom" class="inp">${opts(from)}</select></div>
+      <button class="icon-btn cv-swap" data-act="cvswap" aria-label="Поменять местами">⇅</button>
+      <div class="cv-row"><div class="cv-res tnum">${isFinite(res) ? res.toLocaleString('ru-RU', { maximumFractionDigits: 2 }) : '—'}</div><select id="cvTo" class="inp">${opts(to)}</select></div></div>
+    <div class="card ulist">${CUR_MAIN.filter(c => r.v[c]).map(c => { const x = r.v[c], ch = x.Value - x.Previous;
+      return `<div class="uitem rate"><span class="rate-flag">${CUR_FLAG[c] || '💱'}</span><div class="grow"><b>${c}</b> <span class="muted small">${esc(x.Name)}</span><div class="muted small">за ${x.Nominal}</div></div>
+        <b class="tnum">${x.Value.toFixed(2)} ₽</b><span class="tnum small ${ch >= 0 ? 'up' : 'down'}">${ch >= 0 ? '▲' : '▼'} ${Math.abs(ch).toFixed(2)}</span></div>`; }).join('')}</div>
+    <p class="hint" style="text-align:center">Данные: ЦБ РФ (cbr-xml-daily.ru)</p>`;
+}
+
+/* ---------- ВС Радио ---------- */
+const RADIO = [
+  { id: 'record', title: 'Радио Record', artist: 'Танцевальная музыка', url: 'https://radiorecord.hostingradio.ru/rr_main96.aacp', c: '#F2994A' },
+  { id: 'europa', title: 'Европа Плюс', artist: 'Поп-хиты', url: 'https://ep256.hostingradio.ru:8052/europaplus256.mp3', c: '#2F80ED' },
+  { id: 'rusradio', title: 'Русское Радио', artist: 'Русская поп-музыка', url: 'https://rusradio.hostingradio.ru/rusradio96.aacp', c: '#D0462F' },
+  { id: 'dfm', title: 'DFM', artist: 'Dance FM', url: 'https://dfm.hostingradio.ru/dfm96.aacp', c: '#B4398F' },
+  { id: 'maximum', title: 'Maximum', artist: 'Рок и альтернатива', url: 'https://maximum.hostingradio.ru/maximum96.aacp', c: '#4E5B76' },
+  { id: 'chill', title: 'Record Chill-Out', artist: 'Спокойная музыка', url: 'https://radiorecord.hostingradio.ru/chil96.aacp', c: '#1F8A5B' },
+  { id: 'rock', title: 'Record Rock', artist: 'Рок', url: 'https://radiorecord.hostingradio.ru/rock96.aacp', c: '#141A33' },
+  { id: 'lofi', title: 'Record Lo-Fi', artist: 'Лоу-фай для учёбы', url: 'https://radiorecord.hostingradio.ru/lofi96.aacp', c: '#6A47C9' },
+];
+function viewRadio() {
+  const cur = curTrack();
+  return `<div class="card pad"><h1 class="h brandh">ВС Радио</h1><div class="muted small">Прямой эфир, играет в общем плеере внизу экрана</div></div>
+    <div class="radio-grid">${RADIO.map((st, i) => { const on = cur?.radio && cur.id === st.id, playing = on && !player.audio.paused;
+      return `<button class="radio-card ${on ? 'on' : ''}" data-act="radioplay" data-i="${i}" style="--rc:${st.c}"><span class="radio-ico">${playing ? I.pause : I.play}</span><b>${esc(st.title)}</b><span class="small">${esc(st.artist)}</span>${playing ? '<span class="eq"><i></i><i></i><i></i></span>' : ''}</button>`; }).join('')}</div>
+    <p class="hint" style="text-align:center">Если станция не включается, значит, её эфир сейчас недоступен — попробуйте другую.</p>`;
+}
+
+/* ---------- ВС Гороскоп (шуточный: прогноз собирается из фраз по дате и знаку) ---------- */
+const SIGNS = [['aries', '♈', 'Овен', '21.03–19.04'], ['taurus', '♉', 'Телец', '20.04–20.05'], ['gemini', '♊', 'Близнецы', '21.05–20.06'], ['cancer', '♋', 'Рак', '21.06–22.07'],
+  ['leo', '♌', 'Лев', '23.07–22.08'], ['virgo', '♍', 'Дева', '23.08–22.09'], ['libra', '♎', 'Весы', '23.09–22.10'], ['scorpio', '♏', 'Скорпион', '23.10–21.11'],
+  ['sagittarius', '♐', 'Стрелец', '22.11–21.12'], ['capricorn', '♑', 'Козерог', '22.12–19.01'], ['aquarius', '♒', 'Водолей', '20.01–18.02'], ['pisces', '♓', 'Рыбы', '19.02–20.03']];
+const HORO = {
+  day: ['День подходит для смелых решений.', 'Звёзды советуют не торопиться и всё взвесить.', 'Сегодня всё получится легче, чем вы думаете.', 'Хороший день, чтобы закончить старые дела.', 'Удача на вашей стороне — пользуйтесь.', 'Возможны приятные сюрпризы ближе к вечеру.', 'Лучше провести день спокойно и без суеты.', 'Новые знакомства принесут пользу.'],
+  love: ['В отношениях — тепло и понимание.', 'Сделайте близкому человеку маленький подарок.', 'Не спорьте по пустякам — оно того не стоит.', 'Кто-то давно хочет с вами поговорить.', 'Романтический вечер будет кстати.', 'Время откровенных разговоров.'],
+  work: ['На работе или учёбе вас похвалят.', 'Неожиданная идея решит старую задачу.', 'Не берите на себя слишком много.', 'Хороший день для планов на месяц.', 'Коллеги будут рады помочь — просто попросите.', 'Отложите важные покупки на пару дней.'],
+  tip: ['Выпейте стакан воды и улыбнитесь.', 'Позвоните другу, с которым давно не общались.', 'Прогуляйтесь хотя бы 20 минут.', 'Выложите запись на VСмске — её оценят.', 'Ложитесь спать пораньше.', 'Наведите порядок на рабочем столе.', 'Послушайте новую музыку в ВС Музыке.'],
+  color: ['синий', 'зелёный', 'красный', 'золотой', 'фиолетовый', 'белый', 'оранжевый', 'бирюзовый'],
+};
+function horo(sign) {
+  let h = 0; const key = sign + new Date().toDateString();
+  for (const ch of key) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+  const pick = (arr, k) => arr[(h >>> k) % arr.length];
+  return { day: pick(HORO.day, 1), love: pick(HORO.love, 4), work: pick(HORO.work, 7), tip: pick(HORO.tip, 10), color: pick(HORO.color, 13), num: (h % 99) + 1, mood: (h >>> 3) % 5 + 1 };
+}
+function signOf(bday) {
+  if (!bday) return null; const [, m, d] = bday.split('-').map(Number), md = m * 100 + d;
+  const edges = [[120, 'capricorn'], [219, 'aquarius'], [321, 'pisces'], [420, 'aries'], [521, 'taurus'], [621, 'gemini'], [723, 'cancer'], [823, 'leo'], [923, 'virgo'], [1023, 'libra'], [1122, 'scorpio'], [1222, 'sagittarius']];
+  for (const [e, sg] of edges) if (md < e) return sg; return 'capricorn';
+}
+function viewHoro() {
+  const sel = S.sign || signOf(S.me.bday) || 'aries', sg = SIGNS.find(x => x[0] === sel), h = horo(sel);
+  return `<div class="card pad"><h1 class="h brandh">ВС Гороскоп</h1><div class="muted small">Шуточный прогноз на ${new Date().toLocaleDateString('ru-RU', { day: 'numeric', month: 'long' })}${signOf(S.me.bday) ? '' : ' · укажите день рождения в профиле, и знак выберется сам'}</div></div>
+    <div class="sign-grid">${SIGNS.map(([k, e, n]) => `<button class="${k === sel ? 'on' : ''}" data-act="sign" data-s="${k}"><span>${e}</span>${n}</button>`).join('')}</div>
+    <div class="card pad horo"><div class="row"><span class="horo-sign">${sg[1]}</span><div class="grow"><h2 class="h">${sg[2]}</h2><div class="muted small">${sg[3]}</div></div><div class="horo-mood" title="Настроение дня">${'★'.repeat(h.mood)}${'☆'.repeat(5 - h.mood)}</div></div>
+      <p><b>Общее.</b> ${h.day}</p><p><b>Любовь.</b> ${h.love}</p><p><b>Дела.</b> ${h.work}</p><p><b>Совет дня.</b> ${h.tip}</p>
+      <div class="row muted small" style="gap:16px;flex-wrap:wrap"><span>Число удачи: <b>${h.num}</b></span><span>Цвет дня: <b>${h.color}</b></span></div></div>`;
 }
 
 /* ---------- ВС Маркет ---------- */
@@ -1731,7 +1909,8 @@ function viewNotes() {
   const e = S.noteEdit, n = e && e !== 'new' ? cache.notes.find(x => x.id === e) : null;
   const editor = e ? `<div class="card pad note-edit c-${esc((n?.color ?? S.noteColor) || 'none')}"><form class="form" data-form="note" data-id="${esc(n?.id || '')}">
       <input id="nTitle" class="note-title" maxlength="120" placeholder="Заголовок" value="${esc(n?.title || '')}">
-      <textarea id="nText" rows="8" maxlength="20000" placeholder="Текст заметки">${esc(n?.text || '')}</textarea>
+      <textarea id="nText" rows="8" maxlength="20000" placeholder="Текст заметки. Для чек-листа начинайте строку с [ ]">${esc(n?.text || '')}</textarea>
+      <div><button type="button" class="btn ghost small" data-act="noteitem">☐ Добавить пункт</button></div>
       <div class="row" style="flex-wrap:wrap;gap:6px">${NOTE_COLORS.map(c => `<button type="button" class="note-dot c-${c || 'none'} ${((n?.color ?? S.noteColor) || '') === c ? 'on' : ''}" data-act="notecolor" data-c="${c}" aria-label="Цвет ${c || 'обычный'}"></button>`).join('')}
         <label class="row small" style="gap:6px;margin-left:8px"><input type="checkbox" id="nPin" ${n?.pinned ? 'checked' : ''}> Закрепить</label></div>
       <div class="row"><button class="btn" type="submit">Сохранить</button><button type="button" class="btn ghost" data-act="noteclose">Закрыть</button><span class="grow"></span>
@@ -1741,8 +1920,16 @@ function viewNotes() {
       <button class="btn" data-act="notenew">Новая заметка</button></div></div>
     ${editor}
     ${S.loading ? loadingBox() : cache.notes.length ? `<div class="note-grid">${cache.notes.map(x => `<button class="note-card c-${esc(x.color || 'none')}" data-act="noteopen" data-id="${esc(x.id)}">
-        ${x.pinned ? '<span class="note-pin">📌</span>' : ''}${x.title ? `<b>${esc(x.title)}</b>` : ''}<span class="note-body">${esc(x.text.slice(0, 300))}</span><span class="muted small">${ago(x.updatedAt)}</span></button>`).join('')}</div>`
+        ${x.pinned ? '<span class="note-pin">📌</span>' : ''}${x.title ? `<b>${esc(x.title)}</b>` : ''}${noteBody(x)}<span class="muted small">${ago(x.updatedAt)}</span></button>`).join('')}</div>`
       : `<div class="card empty"><b>Заметок пока нет</b><span>Списки покупок, идеи, пароли от Wi-Fi — всё сюда.</span></div>`}`;
+}
+
+// Строки «[ ] дело» и «[x] дело» показываем как чек-лист
+function noteBody(n) {
+  const lines = n.text.split('\n').slice(0, 12);
+  if (!lines.some(l => /^\[( |x)\] /i.test(l))) return `<span class="note-body">${esc(n.text.slice(0, 300))}</span>`;
+  return `<span class="note-body checklist">${lines.map((l, i) => { const m = l.match(/^\[( |x)\] (.*)$/i);
+    return m ? `<span class="chk ${m[1] !== ' ' ? 'done' : ''}" data-act="notecheck" data-id="${esc(n.id)}" data-i="${i}" role="checkbox" aria-checked="${m[1] !== ' '}">${m[1] !== ' ' ? '☑' : '☐'} ${esc(m[2])}</span>` : `<span>${esc(l)}</span>`; }).join('')}</span>`;
 }
 
 /* ---------- ВС Погода (Open-Meteo, бесплатно и без ключа) ---------- */
@@ -1825,6 +2012,31 @@ function viewGames() {
         <div class="row g-pad"><button class="btn sec" data-act="g2048mv" data-d="0">←</button><button class="btn sec" data-act="g2048mv" data-d="2">↑</button><button class="btn sec" data-act="g2048mv" data-d="3">↓</button><button class="btn sec" data-act="g2048mv" data-d="1">→</button>
           <span class="grow"></span><button class="btn ghost" data-act="g2048new">Заново</button></div></div>`;
   }
+  if (S.game === 'snake') {
+    if (!snake) setTimeout(snakeNew, 0); else setTimeout(snakeDraw, 0);
+    const g = snake || { score: 0, over: false, started: false };
+    return `<div class="card pad"><div class="row">${back}<h1 class="h grow">Змейка</h1><div class="g-score"><span>Счёт</span><b id="snScore">${g.score}</b></div><div class="g-score"><span>Рекорд</span><b>${Number(lsGet('vs_snake') || 0)}</b></div></div>
+        <p class="muted small" style="margin:8px 0 0">Стрелки, свайп или кнопки. Ешьте яблоки и не врезайтесь в стены и в себя.</p></div>
+      <div class="card pad g2048-wrap"><div class="snake-wrap"><canvas id="snake" width="432" height="432" aria-label="Поле змейки"></canvas>
+        ${g.over ? `<div class="g-over"><b>Счёт: ${g.score}</b><button class="btn" data-act="snakenew">Ещё раз</button></div>` : !g.started ? `<div class="g-over light-over"><b>Нажмите стрелку, чтобы начать</b></div>` : ''}</div>
+        <div class="row g-pad"><button class="btn sec" data-act="snaketurn" data-d="0">←</button><button class="btn sec" data-act="snaketurn" data-d="2">↑</button><button class="btn sec" data-act="snaketurn" data-d="3">↓</button><button class="btn sec" data-act="snaketurn" data-d="1">→</button>
+          <span class="grow"></span><button class="btn ghost" data-act="snakenew">Заново</button></div></div>`;
+  }
+  if (S.game === 'mines') {
+    const g = S.mines ||= minesNew(), flags = g.cells.filter(c => c.flag).length;
+    return `<div class="card pad"><div class="row">${back}<h1 class="h grow">Сапёр</h1><div class="g-score"><span>Мины</span><b>${g.m - flags}</b></div></div>
+        <p class="muted small" style="margin:8px 0 0">Открывайте клетки. Цифра — сколько мин рядом. Включите «Флажок», чтобы пометить мину.</p></div>
+      <div class="card pad g2048-wrap"><div class="mines" style="--n:${g.n}">${g.cells.map((c, i) => `<button class="mc ${c.open ? 'open' : ''} ${c.open && c.mine ? 'boom' : ''}" data-act="minesopen" data-i="${i}" ${g.over ? 'disabled' : ''} data-n="${c.open && !c.mine ? c.near : ''}">${c.open ? (c.mine ? '💣' : c.near || '') : c.flag ? '🚩' : ''}</button>`).join('')}</div>
+        ${g.over ? `<div class="row"><b>${g.won ? `Победа за ${g.time} с! 🎉` : 'Бах! Вы подорвались 💥'}</b><button class="btn" data-act="minesnew">Ещё раз</button></div>` : ''}
+        <div class="row g-pad"><button class="btn ${g.flagMode ? '' : 'sec'}" data-act="minesflag">🚩 Флажок${g.flagMode ? ': вкл' : ''}</button><span class="grow"></span><button class="btn ghost" data-act="minesnew">Заново</button></div></div>`;
+  }
+  if (S.game === 'memory') {
+    const g = S.mem ||= memNew();
+    return `<div class="card pad"><div class="row">${back}<h1 class="h grow">Мемори</h1><div class="g-score"><span>Ходы</span><b>${g.moves}</b></div><div class="g-score"><span>Рекорд</span><b>${lsGet('vs_memory') || '—'}</b></div></div>
+        <p class="muted small" style="margin:8px 0 0">Переворачивайте по две карточки и найдите все пары.</p></div>
+      <div class="card pad g2048-wrap"><div class="mem">${g.deck.map((c, i) => `<button class="mcard ${c.open || c.done ? 'up' : ''} ${c.done ? 'done' : ''}" data-act="memflip" data-i="${i}" aria-label="Карточка ${i + 1}"><span>${c.open || c.done ? c.e : ''}</span></button>`).join('')}</div>
+        ${g.won ? `<div class="row"><b>Все пары за ${g.moves} ходов! 🎉</b><button class="btn" data-act="memnew">Ещё раз</button></div>` : `<div class="row g-pad"><span class="grow"></span><button class="btn ghost" data-act="memnew">Заново</button></div>`}</div>`;
+  }
   if (S.game === 'ttt') {
     const t = S.ttt ||= { b: Array(9).fill(''), wins: 0, losses: 0, draws: 0 }, w = tttWin(t.b);
     return `<div class="card pad"><div class="row">${back}<h1 class="h grow">Крестики-нолики</h1></div>
@@ -1836,22 +2048,96 @@ function viewGames() {
     <div class="app-grid">
       <a class="app-tile c-game" href="#games/2048"><span class="app-ico g-ico">2048</span><b>2048</b><span class="muted small">Рекорд: ${Number(lsGet('vs_2048') || 0)}</span></a>
       <a class="app-tile c-ask" href="#games/ttt"><span class="app-ico g-ico">✕○</span><b>Крестики-нолики</b><span class="muted small">Против компьютера</span></a>
+      <a class="app-tile c-album" href="#games/snake"><span class="app-ico g-ico">🐍</span><b>Змейка</b><span class="muted small">Рекорд: ${Number(lsGet('vs_snake') || 0)}</span></a>
+      <a class="app-tile c-disk" href="#games/mines"><span class="app-ico g-ico">💣</span><b>Сапёр</b><span class="muted small">Поле 9×9, 10 мин</span></a>
+      <a class="app-tile c-horo" href="#games/memory"><span class="app-ico g-ico">🃏</span><b>Мемори</b><span class="muted small">Найди пары · рекорд ${lsGet('vs_memory') || '—'} ходов</span></a>
     </div>`;
+}
+
+/* Змейка: игра рисуется прямо в canvas, без перерисовки страницы */
+const SN = 18;
+let snake = null, snakeTimer = null;
+function snakeNew() { snake = { body: [[8, 9], [7, 9], [6, 9]], dir: [1, 0], next: [1, 0], food: [13, 9], score: 0, over: false, started: false }; snakeDraw(); }
+function snakeFood() { let f; do { f = [Math.floor(Math.random() * SN), Math.floor(Math.random() * SN)]; } while (snake.body.some(([x, y]) => x === f[0] && y === f[1])); snake.food = f; }
+function snakeTick() {
+  const g = snake; if (!g || g.over) return;
+  g.dir = g.next;
+  const h = [g.body[0][0] + g.dir[0], g.body[0][1] + g.dir[1]];
+  if (h[0] < 0 || h[1] < 0 || h[0] >= SN || h[1] >= SN || g.body.some(([x, y]) => x === h[0] && y === h[1])) {
+    g.over = true; clearInterval(snakeTimer); snakeTimer = null;
+    if (g.score > Number(lsGet('vs_snake') || 0)) lsSet('vs_snake', String(g.score));
+    render(); return;
+  }
+  g.body.unshift(h);
+  if (h[0] === g.food[0] && h[1] === g.food[1]) { g.score++; snakeFood(); const el = document.getElementById('snScore'); if (el) el.textContent = g.score; }
+  else g.body.pop();
+  snakeDraw();
+}
+function snakeDraw() {
+  const cv = document.getElementById('snake'); if (!cv || !snake) return;
+  const ctx = cv.getContext('2d'), c = cv.width / SN, css = getComputedStyle(document.documentElement);
+  ctx.fillStyle = css.getPropertyValue('--surface-2').trim() || '#eee'; ctx.fillRect(0, 0, cv.width, cv.height);
+  ctx.fillStyle = '#E2553F'; ctx.beginPath(); ctx.arc((snake.food[0] + .5) * c, (snake.food[1] + .5) * c, c * .38, 0, 7); ctx.fill();
+  snake.body.forEach(([x, y], i) => { ctx.fillStyle = i ? (css.getPropertyValue('--accent').trim() || '#2F44D0') : '#1F8A5B'; ctx.beginPath(); ctx.roundRect ? ctx.roundRect(x * c + 1, y * c + 1, c - 2, c - 2, 5) : ctx.rect(x * c + 1, y * c + 1, c - 2, c - 2); ctx.fill(); });
+}
+function snakeTurn(d) {
+  const g = snake; if (!g || g.over) return;
+  const dirs = [[-1, 0], [1, 0], [0, -1], [0, 1]], nd = dirs[d];
+  if (nd[0] === -g.dir[0] && nd[1] === -g.dir[1]) return;
+  g.next = nd;
+  if (!g.started) { g.started = true; snakeTimer = setInterval(snakeTick, 140); render(); }
+}
+
+/* Сапёр */
+function minesNew() {
+  const n = 9, m = 10, cells = Array.from({ length: n * n }, () => ({ mine: false, open: false, flag: false, near: 0 }));
+  let k = 0; while (k < m) { const i = Math.floor(Math.random() * n * n); if (!cells[i].mine) { cells[i].mine = true; k++; } }
+  cells.forEach((c, i) => { c.near = nbrs(i, n).filter(j => cells[j].mine).length; });
+  return { n, m, cells, over: false, won: false, flagMode: false, first: true, start: 0 };
+}
+function nbrs(i, n) { const x = i % n, y = Math.floor(i / n), out = []; for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) { if (!dx && !dy) continue; const a = x + dx, b = y + dy; if (a >= 0 && b >= 0 && a < n && b < n) out.push(b * n + a); } return out; }
+function minesOpen(i) {
+  const g = S.mines; if (!g || g.over) return; const c = g.cells[i]; if (c.open) return;
+  if (g.flagMode) { c.flag = !c.flag; return; }
+  if (c.flag) return;
+  if (g.first) { // первый ход никогда не на мину
+    g.first = false; g.start = Date.now();
+    if (c.mine) { c.mine = false; const free = g.cells.findIndex((x, j) => !x.mine && j !== i); g.cells[free].mine = true; g.cells.forEach((x, j) => { x.near = nbrs(j, g.n).filter(t => g.cells[t].mine).length; }); }
+  }
+  if (c.mine) { g.over = true; g.cells.forEach(x => { if (x.mine) x.open = true; }); return; }
+  const stack = [i];
+  while (stack.length) { const j = stack.pop(), x = g.cells[j]; if (x.open || x.flag) continue; x.open = true; if (!x.near) nbrs(j, g.n).forEach(t => { if (!g.cells[t].open && !g.cells[t].mine) stack.push(t); }); }
+  if (g.cells.every(x => x.mine || x.open)) { g.over = true; g.won = true; g.time = Math.round((Date.now() - g.start) / 1000); }
+}
+
+/* Мемори */
+const MEM_EMOJI = ['🐶', '🐱', '🦊', '🐼', '🐸', '🦁', '🐵', '🐙'];
+function memNew() { const deck = [...MEM_EMOJI, ...MEM_EMOJI].map(e => ({ e, open: false, done: false })).sort(() => Math.random() - .5); return { deck, moves: 0, pick: [], won: false }; }
+function memFlip(i) {
+  const g = S.mem; if (!g || g.won || g.pick.length === 2) return; const c = g.deck[i]; if (c.open || c.done) return;
+  c.open = true; g.pick.push(i);
+  if (g.pick.length === 2) {
+    g.moves++;
+    const [a, b] = g.pick;
+    if (g.deck[a].e === g.deck[b].e) { g.deck[a].done = g.deck[b].done = true; g.pick = []; if (g.deck.every(x => x.done)) { g.won = true; const best = Number(lsGet('vs_memory') || 0); if (!best || g.moves < best) lsSet('vs_memory', String(g.moves)); } }
+    else setTimeout(() => { g.deck[a].open = g.deck[b].open = false; g.pick = []; render(); }, 800);
+  }
 }
 // управление 2048 с клавиатуры и свайпом
 document.addEventListener('keydown', e => {
-  if (S.view !== 'games' || S.game !== '2048' || e.target.closest?.('input,textarea')) return;
+  if (S.view !== 'games' || !['2048', 'snake'].includes(S.game) || e.target.closest?.('input,textarea')) return;
   const d = { ArrowLeft: 0, ArrowRight: 1, ArrowUp: 2, ArrowDown: 3 }[e.key];
-  if (d !== undefined) { e.preventDefault(); g2048Move(d); }
+  if (d !== undefined) { e.preventDefault(); S.game === 'snake' ? snakeTurn(d) : g2048Move(d); }
 });
 let touch0 = null;
-document.addEventListener('touchstart', e => { if (e.target.closest?.('#g2048')) touch0 = [e.touches[0].clientX, e.touches[0].clientY]; }, { passive: true });
-document.addEventListener('touchmove', e => { if (touch0 && e.target.closest?.('#g2048')) e.preventDefault(); }, { passive: false });
+document.addEventListener('touchstart', e => { if (e.target.closest?.('#g2048,#snake')) touch0 = [e.touches[0].clientX, e.touches[0].clientY]; }, { passive: true });
+document.addEventListener('touchmove', e => { if (touch0 && e.target.closest?.('#g2048,#snake')) e.preventDefault(); }, { passive: false });
 document.addEventListener('touchend', e => {
   if (!touch0) return;
   const dx = e.changedTouches[0].clientX - touch0[0], dy = e.changedTouches[0].clientY - touch0[1]; touch0 = null;
   if (Math.max(Math.abs(dx), Math.abs(dy)) < 24) return;
-  g2048Move(Math.abs(dx) > Math.abs(dy) ? (dx < 0 ? 0 : 1) : (dy < 0 ? 2 : 3));
+  const dir = Math.abs(dx) > Math.abs(dy) ? (dx < 0 ? 0 : 1) : (dy < 0 ? 2 : 3);
+  S.game === 'snake' ? snakeTurn(dir) : g2048Move(dir);
 });
 
 /* Гости и хэштеги */
@@ -1915,7 +2201,8 @@ function composer(wallId, ph, g = null) {
   return `<div class="card pad composer"><form data-form="post" data-wall="${esc(wallId)}" ${g ? 'data-group="1"' : ''}>
     <div class="row" style="align-items:flex-start">${g ? groupAvatar(g, 40, false) : avatar(S.me, 40, false)}
       <textarea id="postText" rows="2" placeholder="${esc(ph)}" maxlength="4000"></textarea></div>
-    ${d.files.length ? `<div class="previews n${d.files.length}">${d.files.map((f, i) => `<div class="preview"><img src="${f.url}" alt="Фото ${i + 1}"><button type="button" data-act="unattach" data-i="${i}" aria-label="Убрать фото">×</button></div>`).join('')}</div>` : ''}
+    ${d.files.length ? `<div class="filters" role="radiogroup" aria-label="Фильтр для фото">${Object.entries(PHOTO_FILTERS).map(([k, l]) => `<button type="button" role="radio" aria-checked="${(d.filter || 'none') === k}" class="${(d.filter || 'none') === k ? 'on' : ''}" data-act="pfilter" data-f="${k}"><img src="${d.files[0].url}" alt="" style="filter:${FILTER_CSS[k]}"><span>${l}</span></button>`).join('')}</div>` : ''}
+    ${d.files.length ? `<div class="previews n${d.files.length}">${d.files.map((f, i) => `<div class="preview"><img src="${f.url}" alt="Фото ${i + 1}" style="filter:${FILTER_CSS[d.filter || 'none']}"><button type="button" data-act="unattach" data-i="${i}" aria-label="Убрать фото">×</button></div>`).join('')}</div>` : ''}
     ${d.poll ? `<div class="poll-form">
       <div class="field"><label for="pollQ">Вопрос опроса</label><input id="pollQ" maxlength="200" placeholder="Куда пойдём в субботу?"></div>
       ${Array.from({ length: d.pollN }, (_, i) => `<input id="pollO${i}" maxlength="80" placeholder="Вариант ${i + 1}">`).join('')}
@@ -2088,8 +2375,9 @@ function viewProfile() {
     ${adm ? `<div class="cover admin-cover"><div class="aurora"></div><span class="adm-tag">👑 Администратор VСмске</span></div>`
       : `<div class="cover" ${COVERS[u.cover] ? `style="--cover:${COVERS[u.cover]}"` : ''}></div>`}
     <div class="prof">${adm ? `<span class="adm-ring">${avatar(u, 120, false)}</span>` : avatar(u, 120, false)}
-      <div class="prof-info"><h1 class="prof-name">${esc(u.name)}${admBadge(u)}</h1><div class="muted">${u.status ? esc(u.status) : own ? 'Добавьте статус в «Редактировать»' : '@' + esc(u.nick)}</div>
+      <div class="prof-info"><h1 class="prof-name">${esc(u.name)}${emojiTag(u)}${admBadge(u)}</h1><div class="muted">${u.status ? esc(u.status) : own ? 'Добавьте статус в «Редактировать»' : '@' + esc(u.nick)}</div>
         ${!own && seenText(u) ? `<div class="seen small ${isOnline(u) ? 'on' : ''}">${seenText(u)}</div>` : ''}
+        ${listeningOf(u) ? `<div class="listening small">🎵 ${own ? 'Вы слушаете' : 'Слушает'}: <b>${esc(listeningOf(u).title)}</b>${listeningOf(u).artist ? ' — ' + esc(listeningOf(u).artist) : ''}</div>` : ''}
         ${banOf(u) ? `<span class="chip ban-chip">⛔ Заблокирован ${banText(banOf(u))}</span>` : ''}
         ${!own && iBlocked(u.id) ? `<span class="chip">Вы заблокировали этого человека</span>` : ''}</div>
       <div class="prof-btns">${own ? `<a class="btn sec" href="#edit">Редактировать</a><button class="icon-btn" data-act="qr" data-id="${esc(u.id)}" aria-label="QR-код моей страницы" title="QR-код моей страницы">${I.qr}</button>` : `${iBlocked(u.id) ? '' : `<a class="btn" href="#im/${esc(u.id)}">Написать</a>${relButtons(u.id)}`}
@@ -2165,6 +2453,7 @@ function viewEdit() {
     <div class="field"><label>Цвет аватара</label><div class="swatches">${COLORS.map(c => `<button type="button" class="${c === color ? 'on' : ''}" style="background:${c}" data-act="color" data-c="${c}" aria-label="Цвет ${c}"></button>`).join('')}</div></div>
     <div class="field"><label for="eName">Имя и фамилия</label><input id="eName" required maxlength="60" value="${esc(me.name)}"></div>
     <div class="field"><label for="eNick">Короткое имя</label><input id="eNick" required minlength="3" maxlength="30" pattern="[a-zA-Z0-9._]+" value="${esc(me.nick)}"></div>
+    <div class="field"><label>Эмодзи-статус (виден рядом с именем)</label><div class="emoji-pick">${['', '😎', '🔥', '💙', '🎮', '🎧', '📚', '⚽', '🌴', '😴', '🤒', '💼', '🎂', '🚀', '👑', '🐱'].map(e => `<button type="button" class="${(S.editEmoji ?? me.emoji ?? '') === e ? 'on' : ''}" data-act="pickemoji" data-e="${e}" aria-label="${e || 'Без статуса'}">${e || '✕'}</button>`).join('')}</div></div>
     <div class="field"><label for="eStatus">Статус</label><input id="eStatus" maxlength="120" value="${esc(me.status)}"></div>
     <div class="field"><label for="eCity">Город</label><input id="eCity" maxlength="40" value="${esc(me.city)}"></div>
     <div class="field"><label for="eBday">День рождения</label><input id="eBday" type="date" min="1900-01-01" max="${new Date().toISOString().slice(0, 10)}" value="${esc(me.bday || '')}"></div>
@@ -2336,7 +2625,8 @@ function viewMessages() {
     <div class="chat">${chatHtml}</div></div>`;
 }
 
-document.addEventListener('input', e => { if (e.target.id === 'dq') { S.dq = e.target.value; render(); } else if (e.target.id === 'mq') { S.mq = e.target.value; render(); } });
+document.addEventListener('change', e => { if (e.target.id === 'cvFrom') { S.cvFrom = e.target.value; render(); } else if (e.target.id === 'cvTo') { S.cvTo = e.target.value; render(); } });
+document.addEventListener('input', e => { if (e.target.id === 'cvAmt') { S.cvAmt = e.target.value; render(); return; } if (e.target.id === 'dq') { S.dq = e.target.value; render(); } else if (e.target.id === 'mq') { S.mq = e.target.value; render(); } });
 
 /* ---------- Действия ---------- */
 let pickTarget = null;
@@ -2345,7 +2635,7 @@ document.addEventListener('click', async e => {
   const stop = e.target.closest('[data-stop]'); if (stop && !stop.contains(b)) return;
   const { act, id } = b.dataset;
   const twoStep = key => { if (S.confirm === key) { S.confirm = null; return true; } S.confirm = key; render(); return false; };
-  if (!['delpost', 'unfriend', 'delvideo', 'delalbum', 'delfile', 'delphoto', 'delmsg', 'postmenu', 'block', 'rpost', 'profmenu', 'roomdel', 'roominfo', 'storydel', 'qdel', 'maildel', 'notedel', 'lotdel', 'tdel'].includes(act)) S.confirm = null;
+  if (!['delpost', 'unfriend', 'delvideo', 'delalbum', 'delfile', 'delphoto', 'delmsg', 'postmenu', 'block', 'rpost', 'profmenu', 'roomdel', 'roominfo', 'storydel', 'qdel', 'maildel', 'notedel', 'lotdel', 'tdel', 'evdel'].includes(act)) S.confirm = null;
   if (!['selmsg', 'delmsg', 'replymsg', 'playvoice', 'fwdmsg', 'editmsg'].includes(act)) S.msgSel = null;
   if (!['profmenu', 'block', 'modopen', 'ban', 'unban', 'report', 'qr'].includes(act)) S.profMenu = false;
   if (!['postmenu', 'delpost', 'pinpost'].includes(act)) S.postMenu = null;
@@ -2458,6 +2748,7 @@ document.addEventListener('click', async e => {
       case 'resetpass': await sendPasswordResetEmail(auth, auth.currentUser.email); toast('Письмо для смены пароля отправлено на ' + auth.currentUser.email); break;
       case 'verify': await sendEmailVerification(auth.currentUser); toast('Письмо отправлено на ' + auth.currentUser.email + '. Откройте ссылку и войдите заново.'); break;
       case 'theme': lsSet('vs_theme', b.dataset.v); applyTheme(b.dataset.v); render(); break;
+      case 'listen': lsSet('vs_listen', b.dataset.v === 'off' ? '0' : '1'); if (b.dataset.v === 'off') { lastShared = 'off'; updateDoc(doc(db, 'users', uid()), { listening: null }).catch(console.error); } else lastShared = ''; render(); break;
       case 'accent': lsSet('vs_accent', b.dataset.v); applyAccent(b.dataset.v); render(); break;
       case 'pmsg': await updateDoc(doc(db, 'users', uid()), { 'privacy.messages': b.dataset.v }); toast('Сохранено'); break;
       case 'pwall': await updateDoc(doc(db, 'users', uid()), { 'privacy.wall': b.dataset.v }); toast('Сохранено'); break;
@@ -2523,17 +2814,35 @@ document.addEventListener('click', async e => {
       case 'reccancel': recStop(false); break;
       case 'playvoice': { const m = cache.messages.find(x => x.id === id); if (m?.audio) playVoice(m); break; }
       case 'editpost': S.editPost = id || null; render(); if (id) document.getElementById('ep_' + id)?.focus(); break;
+      case 'pfilter': S.draft.filter = b.dataset.f; render(); break;
       case 'unattach': { const f = S.draft.files.splice(Number(b.dataset.i) || 0, 1)[0]; if (f) URL.revokeObjectURL(f.url); render(); break; }
       case 'noavatar': S.editPhoto = ''; render(); break;
       case 'color': S.editColor = b.dataset.c; render(); break;
       case 'cover': S.editCover = b.dataset.c; render(); break;
+      case 'pickemoji': S.editEmoji = b.dataset.e; render(); break;
+      // ---- ВС События, Курсы, Радио, Гороскоп
+      case 'newevent': S.newEvent = !S.newEvent; S.evCover = ''; render(); if (S.newEvent) document.getElementById('evTitle')?.focus(); break;
+      case 'evcover': pick('evcover', 'image/*', false); break;
+      case 'evgo': {
+        const e = cache.event; if (!e) return; const on = (e.going || []).includes(uid());
+        await updateDoc(doc(db, 'events', id), { going: on ? arrayRemove(uid()) : arrayUnion(uid()) }); toast(on ? 'Вы больше не идёте' : 'Отлично, вы идёте!'); break;
+      }
+      case 'evdel': if (!twoStep('ev:' + id)) return; await deleteDoc(doc(db, 'events', id)); toast('Событие удалено'); go('events'); break;
+      case 'ratesreload': loadRates(); break;
+      case 'cvswap': { const f = S.cvFrom || 'USD'; S.cvFrom = S.cvTo || 'RUB'; S.cvTo = f; render(); break; }
+      case 'radioplay': {
+        const st = RADIO[Number(b.dataset.i)], cur = curTrack();
+        if (cur?.radio && cur.id === st.id) { player.audio.paused ? player.audio.play() : player.audio.pause(); break; }
+        player.queue = [{ ...st, radio: true }]; playAt(0); break;
+      }
+      case 'sign': S.sign = b.dataset.s; render(); break;
       // ---- ВС Музыка
       case 'pickmusic': pick('music', 'audio/*', false); break;
       case 'tplay': playList(cache.tracks || [], Number(b.dataset.i)); break;
       case 'mplay': if (player.audio.src) player.audio.paused ? player.audio.play() : player.audio.pause(); break;
       case 'mnext': playAt(player.i + 1); break;
       case 'mprev': if (player.audio.currentTime > 3) player.audio.currentTime = 0; else playAt(player.i - 1); break;
-      case 'mclose': player.audio.pause(); player.queue = []; player.i = -1; render(); break;
+      case 'mclose': player.audio.pause(); player.queue = []; player.i = -1; if (lastShared) shareListening(null); render(); break;
       case 'tsave': {
         const has = (S.me.tracks || []).includes(id);
         await updateDoc(doc(db, 'users', uid()), { tracks: has ? arrayRemove(id) : arrayUnion(id) }); toast(has ? 'Убрано из вашей музыки' : 'Добавлено в вашу музыку'); break;
@@ -2589,6 +2898,15 @@ document.addEventListener('click', async e => {
         toast('Письмо удалено'); go(inbox ? 'mail' : 'mail/sent'); break;
       }
       // ---- ВС Заметки
+      case 'noteitem': { const ta = document.getElementById('nText'); if (!ta) return; ta.value += (ta.value && !ta.value.endsWith('\n') ? '\n' : '') + '[ ] '; ta.focus(); break; }
+      case 'notecheck': {
+        e.stopPropagation();
+        const n = cache.notes.find(x => x.id === id); if (!n) return;
+        const lines = n.text.split('\n'), i = Number(b.dataset.i);
+        lines[i] = lines[i].replace(/^\[( |x)\]/i, m => m.toLowerCase() === '[x]' ? '[ ]' : '[x]');
+        await setDoc(doc(db, 'notes', id), { ownerId: uid(), title: n.title, text: lines.join('\n'), color: n.color || '', pinned: !!n.pinned, updatedAt: serverTimestamp() });
+        break;
+      }
       case 'notenew': S.noteEdit = 'new'; S.noteColor = ''; render(); document.getElementById('nTitle')?.focus(); break;
       case 'noteopen': S.noteEdit = id; S.noteColor = null; render(); window.scrollTo(0, 0); break;
       case 'noteclose': S.noteEdit = null; render(); break;
@@ -2601,6 +2919,13 @@ document.addEventListener('click', async e => {
       // ---- ВС Игры
       case 'g2048mv': g2048Move(Number(b.dataset.d)); break;
       case 'g2048new': S.g2048 = g2048New(); render(); break;
+      case 'snaketurn': snakeTurn(Number(b.dataset.d)); break;
+      case 'snakenew': clearInterval(snakeTimer); snakeTimer = null; snakeNew(); render(); break;
+      case 'minesopen': minesOpen(Number(b.dataset.i)); render(); break;
+      case 'minesflag': S.mines.flagMode = !S.mines.flagMode; render(); break;
+      case 'minesnew': S.mines = minesNew(); render(); break;
+      case 'memflip': memFlip(Number(b.dataset.i)); render(); break;
+      case 'memnew': S.mem = memNew(); render(); break;
       case 'tttnew': S.ttt.b = Array(9).fill(''); render(); break;
       case 'tttmv': {
         const t = S.ttt, i = Number(b.dataset.i); if (!t || t.b[i] || tttWin(t.b)) return;
@@ -2935,6 +3260,7 @@ document.getElementById('filePick').addEventListener('change', async e => {
       render();
     }
     else if (pickTarget === 'photos') await uploadPhotos(files);
+    else if (pickTarget === 'evcover') { S.evCover = await compress(f, 1280, 420000); render(); }
     else if (pickTarget === 'lot') { S.lotImage = await compress(f, 1080, 420000); render(); }
     else if (pickTarget === 'music') await uploadTrack(f);
     else if (pickTarget === 'story') { S.storyDraft = { image: await compress(f, 1080, 420000) }; render(); document.getElementById('stText')?.focus(); }
@@ -3032,7 +3358,7 @@ document.addEventListener('submit', async e => {
         try {
           // одно фото — крупнее, несколько — каждое меньше, чтобы запись влезла в 1 МБ
           const n = d.files.length, imgs = [];
-          for (const x of d.files) imgs.push(await compress(x.file, n > 1 ? 1080 : 1280, n > 1 ? Math.floor(880000 / n) : MAX_POST_IMG));
+          for (const x of d.files) imgs.push(await compress(x.file, n > 1 ? 1080 : 1280, n > 1 ? Math.floor(880000 / n) : MAX_POST_IMG, false, d.filter || 'none'));
           const post = { authorId: uid(), wallId: wall, text, image: n === 1 ? imgs[0] : '', likes: [], commentCount: 0, createdAt: serverTimestamp() };
           if (n > 1) post.images = imgs;
           const tags = extractTags(text); if (tags.length) post.tags = tags;
@@ -3042,7 +3368,7 @@ document.addEventListener('submit', async e => {
           if (wall !== uid() && !f.dataset.group) notify(wall, 'wall', ref.id, text || (poll ? poll.q : 'Фото'));
           notifyMentions(text, ref.id, [uid(), wall]);
           d.files.forEach(x => URL.revokeObjectURL(x.url));
-          S.draft = { files: [], poll: false, pollN: 2 }; S.emoji = null;
+          S.draft = { files: [], poll: false, pollN: 2, filter: 'none' }; S.emoji = null;
           ['postText', 'pollQ', 'pollO0', 'pollO1', 'pollO2', 'pollO3', 'pollO4', 'pollO5'].forEach(clear); toast('Опубликовано');
         } catch (err) { toast(err.message === 'too-big' ? 'Фото слишком большое даже после сжатия' : errText(err)); }
         finally { S.busy = false; render(); }
@@ -3068,6 +3394,17 @@ document.addEventListener('submit', async e => {
           render(); break;
         }
         await sendMessage(f.dataset.to, text);
+        break;
+      }
+      case 'event': {
+        const title = v('evTitle'), at = new Date(v('evAt'));
+        if (title.length < 2 || isNaN(at) || S.busy) { if (isNaN(at)) toast('Укажите дату и время'); return; }
+        S.busy = true; render();
+        try {
+          const ref = await addDoc(collection(db, 'events'), { ownerId: uid(), title: title.slice(0, 100), text: (document.getElementById('evText')?.value || '').trim().slice(0, 2000),
+            place: v('evPlace').slice(0, 120), at, cover: S.evCover || '', going: [uid()], createdAt: serverTimestamp() });
+          S.newEvent = false; S.evCover = ''; toast('Событие создано'); go('event/' + ref.id);
+        } finally { S.busy = false; render(); }
         break;
       }
       case 'lot': {
@@ -3161,7 +3498,7 @@ document.addEventListener('submit', async e => {
           bt.update(doc(db, 'users', me.id), {
             name, nick, city, status: v('eStatus'), about: v('eAbout'), color: S.editColor || me.color, cover: S.editCover || me.cover || 'blue',
             photo: S.editPhoto === undefined ? (me.photo || '') : S.editPhoto, search: buildSearch(name, nick, city),
-            bday: /^\d{4}-\d{2}-\d{2}$/.test(v('eBday')) ? v('eBday') : '',
+            bday: /^\d{4}-\d{2}-\d{2}$/.test(v('eBday')) ? v('eBday') : '', emoji: S.editEmoji ?? me.emoji ?? '',
           });
           await bt.commit(); S.editColor = null; S.editCover = null; S.editPhoto = undefined; toast('Сохранено'); go('id/' + me.id);
         } finally { S.busy = false; render(); }

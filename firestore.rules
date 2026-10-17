@@ -52,7 +52,7 @@ service cloud.firestore {
         && str(u.get('city', ''), 0, 40) && str(u.get('status', ''), 0, 120) && str(u.get('about', ''), 0, 600)
         && str(u.get('photo', ''), 0, 130000) && str(u.get('color', ''), 0, 20)
         && u.keys().hasOnly(['name', 'nick', 'city', 'status', 'about', 'photo', 'color', 'friends', 'search', 'createdAt', 'privacy',
-          'lastSeen', 'notifSeenAt', 'pinned', 'cover', 'groups', 'blocked', 'bday', 'tracks', 'saved', 'admin', 'ban'])
+          'lastSeen', 'notifSeenAt', 'pinned', 'cover', 'groups', 'blocked', 'bday', 'tracks', 'saved', 'emoji', 'listening', 'admin', 'ban'])
         && u.get('search', []) is list && u.get('search', []).size() <= 150
         && u.get('friends', []) is list && u.get('friends', []).size() <= 5000
         && u.get('privacy', {}) is map && u.get('privacy', {}).keys().hasOnly(['messages', 'wall'])
@@ -66,6 +66,9 @@ service cloud.firestore {
         && u.get('blocked', []) is list && u.get('blocked', []).size() <= 500
         && u.get('tracks', []) is list && u.get('tracks', []).size() <= 1000
         && u.get('saved', []) is list && u.get('saved', []).size() <= 500
+        && str(u.get('emoji', ''), 0, 16)
+        && (u.get('listening', null) == null || (u.listening is map && u.listening.keys().hasOnly(['title', 'artist', 'at'])
+          && str(u.listening.title, 0, 120) && str(u.listening.artist, 0, 120)))
         && (u.get('bday', '') == '' || (u.bday is string && u.bday.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$')));
     }
     // Ник в профиле должен принадлежать владельцу профиля (после пачки)
@@ -369,6 +372,18 @@ service cloud.firestore {
         && str(d().city, 0, 40) && str(d().text, 0, 3000) && str(d().image, 0, 450000) && imgOk(d().image) && d().sold == false && now(d().createdAt);
       allow update: if signed() && resource.data.ownerId == me() && onlyChanged(['title', 'price', 'text', 'sold'])
         && str(d().title, 2, 100) && d().price is int && d().price >= 0 && d().price <= 1000000000 && str(d().text, 0, 3000) && d().sold is bool;
+      allow delete: if signed() && (resource.data.ownerId == me() || isAdmin());
+    }
+
+    // ---------- ВС События: встречи с датой и списком «пойду» ----------
+    match /events/{eid} {
+      allow read: if signed();
+      allow create: if signed() && notBanned() && fields(['ownerId', 'title', 'text', 'place', 'at', 'cover', 'going', 'createdAt'])
+        && d().ownerId == me() && str(d().title, 2, 100) && str(d().text, 0, 2000) && str(d().place, 0, 120)
+        && d().at is timestamp && str(d().cover, 0, 450000) && imgOk(d().cover) && d().going == [me()] && now(d().createdAt);
+      allow update: if signed() && notBanned() && onlyChanged(['going']) && toggledMe(resource.data.going, d().going) && d().going.size() <= 1000;
+      allow update: if signed() && resource.data.ownerId == me() && onlyChanged(['title', 'text', 'place', 'at'])
+        && str(d().title, 2, 100) && str(d().text, 0, 2000) && str(d().place, 0, 120) && d().at is timestamp;
       allow delete: if signed() && (resource.data.ownerId == me() || isAdmin());
     }
 

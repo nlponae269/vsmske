@@ -18,7 +18,8 @@
   `#post/<id>` (одна запись), `#notif` (уведомления), `#clubs` (сообщества), `#club/<id>` (сообщество), `#admin` (админ-панель, только для админов),
   `#guests` (гости страницы), `#tag/<тег>` (записи с хэштегом), `#im/g_<id>` (беседа),
   `#apps` (все сервисы), `#answers[/<раздел>|/mine]`, `#q/<id>`, `#mail[/in|/sent|/new|/<id>]`, `#notes`, `#weather`, `#games[/2048|/ttt]`,
-  `#music[/my|/all|/<uid>]`, `#market[/<раздел>|/mine]`, `#lot/<id>`, `#u/<ник>` (переход к профилю по @нику), `#saved` (закладки). `#im/<свой uid>` — «Избранное» (чат с самим собой, id `uid_uid`).
+  `#music[/my|/all|/<uid>]`, `#market[/<раздел>|/mine]`, `#lot/<id>`, `#u/<ник>` (переход к профилю по @нику), `#saved` (закладки),
+  `#events`, `#event/<id>`, `#rates`, `#radio`, `#horo`, `#games/snake|mines|memory`. `#im/<свой uid>` — «Избранное» (чат с самим собой, id `uid_uid`).
 - Рендер: функция `render()` целиком перерисовывает `#app` через innerHTML, а значения полей ввода сохраняются между перерисовками.
   Исключение — страница видео: там обновляются только части страницы, чтобы плеер не перезапускался (см. `playerKey`).
 
@@ -34,6 +35,7 @@
 `mail` (ВС Почта: `from`, `to`, `subject`, `text`, `read`, `delFrom`, `delTo`; документ стирается, когда удалили оба; адрес — `ник@vsmske`),
 `notes` (ВС Заметки: личные, `ownerId`, `title`, `text`, `color`, `pinned`),
 `tracks` (ВС Музыка: `ownerId`, `title`, `artist`, `fileId` → `files` с `kind: 'music'`, `duration`; `users.tracks` — добавленные себе чужие треки),
+`events` (ВС События: `title`, `text`, `place`, `at`, `cover`, `going[]`),
 `gifts` (подарки: `from`, `to`, `gift` — ключ из `GIFTS`, `text`), `market` (ВС Маркет: `title`, `price`, `category`, `city`, `text`, `image`, `sold`).
 Плеер музыки (`player`) живёт вне `#app` и играет при переходах; панель — `musicBar()`.
 @упоминания в записях и комментариях дают уведомление `mention` (`notifyMentions()`); цвет оформления — `data-accent` на `<html>` (localStorage `vs_accent`).
@@ -61,6 +63,9 @@
   В адресе и коде диалог задаётся «ключом»: uid собеседника или id беседы (`chatKeyId()`, `isRoom()`).
 - `messages.fwd` (`{from, name, text}`) — пересланное сообщение; фото и голосовое копируются в само сообщение.
 - `comments.likes`, `posts.images` (2–4 фото, каждое сжато до ~880 КБ / n), `posts.tags` (до 10 хэштегов, `extractTags()`), `users.bday` (`ГГГГ-ММ-ДД`).
+Поля 3.0: `users.emoji` (эмодзи-статус у имени), `users.listening` (`{title, artist, at}` — «сейчас слушает», пишет плеер; выключается в настройках, localStorage `vs_listen`).
+ВС Курсы — cbr-xml-daily.ru (бесплатно, без ключа); ВС Радио — потоки hostingradio.ru в общем плеере (`RADIO`); ВС Гороскоп — шуточный, без базы.
+Дизайн 3.0 — отдельный слой в конце `style.css` («РЕДИЗАЙН»); профиль админа (`.admin-card`) из него исключён через `:not(.admin-card)`.
 Поля 2.1: `messages.edited` (сообщение исправлено), `users.saved` (закладки, id записей, до 500).
 Хранится не больше `NOTIF_KEEP` уведомлений на человека: лишние удаляет клиент получателя (запрос без orderBy, чтобы не нужен был индекс).
 
@@ -76,7 +81,7 @@
 Если меняешь структуру данных, обнови этот файл и напомни владельцу вставить его в консоль и нажать Publish.
 
 **В консоль вставляется `firestore.min.rules`**, а не `firestore.rules`: вставка с телефона обрезает текст после 20 000 символов.
-Правь только `firestore.rules`, потом запускай `python3 tools/minify-rules.py` (он пересобирает `firestore.min.rules`
+Правь только `firestore.rules`, потом запускай `python3 tools/minify-rules.py` (сокращает имена функций и параметров, склеивает строки) (он пересобирает `firestore.min.rules`
 и ругается, если вышло больше 19 000 символов) и прогоняй тесты на обоих файлах (`RULES_FILE=firestore.min.rules`).
 Владельцу давай ссылку на raw-файл `firestore.min.rules` или страницу с кнопкой «Скопировать».
 

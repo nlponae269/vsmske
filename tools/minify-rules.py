@@ -24,14 +24,44 @@ import string
 pool = list(string.ascii_uppercase) + ['Z' + c for c in string.ascii_uppercase]
 for n, short in zip(names, pool):
     text = re.sub(r'\b' + n + r'\(', short + '(', text)
+# параметры функций → однобуквенные (внутри тела функции)
+def rename_params(t):
+    out, i = [], 0
+    for m in re.finditer(r'function (\w+)\(([^)]*)\)\{', t):
+        pass
+    res, pos = '', 0
+    for m in re.finditer(r'function (\w+)\(([^)]*)\)\{', t):
+        if m.start() < pos: continue
+        params = [x.strip() for x in m.group(2).split(',') if x.strip()]
+        # тело до парной закрывающей скобки
+        depth, j = 1, m.end()
+        while depth:
+            depth += {'{': 1, '}': -1}.get(t[j], 0); j += 1
+        body = t[m.end():j]
+        letters = iter('ijkmnopquwxyz')
+        head = 'function ' + m.group(1) + '('
+        newp = []
+        for prm in params:
+            nl = next(letters)
+            while re.search(r'(?<![\w.\'])' + nl + r'(?![\w\'])', body): nl = next(letters)
+            body = re.sub(r'(?<![\w.\'])' + prm + r'(?![\w\'])', nl, body); newp.append(nl)
+        res += t[pos:m.start()] + head + ','.join(newp) + '){' + body; pos = j
+    return res + t[pos:]
 # resource.data (но не request.resource.data) → функция
 text = re.sub(r'(?<!request\.)\bresource\.data\b', 'rd()', text)
 text = text.replace('match /databases/{database}/documents {', 'match /databases/{database}/documents {\nfunction rd() { return resource.data; }', 1)
 text = re.sub(r' ?([(){}\[\],=!<>&|+\-?:;]) ?', r'\1', text)
+text = rename_params(text)
+# частые проверки «владелец — я» → функции
+text = text.replace('rd().ownerId==B()', 'ro()').replace('A().ownerId==B()', 'no()')
+text = text.replace('function rd(){return resource.data;}', 'function rd(){return resource.data;}function ro(){return rd().ownerId==B();}function no(){return A().ownerId==B();}', 1)
 text = re.sub(r'\b(allow [a-z, ]+):if', r'\1:if', text)
 text = text.replace('match/', 'match /').replace('function', 'function ').replace('function  ', 'function ').replace('return', 'return ').replace('return  ', 'return ')
 text = re.sub(r'\b(is|in)\b', r' \1 ', text); text = re.sub(r' {2,}', ' ', text)
 text = re.sub(r'\blet\b', 'let ', text).replace('let  ', 'let ')
+# строки склеиваем; перенос оставляем только перед каждым match, чтобы файл можно было окинуть взглядом
+text = re.sub(r'\n(?!match )', '', text).replace('\nmatch ', '\nmatch ')
+text = text.rstrip('\n') + '\n'
 (root / 'firestore.min.rules').write_text(text, encoding='utf-8')
 print(f'{len(src)} → {len(text)} символов, {text.count(chr(10))} строк')
 if len(text) > 19000:
