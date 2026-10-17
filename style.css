@@ -721,7 +721,7 @@ main{gap:16px}
 .btn.light{box-shadow:none}
 .pill{border-radius:99px;padding:7px 14px;background:var(--surface-2);transition:transform .12s}
 .pill:active{transform:scale(.95)}
-.pill.liked{animation:pop .3s ease}
+.pill.liked{}
 @keyframes pop{50%{transform:scale(1.12)}}
 .icon-btn{border-radius:12px}
 .field input,.field textarea,.inp,select.inp{border-radius:var(--r-sm);border:1px solid var(--line);background:var(--surface-2)}
@@ -902,7 +902,7 @@ main{gap:16px}
 .mbar-cover{width:40px;height:40px;flex:none;border-radius:10px;object-fit:cover}
 .mbar-txt{min-width:0;display:flex;flex-direction:column}
 .mbar-txt b,.mbar-txt span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.fp{position:fixed;inset:0;z-index:45;color:#fff;background:#14151c;overflow:hidden;animation:fpIn .22s ease-out}
+.fp{position:fixed;inset:0;z-index:45;color:#fff;background:#14151c;overflow:hidden}
 @keyframes fpIn{from{transform:translateY(30px);opacity:0}to{transform:none;opacity:1}}
 .fp-bg{position:absolute;inset:-40px;background:var(--grad,#2F44D0) center/cover;filter:blur(40px) brightness(.45) saturate(1.3);transform:scale(1.1)}
 .fp-in{position:relative;height:100%;max-width:480px;margin:0 auto;display:flex;flex-direction:column;gap:14px;
@@ -960,3 +960,52 @@ body:has(.fp){overflow:hidden}
 .nick-chip.on{border-color:var(--accent);box-shadow:0 0 0 2px color-mix(in srgb,var(--accent) 30%,transparent)}
 .nick-menu{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-top:10px}
 .fp-in{padding-bottom:calc(30px + env(safe-area-inset-bottom,0px))}
+
+/* 3.3: анимации (классы ставит animate() в app.js — только тому, что появилось впервые) */
+@keyframes vsUp{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:none}}
+@keyframes vsTile{from{opacity:0;transform:translateY(10px) scale(.92)}to{opacity:1;transform:none}}
+@keyframes vsMsgL{from{opacity:0;transform:translateX(-14px) scale(.97)}to{opacity:1;transform:none}}
+@keyframes vsMsgR{from{opacity:0;transform:translateX(14px) scale(.97)}to{opacity:1;transform:none}}
+@keyframes vsFade{from{opacity:0}to{opacity:1}}
+@keyframes vsZoom{from{opacity:0;transform:scale(.94)}to{opacity:1;transform:none}}
+@keyframes vsDrop{from{opacity:0;transform:translateY(-6px)}to{opacity:1;transform:none}}
+@keyframes vsPop{0%{transform:scale(1)}35%{transform:scale(1.32)}65%{transform:scale(.92)}100%{transform:scale(1)}}
+@keyframes vsLogo{0%{opacity:0;transform:scale(.6) rotate(-8deg)}60%{opacity:1;transform:scale(1.08) rotate(2deg)}100%{transform:none}}
+@keyframes vsGlow{0%,100%{box-shadow:0 10px 40px -8px color-mix(in srgb,var(--accent) 55%,transparent)}50%{box-shadow:0 10px 60px 0 color-mix(in srgb,var(--accent) 80%,transparent)}}
+@keyframes vsDrift{0%{transform:translate3d(0,0,0) scale(1)}50%{transform:translate3d(-3%,2%,0) scale(1.06)}100%{transform:translate3d(2%,-2%,0) scale(1)}}
+@keyframes vsToast{from{opacity:0;transform:translate(-50%,14px) scale(.96)}to{opacity:1;transform:translate(-50%,0)}}
+@keyframes vsShimmer{to{background-position:-200% 0}}
+.a-in{animation:vsUp .5s cubic-bezier(.2,.8,.2,1) both}
+.app-tile.a-in,.gift.a-in{animation-name:vsTile}
+.msg.a-in{animation:vsMsgL .32s cubic-bezier(.2,.8,.2,1) both}
+.msg.me.a-in{animation-name:vsMsgR}
+.uitem.a-in,.comment.a-in{animation-duration:.38s}
+.ov.a-in{animation:vsFade .2s ease-out both}
+.ov.a-in > *{animation:vsZoom .28s cubic-bezier(.2,.8,.2,1) both}
+.fp.a-in{animation:fpIn .3s cubic-bezier(.2,.8,.2,1) both}
+.post-menu.a-in,.nick-menu.a-in,.mod-box.a-in,.emoji-pop.a-in{animation:vsDrop .22s ease-out both}
+.login-in.a-in{animation:vsZoom .55s cubic-bezier(.2,.8,.2,1) both}
+.pop{animation:vsPop .45s cubic-bezier(.3,1.6,.5,1)}
+.badge.pop{animation-duration:.5s}
+/* заставка при загрузке */
+.boot{min-height:100vh}
+.boot-logo{display:grid;place-items:center;width:84px;height:84px;border-radius:24px;font:700 30px/1 Unbounded,system-ui,sans-serif;color:#fff;
+  background:var(--grad,linear-gradient(135deg,#2F44D0,#6A47C9));animation:vsLogo .7s cubic-bezier(.2,.8,.2,1) both,vsGlow 1.6s ease-in-out .7s infinite}
+/* живой фон, кнопки и тосты */
+body::after{animation:vsDrift 28s ease-in-out infinite alternate;will-change:transform}
+.btn,.icon-btn,.pill,.fp-chip,.fp-play,.mbar-play,.nick-chip,.seg button{transition:transform .12s ease,background-color .2s,color .2s,box-shadow .2s}
+.btn:active,.icon-btn:active,.pill:active,.fp-chip:active,.fp-play:active,.mbar-play:active,.nick-chip:active,.seg button:active{transform:scale(.94)}
+.nav a{transition:background-color .2s,color .2s,transform .15s}
+.nav a:active{transform:scale(.96)}
+.toast:not([hidden]){animation:vsToast .32s cubic-bezier(.2,.8,.2,1)}
+.card.loading{background-image:linear-gradient(90deg,transparent 30%,color-mix(in srgb,var(--accent) 8%,transparent) 50%,transparent 70%);background-size:200% 100%;animation:vsShimmer 1.2s linear infinite}
+@media (hover:hover){
+  .post,.app-tile{transition:transform .2s ease,box-shadow .2s ease}
+  .post:hover{transform:translateY(-2px)}
+  .app-tile:hover{transform:translateY(-3px)}
+}
+/* выключатель в настройках и системная настройка «уменьшить движение» */
+:root[data-anim="off"] .a-in,:root[data-anim="off"] .a-in > *,:root[data-anim="off"] .pop,:root[data-anim="off"] .toast,:root[data-anim="off"] .boot-logo{animation:none!important}
+:root[data-anim="off"] body::after{animation:none}
+:root[data-anim="off"] .post:hover,:root[data-anim="off"] .app-tile:hover{transform:none}
+@media (prefers-reduced-motion:reduce){body::after,.boot-logo,.toast,.card.loading{animation:none!important}.post:hover,.app-tile:hover{transform:none}}
