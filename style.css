@@ -1028,7 +1028,7 @@ body::after{animation:vsDrift 28s ease-in-out infinite alternate;will-change:tra
 .ap-lyrics.timed p{cursor:pointer}
 .ap-lyrics.timed p.past{color:rgba(255,255,255,.5)}
 .ap-lyrics.timed p.cur{transform:scale(1.03);filter:none}
-.ap-lyrics.timed p.cur span{background:linear-gradient(90deg,#fff var(--lp,0%),rgba(255,255,255,.4) calc(var(--lp,0%) + 8%));
+.ap-lyrics.timed.ly-ap p.cur .ln{background:linear-gradient(90deg,#fff var(--lp,0%),rgba(255,255,255,.4) calc(var(--lp,0%) + 8%));
   -webkit-background-clip:text;background-clip:text;color:transparent}
 .ap-lyrics.plain p{color:#fff;filter:none;font-size:clamp(22px,3.6vh,28px)}
 .ap-lyrics:hover p{filter:none}
@@ -1043,3 +1043,103 @@ body::after{animation:vsDrift 28s ease-in-out infinite alternate;will-change:tra
 .ap-in .btn{margin-top:6px}
 :root[data-anim="off"] .ap-in{transition:none}
 @media (prefers-reduced-motion:reduce){.ap-in{transition:none}.ap-dots.cur,.ap-dots.cur i{animation:none}}
+
+/* 3.5: ещё 10 видов текста песни и окно выбора */
+.ap-lyrics .w{transition:color .2s}
+/* Караоке */
+.ap-lyrics.timed.ly-ka p{text-align:center;transform-origin:center;filter:none;opacity:0;color:#fff;font-size:clamp(26px,4.6vh,36px);-webkit-text-stroke:1px rgba(0,0,0,.35);transition:opacity .4s,transform .4s}
+.ap-lyrics.timed.ly-ka p.cur,.ap-lyrics.timed.ly-ka p.cur + p{opacity:1}
+.ap-lyrics.timed.ly-ka p.cur + p{transform:scale(.86)}
+.ap-lyrics.timed.ly-ka p.cur .ln{background:linear-gradient(90deg,#33c8ff var(--lp,0%),#fff var(--lp,0%));-webkit-background-clip:text;background-clip:text;color:transparent}
+.ly-ka .ap-dots,.ly-po .ap-dots,.ly-ca .ap-dots{justify-content:center}
+/* Неон */
+.ap-lyrics.ly-ne{background:rgba(6,0,18,.35);border-radius:18px}
+.ap-lyrics.timed.ly-ne p{font-family:Unbounded,system-ui,sans-serif;font-weight:700;filter:none;color:rgba(120,220,255,.35);text-shadow:0 0 8px rgba(80,200,255,.3);padding:0 8px}
+.ap-lyrics.timed.ly-ne p.past{color:rgba(120,220,255,.55)}
+.ap-lyrics.timed.ly-ne p.cur{color:#fff;text-shadow:0 0 4px #fff,0 0 12px #ff3df0,0 0 28px #ff3df0,0 0 52px #b01cff;animation:neonFlick 4s infinite}
+@keyframes neonFlick{0%,18%,22%,62%,64%,100%{opacity:1}20%,63%{opacity:.55}}
+/* Кино */
+.ap-lyrics.ly-ci{border-radius:18px;-webkit-mask-image:none;mask-image:none;
+  background:linear-gradient(transparent 45%,rgba(0,0,0,.65)),var(--art,linear-gradient(135deg,#2a2d3e,#0d0e14)) center/cover}
+.ap-lyrics.timed.ly-ci .ap-in{position:absolute;left:0;right:0;bottom:22px;padding:0 16px;transform:none!important}
+.ap-lyrics.timed.ly-ci p{display:none}
+.ap-lyrics.timed.ly-ci p.cur{display:block;text-align:center;transform:none;filter:none;color:#fff8d6;font-size:clamp(18px,2.8vh,23px);font-weight:600;line-height:1.7;margin:0}
+.ly-ci p.cur .ln{background:rgba(0,0,0,.75);padding:3px 10px;border-radius:4px;-webkit-box-decoration-break:clone;box-decoration-break:clone}
+.ap-lyrics.timed.ly-ci p.ap-dots.cur{display:flex;justify-content:center}
+/* Печатная машинка */
+.ap-lyrics.ly-tw{background:repeating-linear-gradient(transparent 0 33px,rgba(120,90,40,.15) 33px 34px),#f3ead7;border-radius:14px;-webkit-mask-image:none;mask-image:none;box-shadow:inset 0 0 40px rgba(120,90,40,.25)}
+.ap-lyrics.timed.ly-tw .ap-in{padding:16px 18px 55vh}
+.ap-lyrics.timed.ly-tw p{font-family:"Courier New",Courier,monospace;font-weight:700;font-size:clamp(18px,3vh,24px);color:#2b2620;filter:none;opacity:0;transform:none;margin-bottom:14px}
+.ap-lyrics.timed.ly-tw p.past{opacity:.55}
+.ap-lyrics.timed.ly-tw p.cur{opacity:1}
+.ly-tw p.cur .w,.ly-te p.cur .w{visibility:hidden}
+.ly-tw p.cur .w.on,.ly-te p.cur .w.on{visibility:visible}
+.ly-tw p.cur .w.on:has(+ .w:not(.on))::after,.ly-tw p.cur .w.on:last-child::after{content:"▌";margin-left:2px;animation:caret 1s steps(1) infinite}
+.ly-te p.cur .w.on:has(+ .w:not(.on))::after,.ly-te p.cur .w.on:last-child::after{content:"█";margin-left:3px;animation:caret 1s steps(1) infinite}
+.ly-tw .ap-dots,.ly-tw .btn{color:#2b2620}
+@keyframes caret{50%{opacity:0}}
+/* Переписка */
+.ap-lyrics.timed.ly-ch p{width:fit-content;max-width:82%;padding:10px 15px;border-radius:20px 20px 20px 6px;background:rgba(255,255,255,.16);color:#fff;
+  font-size:clamp(17px,2.6vh,20px);font-weight:600;line-height:1.3;filter:none;margin:0 0 10px;opacity:0;transform:translateY(14px) scale(.96);transform-origin:left bottom;transition:opacity .35s,transform .35s cubic-bezier(.3,1.4,.5,1)}
+.ap-lyrics.timed.ly-ch p:nth-child(even){margin-left:auto;border-radius:20px 20px 6px 20px;background:#3a7bff;transform-origin:right bottom}
+.ap-lyrics.timed.ly-ch p.past,.ap-lyrics.timed.ly-ch p.cur{opacity:1;transform:none}
+.ap-lyrics.timed.ly-ch p.cur{box-shadow:0 0 0 2px rgba(255,255,255,.55)}
+.ap-lyrics.timed.ly-ch .ap-dots{height:auto;padding:12px 16px}
+.ap-lyrics.timed.ly-ch .ap-dots i{width:9px;height:9px}
+/* Волна */
+.ap-lyrics.timed.ly-wa p{filter:none}
+.ly-wa p.cur .w{display:inline-block;color:rgba(255,255,255,.45)}
+.ly-wa p.cur .w.on{color:#fff;animation:waveUp .55s cubic-bezier(.3,1.6,.5,1)}
+@keyframes waveUp{40%{transform:translateY(-12px) scale(1.08)}}
+/* Слово за словом */
+.ap-lyrics.timed.ly-po p{text-align:center;transform-origin:center;filter:none;opacity:0;color:#fff;transition:opacity .3s}
+.ap-lyrics.timed.ly-po p.cur{opacity:1;transform:none;font-size:clamp(30px,5.4vh,44px)}
+.ap-lyrics.timed.ly-po p:has(+ p.cur){opacity:.3}
+.ly-po p.cur .w{display:inline-block;opacity:0;transform:scale(.3) translateY(12px);transition:opacity .25s,transform .4s cubic-bezier(.3,1.7,.5,1)}
+.ly-po p.cur .w.on{opacity:1;transform:none}
+/* Терминал */
+.ap-lyrics.ly-te{background:rgba(0,12,2,.85);border-radius:12px;-webkit-mask-image:none;mask-image:none}
+.ap-lyrics.ly-te::after{content:"";position:absolute;inset:0;pointer-events:none;background:repeating-linear-gradient(transparent 0 2px,rgba(0,0,0,.25) 2px 4px)}
+.ap-lyrics.timed.ly-te .ap-in{padding:14px 14px 55vh}
+.ap-lyrics.timed.ly-te p{font-family:ui-monospace,"Cascadia Mono",Consolas,monospace;font-size:clamp(15px,2.5vh,19px);font-weight:600;color:#39ff6a;text-shadow:0 0 6px rgba(57,255,106,.6);filter:none;opacity:0;transform:none;margin-bottom:10px}
+.ap-lyrics.timed.ly-te p::before{content:"> ";opacity:.7}
+.ap-lyrics.timed.ly-te p.past{opacity:.6}
+.ap-lyrics.timed.ly-te p.cur{opacity:1}
+.ap-lyrics.timed.ly-te .ap-dots::before{content:none}
+/* 3D-барабан */
+.ap-lyrics.ly-ca{perspective:650px}
+.ap-lyrics.timed.ly-ca .ap-in{transform-style:preserve-3d}
+.ap-lyrics.timed.ly-ca p{text-align:center;transform-origin:center;filter:none;color:rgba(255,255,255,.75);
+  transform:rotateX(calc(var(--s,0) * -26deg)) scale(calc(1 - var(--d,0) * .07));opacity:calc(1 - var(--d,0) * .22)}
+.ap-lyrics.timed.ly-ca p.cur{transform:none;color:#fff;opacity:1}
+.ap-lyrics.timed.ly-ca p{padding:0 12px}
+/* Радуга */
+.ap-lyrics.timed.ly-ra p.cur .ln{background:linear-gradient(90deg,#ff5e5e,#ffb84d,#fff35c,#5cff8d,#5cd2ff,#a77bff,#ff5ec8,#ff5e5e);background-size:200% 100%;
+  -webkit-background-clip:text;background-clip:text;color:transparent;animation:rainbow 3s linear infinite}
+@keyframes rainbow{to{background-position:-200% 0}}
+/* текст без тайм-кодов в любом виде — просто читаемый список */
+.ap-lyrics.plain p{opacity:1!important;display:block!important;transform:none!important;filter:none!important;color:#fff!important;text-align:left!important}
+.ap-lyrics.plain.ly-tw p{color:#2b2620!important}
+.ap-lyrics.plain.ly-te p{color:#39ff6a!important}
+.ap-lyrics.plain .ap-in{position:static!important;padding-bottom:40px}
+/* окно выбора */
+.ly-pick{position:absolute;inset:0;z-index:5;display:flex;align-items:flex-end;justify-content:center;background:rgba(0,0,0,.55);-webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px)}
+.ly-pick.a-in{animation:vsFade .2s ease-out both}
+.ly-pick.a-in .ly-sheet{animation:sheetUp .32s cubic-bezier(.2,.8,.2,1) both}
+@keyframes sheetUp{from{transform:translateY(40px);opacity:0}to{transform:none;opacity:1}}
+.ly-sheet{width:100%;max-width:680px;max-height:86%;overflow-y:auto;background:#1b1c26;color:#fff;border-radius:24px 24px 0 0;padding:14px 16px calc(18px + env(safe-area-inset-bottom,0px));box-shadow:0 -10px 40px rgba(0,0,0,.4)}
+.ly-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;font-size:18px}
+.ly-head .icon-btn{color:#fff}
+.ly-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(148px,1fr));gap:12px}
+.ly-card{display:flex;flex-direction:column;gap:3px;padding:8px 8px 10px;text-align:left;font:inherit;color:#fff;cursor:pointer;background:rgba(255,255,255,.06);border:2px solid transparent;border-radius:16px}
+.ly-card.on{border-color:#fff;background:rgba(255,255,255,.12)}
+.ly-card .small{opacity:.65;line-height:1.25}
+.ly-prev{position:relative;display:block;height:96px;margin-bottom:6px;border-radius:10px;overflow:hidden;background:linear-gradient(135deg,#3b3f8f,#5b2d7a)}
+.ly-mini{position:absolute!important;left:0;top:0;width:200%!important;height:200%!important;transform:scale(.5);transform-origin:0 0;pointer-events:none;border-radius:20px}
+.ly-mini.ap-lyrics{-webkit-mask-image:none;mask-image:none}
+.ly-mini .ap-in{transform:none!important;transition:none;padding:16px 18px!important}
+.ly-mini p{font-size:28px!important;margin-bottom:14px!important}
+.ly-mini.ly-ci .ap-in{bottom:20px}
+.ly-mini.fp-lyrics{padding:16px 18px;-webkit-mask-image:none;mask-image:none;overflow:hidden}
+.ly-mini.ly-ka .ap-in,.ly-mini.ly-po .ap-in,.ly-mini.ly-ca .ap-in{padding-top:40px!important}
+body:has(.fp) .toast{bottom:auto;top:calc(64px + env(safe-area-inset-top,0px))}

@@ -47,7 +47,7 @@ const MAX_POST_IMG = 700000;   // символов dataURL (~520 КБ), лими
 const MAX_AVATAR = 120000;
 const CHUNK = 700000;                                   // символов base64 в одном куске (кратно 4)
 const LIMITS = { disk: 10 * 1024 * 1024, video: 20 * 1024 * 1024, music: 12 * 1024 * 1024 };
-const VERSION = '3.4';
+const VERSION = '3.5';
 const MAX_MSG_IMG = 380000;    // фото в сообщении
 const ONLINE_MS = 5 * 60 * 1000; // «в сети», если заходил не раньше 5 минут назад
 
@@ -1027,7 +1027,7 @@ const resetIds = new Set();
    render() каждый раз пересоздаёт страницу, поэтому анимируем только то, что появилось впервые (по ключу).
    Если перерисовка случилась посреди анимации, она продолжается с того же места (отрицательная задержка). */
 const ANIM_ITEMS = 'main > *, .post, .uitem, .app-tile, .msg, .comment, .gift, .login-in, .boot-logo';
-const ANIM_ONCE = ['.ov', '.fp', '.post-menu', '.nick-menu', '.mod-box', '.emoji-pop'];   // окна: снова анимируются, когда открываются заново
+const ANIM_ONCE = ['.ov', '.fp', '.ly-pick', '.post-menu', '.nick-menu', '.mod-box', '.emoji-pop'];   // окна: снова анимируются, когда открываются заново
 const ANIM_POP = '.pill.liked, .fp-ic.on, .badge, .fp-chip.on';
 const animSeen = new Map();
 let animPage = '', animStart = 0, lastTap = 0;
@@ -1713,7 +1713,7 @@ function syncLyrics() {
   const t = player.audio.currentTime, rows = box.querySelectorAll('[data-t]');
   let idx = -1; rows.forEach((r, k) => { if (Number(r.dataset.t) <= t + 0.15) idx = k; });
   const fresh = !box.dataset.synced;   // после перерисовки — встать на место сразу, без прокрутки
-  if (box.dataset.style === 'ap') lyrApFill(rows, idx, t);
+  if (box.dataset.style === 'ap') lyrApFill(rows, idx, t, box.dataset.v);
   if (idx === lyricIdx && !fresh) return;
   lyricIdx = idx; box.dataset.synced = '1';
   rows.forEach((r, k) => { r.classList.toggle('cur', k === idx); r.classList.toggle('past', k < idx); });
@@ -1722,18 +1722,23 @@ function syncLyrics() {
 }
 /* Вид «как в Apple Music»: строка заливается по мере пения, дальние строки размыты, текущая едет к верхней трети */
 function lyrApMove(box, rows, idx, fresh) {
-  const inner = box.firstElementChild, focus = rows[Math.max(idx, 0)];
-  rows.forEach((r, k) => r.style.setProperty('--d', Math.min(Math.abs(k - Math.max(idx, 0)), 5)));
+  const inner = box.firstElementChild, focus = rows[Math.max(idx, 0)], at = Math.max(idx, 0);
+  rows.forEach((r, k) => { r.style.setProperty('--d', Math.min(Math.abs(k - at), 5)); r.style.setProperty('--s', Math.max(Math.min(k - at, 5), -5)); });
   if (!inner || !focus) return;
-  const y = Math.max(focus.offsetTop - box.clientHeight * 0.3, 0);
+  const anchor = LYR_ANCHOR[box.dataset.v];   // у этих видов строка держится серединой, у остальных — верхом на трети высоты
+  const y = anchor ? focus.offsetTop + focus.offsetHeight / 2 - box.clientHeight * anchor : Math.max(focus.offsetTop - box.clientHeight * 0.3, 0);
   if (fresh) { inner.style.transition = 'none'; inner.style.transform = `translateY(${-y}px)`; inner.offsetHeight; inner.style.transition = ''; }
   else inner.style.transform = `translateY(${-y}px)`;
 }
 function lyrApFill(rows, idx, t) {
   rows.forEach((r, k) => {
-    if (k !== idx) { r.style.removeProperty('--lp'); return; }
+    if (k !== idx) { r.style.removeProperty('--lp'); if (k < idx) r.querySelectorAll('.w:not(.on)').forEach(w => w.classList.add('on')); return; }
     const start = Number(r.dataset.t), end = Number(rows[k + 1]?.dataset.t ?? start + 5);
-    r.style.setProperty('--lp', Math.round(Math.min(Math.max((t - start) / Math.max(end - start, 0.5), 0), 1) * 1000) / 10 + '%');
+    // строка поётся не до самого конца промежутка: последние 15% (но не больше 1,5 с) — пауза перед следующей
+    const len = Math.max(Math.min((end - start) * 0.85, end - start - 0.3, Math.max(end - start - 1.5, 1.2)), 0.5);
+    const p = Math.min(Math.max((t - start) / len, 0), 1);
+    r.style.setProperty('--lp', Math.round(p * 1000) / 10 + '%');
+    r.querySelectorAll('.w').forEach(w => w.classList.toggle('on', Number(w.dataset.f) <= p));   // слова по очереди
   });
 }
 // плавная заливка строки: timeupdate приходит лишь 4 раза в секунду, поэтому пока виден Apple-текст — кадр за кадром
@@ -1747,7 +1752,23 @@ function lyrLoop() {
   };
   lyrRaf = requestAnimationFrame(step);
 }
-const LYR_STYLES = { ya: 'обычный', ap: 'как в Apple Music' };
+// виды текста песни: ключ → название и описание для окна выбора
+const LYRS = [
+  ['ya', 'Обычный', 'Строки по очереди подсвечиваются'],
+  ['ap', 'Apple Music', 'Крупно, заливка, размытие'],
+  ['ka', 'Караоке', 'Синяя заливка, только текущая и следующая'],
+  ['ne', 'Неон', 'Светящиеся буквы, как вывеска'],
+  ['ci', 'Кино', 'Субтитры внизу поверх обложки'],
+  ['tw', 'Печатная машинка', 'Слова печатаются на бумаге'],
+  ['ch', 'Переписка', 'Строки приходят как сообщения'],
+  ['wa', 'Волна', 'Слова подпрыгивают в такт'],
+  ['po', 'Слово за словом', 'Каждое слово выпрыгивает по центру'],
+  ['te', 'Терминал', 'Зелёный текст и мигающий курсор'],
+  ['ca', '3D-барабан', 'Строки крутятся на барабане'],
+  ['ra', 'Радуга', 'Переливающаяся текущая строка'],
+];
+const LYR_STYLES = Object.fromEntries(LYRS.map(([k, n]) => [k, n]));
+const LYR_ANCHOR = { ka: 0.45, po: 0.42, ca: 0.45, ch: 0.62, wa: 0.4, ne: 0.38, ra: 0.38 };   // где по высоте держать текущую строку (по умолчанию 0,3)
 
 /* Полноэкранный плеер */
 const REPEAT_LABEL = { off: 'Повтор выключен', all: 'Повторять весь список', one: 'Повторять трек' };
@@ -1758,7 +1779,7 @@ function fullPlayer() {
   if (owner === undefined && t.ownerId) ensureUsers([t.ownerId]);
   const cover = safeImg(t.cover), lyr = t.radio ? null : parseLyrics(t.lyrics);
   const showLyrics = S.fpLyrics && !t.radio;
-  const apStyle = showLyrics && !S.lyrEdit && lyrStyle() === 'ap' && lyr.lines.length > 0;
+  const apStyle = showLyrics && !S.lyrEdit && lyrStyle() !== 'ya' && lyr.lines.length > 0;
   const head = `<div class="fp-top"><button class="icon-btn fp-x" data-act="fpclose" aria-label="Свернуть плеер">${I.down}</button>
       <span class="fp-label">${t.radio ? 'ВС Радио · прямой эфир' : esc(player.label || 'ВС Музыка')}</span>
       ${own ? `<button class="icon-btn" data-act="fpcover" aria-label="Сменить обложку" title="Сменить обложку">${I.photo}</button>` : '<span style="width:36px"></span>'}</div>`;
@@ -1768,11 +1789,11 @@ function fullPlayer() {
         <div class="row"><button type="button" class="btn ghost small" data-act="lyrstamp">⏱ Вставить текущее время</button><span class="grow"></span>
           <button type="button" class="btn ghost small" data-act="lyredit">Отмена</button><button class="btn small">Сохранить</button></div>
         <p class="hint" style="margin:0">Тайм-код ставится в начало строки в формате [минуты:секунды.сотые]. Включите песню и жмите «Вставить текущее время» перед каждой строкой.</p></form>`
-      : lyr.lines.length && apStyle ? apLyrics(lyr, own)
+      : lyr.lines.length && apStyle ? apLyrics(lyr, own, lyrStyle(), cover)
       : lyr.lines.length ? `<div class="fp-lyrics ${lyr.timed ? 'timed' : ''}" id="fpLyrics" data-timed="${lyr.timed ? 1 : 0}">${lyr.lines.map(l => lyr.timed ? `<p data-t="${l.t}" data-act="lyrseek">${esc(l.text) || '♪'}</p>` : `<p>${esc(l.text) || '&nbsp;'}</p>`).join('')}
           ${own ? `<button class="btn ghost small" data-act="lyredit">Изменить текст</button>` : ''}</div>`
       : `<div class="fp-lyrics fp-empty"><b>Текста пока нет</b>${own ? `<span class="small">Добавьте слова, можно с тайм-кодами — тогда они будут идти вместе с музыкой</span><button class="btn small" data-act="lyredit">Добавить текст</button>` : '<span class="small">Добавить текст может только автор трека</span>'}</div>`) : '';
-  return `<div class="fp ${apStyle ? 'ap' : ''}" role="dialog" aria-label="Плеер"><div class="fp-bg" style="${cover ? `background-image:url('${esc(cover)}')` : ''}"></div><div class="fp-in">
+  return `<div class="fp ${apStyle ? 'ap fp-ly-' + lyrStyle() : ''}" role="dialog" aria-label="Плеер"><div class="fp-bg" style="${cover ? `background-image:url('${esc(cover)}')` : ''}"></div><div class="fp-in">
     ${head}
     ${apStyle ? `<div class="ap-head">${cover ? `<img src="${esc(cover)}" alt="">` : `<span class="ap-noart">🎵</span>`}<div class="grow" style="min-width:0"><b>${esc(t.title)}</b><span>${esc(t.artist || 'Неизвестный исполнитель')}</span></div></div>` : ''}
     <div class="fp-main">${showLyrics ? lyricsBox : art}</div>
@@ -1790,20 +1811,45 @@ function fullPlayer() {
     <div class="fp-row">
       <button class="fp-chip ${player.repeat !== 'off' ? 'on' : ''}" data-act="fprepeat" aria-label="${REPEAT_LABEL[player.repeat]}" title="${REPEAT_LABEL[player.repeat]}">${I.repeat}${player.repeat === 'one' ? '<sup>1</sup>' : ''}</button>
       <button class="fp-chip ${showLyrics ? 'on' : ''}" data-act="fplyrics" ${t.radio ? 'disabled' : ''} aria-label="Текст песни" title="Текст песни">${I.lyrics}</button>
-      ${showLyrics && !S.lyrEdit ? `<button class="fp-chip fp-style ${lyrStyle() === 'ap' ? 'on' : ''}" data-act="lyrstyle" aria-label="Вид текста: ${LYR_STYLES[lyrStyle()]}" title="Вид текста: ${LYR_STYLES[lyrStyle()]}">Aa</button>` : ''}
+      ${showLyrics && !S.lyrEdit ? `<button class="fp-chip fp-style ${S.lyrPick ? 'on' : ''}" data-act="lyrpick" aria-label="Вид текста: ${LYR_STYLES[lyrStyle()]}" title="Вид текста: ${LYR_STYLES[lyrStyle()]}">Aa</button>` : ''}
       <button class="fp-chip ${player.shuffle ? 'on' : ''}" data-act="fpshuffle" aria-label="Перемешать" title="Перемешать">${I.shuffle}</button></div>
-  </div></div>`;
+  </div>${S.lyrPick && showLyrics ? lyrPicker() : ''}</div>`;
 }
-const lyrStyle = () => lsGet('vs_lyrstyle') === 'ap' ? 'ap' : 'ya';
-function apLyrics(lyr, own) {
+const lyrStyle = () => { const v = lsGet('vs_lyrstyle'); return LYR_STYLES[v] ? v : 'ya'; };
+// строка → слова; у каждого слова доля строки, с которой оно начинается (для «слово за словом»)
+function lyrWords(text) {
+  const parts = text.split(/(\s+)/), total = text.replace(/\s+/g, '').length || 1;
+  let done = 0;
+  return parts.map(w => {
+    if (!w.trim()) return w ? ' ' : '';
+    const f = done / total; done += w.length;
+    return `<span class="w" data-f="${f.toFixed(3)}">${esc(w)}</span>`;
+  }).join('');
+}
+function apLyrics(lyr, own, v = 'ap', cover = '') {
   const lines = lyr.lines.map(l => ({ ...l }));
   // проигрыш в начале и пустые строки LRC — пульсирующие точки
   if (lyr.timed && lines[0].t >= 4) lines.unshift({ t: 0, text: '' });
   const row = l => lyr.timed
-    ? (l.text ? `<p data-t="${l.t}" data-act="lyrseek"><span>${esc(l.text)}</span></p>` : `<p class="ap-dots" data-t="${l.t}" data-act="lyrseek" aria-label="Проигрыш"><i></i><i></i><i></i></p>`)
+    ? (l.text ? `<p data-t="${l.t}" data-act="lyrseek"><span class="ln">${lyrWords(l.text)}</span></p>` : `<p class="ap-dots" data-t="${l.t}" data-act="lyrseek" aria-label="Проигрыш"><i></i><i></i><i></i></p>`)
     : `<p>${esc(l.text) || '&nbsp;'}</p>`;
-  return `<div class="ap-lyrics ${lyr.timed ? 'timed' : 'plain'}" id="fpLyrics" data-style="ap" data-timed="${lyr.timed ? 1 : 0}"><div class="ap-in">${lines.map(row).join('')}
+  return `<div class="ap-lyrics ly-${v} ${lyr.timed ? 'timed' : 'plain'}" id="fpLyrics" data-style="ap" data-v="${v}" data-timed="${lyr.timed ? 1 : 0}" ${v === 'ci' && cover ? `style="--art:url('${esc(cover)}')"` : ''}><div class="ap-in">${lines.map(row).join('')}
     ${own ? `<button class="btn ghost small" data-act="lyredit">Изменить текст</button>` : ''}</div></div>`;
+}
+function lyrPicker() {
+  const cur = lyrStyle();
+  const sample = k => {
+    if (k === 'ya') return `<div class="fp-lyrics timed ly-mini"><p class="past">Первая строка песни</p><p class="cur">Вот она, текущая</p><p>А это следующая</p></div>`;
+    const ln = (t, on) => `<span class="ln">${t.split(' ').map((w, i) => `<span class="w ${i < on ? 'on' : ''}">${w}</span>`).join(' ')}</span>`;
+    return `<div class="ap-lyrics timed ly-${k} ly-mini" data-v="${k}"><div class="ap-in">
+      <p class="past" style="--d:1;--s:-1">${ln('Первая строка песни', 9)}</p>
+      <p class="cur" style="--d:0;--s:0;--lp:55%">${ln('Вот она, текущая строка', 3)}</p>
+      <p style="--d:1;--s:1">${ln('А это следующая', 0)}</p></div></div>`;
+  };
+  return `<div class="ly-pick" role="dialog" aria-label="Вид текста песни"><div class="ly-sheet">
+    <div class="ly-head"><b>Вид текста</b><button class="icon-btn" data-act="lyrpick" aria-label="Закрыть">${I.x || '✕'}</button></div>
+    <div class="ly-grid">${LYRS.map(([k, n, d]) => `<button class="ly-card ${k === cur ? 'on' : ''}" data-act="lyrset" data-v="${k}" aria-pressed="${k === cur}">
+      <span class="ly-prev">${sample(k)}</span><b>${n}${k === cur ? ' ✓' : ''}</b><span class="small">${d}</span></button>`).join('')}</div></div></div>`;
 }
 function musicBar() {
   const t = curTrack(); if (!t) return '';
@@ -3094,12 +3140,14 @@ document.addEventListener('click', async e => {
       case 'mnext': nextTrack(); break;
       case 'mprev': prevTrack(); break;
       case 'fpopen': S.fullPlayer = true; S.lyrEdit = false; lyricIdx = -1; render(); break;
-      case 'fpclose': S.fullPlayer = false; S.lyrEdit = false; render(); break;
+      case 'fpclose': S.fullPlayer = false; S.lyrEdit = false; S.lyrPick = false; render(); break;
       case 'fprepeat': player.repeat = { off: 'all', all: 'one', one: 'off' }[player.repeat]; lsSet('vs_repeat', player.repeat); toast(REPEAT_LABEL[player.repeat]); render(); break;
       case 'fpshuffle': player.shuffle = !player.shuffle; lsSet('vs_shuffle', player.shuffle ? '1' : '0'); toast(player.shuffle ? 'Перемешивание включено' : 'Перемешивание выключено'); render(); break;
       case 'fplyrics': S.fpLyrics = !S.fpLyrics; S.lyrEdit = false; lyricIdx = -1; render(); setTimeout(syncLyrics, 50); break;
-      case 'lyrstyle': {
-        const v = lyrStyle() === 'ap' ? 'ya' : 'ap'; lsSet('vs_lyrstyle', v); lyricIdx = -1;
+      case 'lyrpick': S.lyrPick = !S.lyrPick; render(); break;
+      case 'lyrset': {
+        const v = b.dataset.v; if (!LYR_STYLES[v]) break;
+        lsSet('vs_lyrstyle', v); lyricIdx = -1; S.lyrPick = false;
         toast('Вид текста: ' + LYR_STYLES[v]); render(); break;
       }
       case 'lyredit': S.lyrEdit = !S.lyrEdit; render(); if (S.lyrEdit) document.getElementById('lyrText')?.focus(); break;
@@ -3501,6 +3549,7 @@ async function openLightbox(i) {
 }
 document.addEventListener('keydown', e => {
   if (S.story) { if (e.key === 'Escape') { clearTimeout(storyTimer); S.story = null; render(); } else if (e.key === 'ArrowRight') storyStep(1); else if (e.key === 'ArrowLeft') storyStep(-1); return; }
+  if (e.key === 'Escape' && S.fullPlayer && S.lyrPick) { S.lyrPick = false; render(); return; }
   if (e.key === 'Escape' && S.fullPlayer && !S.lyrEdit) { S.fullPlayer = false; render(); return; }
   if (e.key === 'Escape' && (S.qr || S.giftFor || S.newRoom || S.fwd || S.storyDraft || S.report)) { S.qr = S.giftFor = S.newRoom = S.fwd = S.storyDraft = S.report = null; render(); return; }
   if (S.lightbox === null && !S.preview && !S.viewImg) return;
