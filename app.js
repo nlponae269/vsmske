@@ -39,12 +39,15 @@ const COVERS = {
   rose: 'linear-gradient(135deg,#B4398F,#F06C9B)', gold: 'linear-gradient(135deg,#C98A12,#F2C94C)',
 };
 const COLORS = ['#2F44D0','#D0462F','#1F8A5B','#B4398F','#C98A12','#2B8BB5','#6A47C9','#4E5B76'];
-const NICK_RE = /^[a-z0-9._]{3,30}$/;
+const NICK_RE = /^[a-z0-9._]{4,30}$/, NICK_ANY = /^[a-z0-9._]{1,30}$/;   // 1–3 символа — только админам и коллекционные
+const NICK_MSG = 'Короткое имя: от 4 до 30 символов, латиница, цифры, точка и _. Имена короче — коллекционные, их выдаёт администрация.';
+const nickUid = new Map();   // @ник → uid, чтобы адрес #@ник открывался без лишних запросов
+const pageUrl = u => location.origin + location.pathname + (u?.nick ? '#@' + u.nick : '#id/' + u?.id);
 const MAX_POST_IMG = 700000;   // символов dataURL (~520 КБ), лимит документа Firestore — 1 МБ
 const MAX_AVATAR = 120000;
 const CHUNK = 700000;                                   // символов base64 в одном куске (кратно 4)
 const LIMITS = { disk: 10 * 1024 * 1024, video: 20 * 1024 * 1024, music: 12 * 1024 * 1024 };
-const VERSION = '3.1';
+const VERSION = '3.2';
 const MAX_MSG_IMG = 380000;    // фото в сообщении
 const ONLINE_MS = 5 * 60 * 1000; // «в сети», если заходил не раньше 5 минут назад
 
@@ -83,7 +86,7 @@ const TAG_RE = /(#[\p{L}\d_]{2,30})/u;
 // @ник → ссылка на профиль (но не внутри почтового адреса вроде a@b.ru)
 const mentionify = t => {
   const parts = t.split(/(@[a-zA-Z0-9._]{3,30})/);
-  return parts.map((x, i) => i % 2 && !/[a-zA-Z0-9._]$/.test(parts[i - 1]) ? `<a class="tag" href="#u/${encodeURIComponent(x.slice(1).toLowerCase())}">${esc(x)}</a>` : esc(x)).join('');
+  return parts.map((x, i) => i % 2 && !/[a-zA-Z0-9._]$/.test(parts[i - 1]) ? `<a class="tag" href="#@${encodeURIComponent(x.slice(1).toLowerCase())}">${esc(x)}</a>` : esc(x)).join('');
 };
 const tagify = t => t.split(TAG_RE).map((x, i) => i % 2 ? `<a class="tag" href="#tag/${encodeURIComponent(x.slice(1).toLowerCase())}">${esc(x)}</a>` : mentionify(x)).join('');
 const extractMentions = t => [...new Set([...String(t || '').matchAll(/(?:^|[\s(,.!?])@([a-z0-9._]{3,30})/gi)].map(m => m[1].toLowerCase()))].slice(0, 5);
@@ -371,7 +374,7 @@ const S = {
 const cache = {
   users: new Map(), feed: new Map(), wall: [], comments: new Map(),
   chats: [], messages: [], incoming: [], outgoing: [], people: [],
-  videos: [], video: null, albums: [], album: null, photos: [], files: [], post: null, notifs: [],
+  videos: [], video: null, albums: [], album: null, photos: [], files: [], post: null, notifs: [], nicks: [],
   groups: new Map(), groupList: [], groupWall: [], reposted: new Map(), reports: [], banned: [], guests: [], tagPosts: [], stories: [],
   questions: [], question: null, answers: [], mailIn: [], mailOut: [], notes: [],
 };
@@ -465,6 +468,27 @@ onAuthStateChanged(auth, async user => {
     S.phase = 'onboarding'; S.authBusy = false; render();
   } catch (e) { S.fatal = e; S.phase = 'auth'; S.authBusy = false; render(); }
 });
+
+/* Коллекционные юзернеймы: основное имя меняется на своё коллекционное без новой записи, а старое коллекционное остаётся в коллекции */
+async function dropOldNick(bt, me) {
+  const old = await getDoc(doc(db, 'usernames', me.nick));
+  if (old.exists() && old.data().uid === me.id && !old.data().col) bt.delete(doc(db, 'usernames', me.nick));
+}
+async function setMainNick(nick) {
+  const me = S.me; if (nick === me.nick) return;
+  const bt = writeBatch(db);
+  await dropOldNick(bt, me);
+  bt.update(doc(db, 'users', me.id), { nick, search: buildSearch(me.name, nick, me.city || '') });
+  await bt.commit(); nickUid.set(nick, me.id); toast('Теперь ваше имя — @' + nick);
+  history.replaceState(null, '', '#@' + nick);
+}
+const nickOf = raw => String(raw || '').trim().toLowerCase().replace(/^@/, '');
+async function nickToUid(nick) {
+  if (nickUid.has(nick)) return nickUid.get(nick);
+  const s = await getDoc(doc(db, 'usernames', nick));
+  if (!s.exists()) return null;
+  nickUid.set(nick, s.data().uid); return s.data().uid;
+}
 
 async function createProfile({ name, nick, city = '', photo = '' }) {
   const id = uid();
@@ -566,7 +590,16 @@ function route() {
   if (S.phase !== 'app') return;
   const [v, arg] = (location.hash.slice(1) || 'feed').split('/');
   S.confirm = null;
-  if (v === 'id') { S.view = 'profile'; S.profileId = arg || uid(); }
+  if (v[0] === '@') {   // #@ник — адрес страницы
+    let nick = v.slice(1); try { nick = decodeURIComponent(nick); } catch (e) { }
+    nick = nick.toLowerCase();
+    if (!nickUid.has(nick)) {
+      nickToUid(nick).then(id => { if (id) route(); else { toast('Нет пользователя @' + nick); location.replace('#feed'); } }).catch(() => location.replace('#feed'));
+      S.view = 'profile'; S.profileId = null; render(); return;
+    }
+    S.view = 'profile'; S.profileId = nickUid.get(nick);
+  }
+  else if (v === 'id') { S.view = 'profile'; S.profileId = arg || uid(); prettyUrl(S.profileId); }
   else if (v === 'im') { S.view = 'messages'; S.chatWith = arg || null; }
   else if (v === 'video' && arg) { S.view = 'watch'; S.watchId = arg; }
   else if (v === 'video') { S.view = 'video'; S.videoOwner = null; }
@@ -581,7 +614,7 @@ function route() {
   else if (v === 'market') { S.view = 'market'; S.mktCat = arg || 'all'; }
   else if (v === 'lot' && arg) { S.view = 'lot'; S.lotId = arg; }
   else if (v === 'music') { S.view = 'music'; S.musicTab = arg || 'my'; }
-  else if (v === 'u' && arg) { getDoc(doc(db, 'usernames', decodeURIComponent(arg).toLowerCase())).then(s => s.exists() ? go('id/' + s.data().uid) : (toast('Нет пользователя @' + decodeURIComponent(arg)), history.back())).catch(() => history.back()); return; }
+  else if (v === 'u' && arg) { location.replace('#@' + arg); return; }   // старые ссылки #u/ник
   else if (v === 'answers') { S.view = 'answers'; S.ansCat = arg || 'all'; }
   else if (v === 'mail') { S.view = 'mail'; S.mailBox = arg === 'sent' ? 'sent' : arg === 'new' ? 'new' : 'in'; S.mailId = arg && !['sent', 'new', 'in'].includes(arg) ? arg : null; }
   else if (v === 'games') { S.view = 'games'; S.game = arg || null; }
@@ -603,6 +636,12 @@ function route() {
   window.scrollTo(0, 0);
 }
 window.addEventListener('hashchange', route);
+// #id/<uid> в адресной строке заменяем на #@ник — такую ссылку понятно, кому отправить
+function prettyUrl(pid) {
+  const u = pid === uid() ? S.me : U(pid);
+  if (!u?.nick || u.deleted || location.hash !== '#id/' + pid) return;
+  nickUid.set(u.nick, pid); history.replaceState(null, '', '#@' + u.nick);
+}
 const go = h => { if (location.hash === '#' + h) route(); else location.hash = h; };
 
 function onViewErr(e) { console.error(e); S.viewError = e; S.loading = false; render(); }
@@ -628,13 +667,17 @@ function attachView() {
         listen(query(collection(db, 'posts'), where('wallId', 'in', c), orderBy('createdAt', 'desc'), limit(30)), 'g' + i));
     }
   } else if (S.view === 'profile') {
-    const pid = S.profileId; cache.wall = []; cache.gifts = [];
+    const pid = S.profileId; cache.wall = []; cache.gifts = []; cache.nicks = []; S.nickMenu = null;
+    if (!pid) return;
+    viewUnsubs.push(onSnapshot(query(collection(db, 'usernames'), where('uid', '==', pid)), s => {
+      cache.nicks = s.docs.map(d => ({ id: d.id, ...d.data() })); render();
+    }, console.error));
     viewUnsubs.push(onSnapshot(query(collection(db, 'gifts'), where('to', '==', pid), limit(60)), s => {
       cache.gifts = s.docs.map(data).sort((a, b) => ms(b.createdAt) - ms(a.createdAt)); ensureUsers(cache.gifts.map(g => g.from)); render();
     }, console.error));
     if (pid !== id) recordGuest(pid);
     if (pid !== id) viewUnsubs.push(onSnapshot(doc(db, 'users', pid), s => {
-      cache.users.set(pid, s.exists() ? data(s) : { id: pid, name: 'Страница не найдена', friends: [], deleted: true }); render();
+      cache.users.set(pid, s.exists() ? data(s) : { id: pid, name: 'Страница не найдена', friends: [], deleted: true }); prettyUrl(pid); render();
     }, onViewErr));
     viewUnsubs.push(onSnapshot(query(collection(db, 'posts'), where('wallId', '==', pid), orderBy('createdAt', 'desc'), limit(50)), s => {
       cache.wall = s.docs.map(data); S.loading = false;
@@ -993,7 +1036,7 @@ function viewAuth() {
       <form class="form" data-form="${login ? 'login' : 'register'}">
         ${login ? '' : `
         <div class="field"><label for="rName">Имя и фамилия</label><input id="rName" required maxlength="60" placeholder="Иван Петров" autocomplete="name"></div>
-        <div class="field"><label for="rNick">Короткое имя</label><input id="rNick" required minlength="3" maxlength="30" placeholder="ivan.petrov" pattern="[a-zA-Z0-9._]+" title="Латиница, цифры, точка и _ (от 3 символов)" autocomplete="username"></div>`}
+        <div class="field"><label for="rNick">Короткое имя</label><input id="rNick" required minlength="4" maxlength="30" placeholder="ivan.petrov" pattern="[a-zA-Z0-9._]+" title="Латиница, цифры, точка и _ (от 4 символов)" autocomplete="username"></div>`}
         <div class="field"><label for="aEmail">Почта</label><input id="aEmail" type="email" required autocomplete="email" placeholder="you@mail.ru"></div>
         <div class="field"><label for="aPass">Пароль</label><input id="aPass" type="password" required minlength="6" autocomplete="${login ? 'current-password' : 'new-password'}" placeholder="${login ? '' : 'Не меньше 6 символов'}"></div>
         ${S.authError ? `<div class="err">${esc(S.authError)}</div>` : ''}
@@ -1015,7 +1058,7 @@ function viewOnboarding() {
       <p class="muted" style="margin:0">Как вас показывать другим людям?</p>
       <form class="form" data-form="onboard">
         <div class="field"><label for="oName">Имя и фамилия</label><input id="oName" required maxlength="60" value="${esc(u.displayName || '')}"></div>
-        <div class="field"><label for="oNick">Короткое имя</label><input id="oNick" required minlength="3" maxlength="30" pattern="[a-zA-Z0-9._]+" title="Латиница, цифры, точка и _ (от 3 символов)" value="${esc(nickGuess.length >= 3 ? nickGuess : '')}"></div>
+        <div class="field"><label for="oNick">Короткое имя</label><input id="oNick" required minlength="4" maxlength="30" pattern="[a-zA-Z0-9._]+" title="Латиница, цифры, точка и _ (от 4 символов)" value="${esc(nickGuess.length >= 4 ? nickGuess : '')}"></div>
         <div class="field"><label for="oCity">Город</label><input id="oCity" maxlength="40" placeholder="Необязательно"></div>
         ${S.authError ? `<div class="err">${esc(S.authError)}</div>` : ''}
         <button class="btn" type="submit" ${S.authBusy ? 'disabled' : ''}>${S.authBusy ? 'Создаём…' : 'Создать страницу'}</button>
@@ -1324,7 +1367,7 @@ function viewVID() {
   const u = S.authUser, me = S.me, prov = (u.providerData || []).map(p => p.providerId);
   const hasPass = prov.includes('password'), hasGoogle = prov.includes('google.com');
   const fmtDate = s => { if (!s) return '—'; const d = new Date(s); return d.getDate() + ' ' + MONTHS[d.getMonth()] + ' ' + d.getFullYear() + ' в ' + hm(d); };
-  const link = location.origin + location.pathname + '#id/' + me.id;
+  const link = pageUrl(me);
   return `<div class="vid-card">
       <div class="vid-brand"><span class="logo-mark">VС</span><span>VС ID</span></div>
       <div class="row">${avatar(me, 64, false)}<div class="grow" style="min-width:0"><div class="vid-name">${esc(me.name)}</div><div class="vid-sub">@${esc(me.nick)}</div></div></div>
@@ -1504,6 +1547,10 @@ function viewAdmin() {
           <div class="muted small">${b ? 'Заблокирован ' + banText(b) : 'Срок истёк'}${u.ban?.reason ? ' · ' + esc(u.ban.reason) : ''}</div></div>
           <div class="acts"><button class="btn sec" data-act="unban" data-id="${esc(u.id)}">${b ? 'Разбанить' : 'Убрать из списка'}</button></div></div>`;
       }).join('') : '<div class="empty">Никто не заблокирован</div>'}</div></div>
+    <div class="card pad"><h2 class="h" style="font-size:16px">💎 Коллекционные юзернеймы</h2>
+      <p class="muted small" style="margin:4px 0 10px">Выпустите имя любой длины (от 1 символа) себе или в подарок. Обычные люди могут занять имя только от 4 символов.</p>
+      <form class="row" data-form="nickmint" style="flex-wrap:wrap;gap:8px"><input id="mintNick" class="inp" maxlength="31" placeholder="@имя, например vld" style="flex:1;min-width:140px">
+        <input id="mintTo" class="inp" maxlength="31" placeholder="@кому (пусто — себе)" style="flex:1;min-width:140px"><button class="btn">Выпустить</button></form></div>
     <p class="hint" style="text-align:center">Забанить человека можно и с его страницы: «⋯» → «Модерация».</p>`;
 }
 
@@ -2250,13 +2297,13 @@ function viewTag() {
 }
 
 /* Уведомления */
-const NOTIF_TEXT = { like: 'оценил(а) вашу запись', comment: 'прокомментировал(а) вашу запись', wall: 'написал(а) у вас на стене', friend: 'принял(а) вашу заявку в друзья', repost: 'поделился(ась) вашей записью', mention: 'упомянул(а) вас', gift: 'сделал(а) вам подарок', answer: 'ответил(а) на ваш вопрос', best: 'выбрал(а) ваш ответ лучшим' };
+const NOTIF_TEXT = { like: 'оценил(а) вашу запись', comment: 'прокомментировал(а) вашу запись', wall: 'написал(а) у вас на стене', friend: 'принял(а) вашу заявку в друзья', repost: 'поделился(ась) вашей записью', mention: 'упомянул(а) вас', gift: 'сделал(а) вам подарок', answer: 'ответил(а) на ваш вопрос', best: 'выбрал(а) ваш ответ лучшим', nick: 'подарил(а) вам коллекционный юзернейм 💎' };
 function viewNotifs() {
   const list = cache.notifs.filter(n => n.from !== S.me.id);
   return `<div class="card"><div class="pad" style="padding-bottom:4px"><h1 class="h">Уведомления <span class="muted">${list.length}</span></h1></div>
     <div class="ulist">${list.length ? list.map(n => {
       const u = U(n.from); if (!u) return '';
-      const href = n.type === 'gift' ? '#id/' + uid() : n.type === 'friend' ? '#id/' + n.from : ['answer', 'best'].includes(n.type) ? '#q/' + n.postId : n.postId ? '#post/' + n.postId : '#id/' + n.from;
+      const href = n.type === 'gift' || n.type === 'nick' ? '#id/' + uid() : n.type === 'friend' ? '#id/' + n.from : ['answer', 'best'].includes(n.type) ? '#q/' + n.postId : n.postId ? '#post/' + n.postId : '#id/' + n.from;
       return `<a class="uitem notif" href="${esc(href)}" style="color:var(--fg)">${avatar(u, 46, false)}
         <div class="grow" style="min-width:0"><b>${esc(u.name)}</b> ${NOTIF_TEXT[n.type] || ''}
           ${n.text ? `<div class="muted small notif-text">«${esc(n.text)}»</div>` : ''}<div class="muted small">${ago(n.createdAt)}</div></div>
@@ -2454,6 +2501,18 @@ function relButtons(id, compact = false) {
 }
 
 /* Профиль */
+const isColNick = n => !!cache.nicks.find(x => x.id === n)?.col;
+function nickCollection(u, own) {
+  const list = cache.nicks.filter(n => n.uid === u.id && n.id !== u.nick).sort((a, b) => a.id.length - b.id.length || a.id.localeCompare(b.id));
+  if (!list.length) return '';
+  const can = own || isSiteAdmin(), sel = list.find(n => n.id === S.nickMenu);
+  return `<dt>Коллекция</dt><dd><div class="nick-col">${list.map(n => can
+      ? `<button class="nick-chip ${sel?.id === n.id ? 'on' : ''}" data-act="nickmenu" data-n="${esc(n.id)}">💎 @${esc(n.id)}</button>`
+      : `<a class="nick-chip" href="#@${esc(n.id)}">💎 @${esc(n.id)}</a>`).join('')}</div>
+    ${sel ? `<div class="nick-menu">${own ? `<button class="btn sec small" data-act="nickmain" data-n="${esc(sel.id)}">Сделать основным</button>
+        <form class="row" data-form="nickgive" data-n="${esc(sel.id)}" style="gap:6px"><input id="giftNick" class="inp" maxlength="31" placeholder="@ник получателя" style="max-width:170px"><button class="btn small">Подарить</button></form>` : ''}
+      <button class="btn ${S.confirm === 'nickdel:' + sel.id ? 'danger' : 'ghost'} small" data-act="nickdel" data-n="${esc(sel.id)}">${S.confirm === 'nickdel:' + sel.id ? 'Точно удалить? Имя станет свободным' : own ? 'Отказаться' : 'Забрать'}</button></div>` : ''}</dd>`;
+}
 function viewProfile() {
   const u = U(S.profileId), me = S.me;
   if (!u) return loadingBox();
@@ -2490,7 +2549,8 @@ function viewProfile() {
         <div class="row" style="flex-wrap:wrap;gap:6px">${BAN_DAYS.map(([d, l]) => `<button class="btn ${d ? 'sec' : 'danger'} small" data-act="ban" data-id="${esc(u.id)}" data-d="${d}">${l}</button>`).join('')}</div>`}
     </div>` : ''}
     <dl class="facts">
-      <dt>Короткое имя</dt><dd>@${esc(u.nick)}</dd>
+      <dt>Короткое имя</dt><dd>@${esc(u.nick)}${isColNick(u.nick) ? ' <span title="Коллекционный юзернейм">💎</span>' : ''} <button class="linkbtn small" data-act="copy" data-text="${esc(pageUrl(u))}">${I.link} ссылка</button></dd>
+      ${nickCollection(u, own)}
       ${adm ? `<dt>Роль</dt><dd><b class="adm-role">Администратор сайта</b></dd>` : ''}
       ${u.city ? `<dt>Город</dt><dd>${esc(u.city)}</dd>` : ''}
       ${u.bday ? `<dt>День рождения</dt><dd>${esc(bdayText(u.bday))}${isBdayToday(u.bday) ? ' 🎂 <b>сегодня!</b>' : ''}</dd>` : ''}
@@ -2547,7 +2607,7 @@ function viewEdit() {
     <div class="field"><label>Обложка страницы</label><div class="swatches covers">${Object.entries(COVERS).map(([k, g]) => `<button type="button" class="${k === (S.editCover || me.cover || 'blue') ? 'on' : ''}" style="background:${g}" data-act="cover" data-c="${k}" aria-label="Обложка ${k}"></button>`).join('')}</div></div>
     <div class="field"><label>Цвет аватара</label><div class="swatches">${COLORS.map(c => `<button type="button" class="${c === color ? 'on' : ''}" style="background:${c}" data-act="color" data-c="${c}" aria-label="Цвет ${c}"></button>`).join('')}</div></div>
     <div class="field"><label for="eName">Имя и фамилия</label><input id="eName" required maxlength="60" value="${esc(me.name)}"></div>
-    <div class="field"><label for="eNick">Короткое имя</label><input id="eNick" required minlength="3" maxlength="30" pattern="[a-zA-Z0-9._]+" value="${esc(me.nick)}"></div>
+    <div class="field"><label for="eNick">Короткое имя</label><input id="eNick" required minlength="1" maxlength="30" pattern="[a-zA-Z0-9._]+" value="${esc(me.nick)}"></div>
     <div class="field"><label>Эмодзи-статус (виден рядом с именем)</label><div class="emoji-pick">${['', '😎', '🔥', '💙', '🎮', '🎧', '📚', '⚽', '🌴', '😴', '🤒', '💼', '🎂', '🚀', '👑', '🐱'].map(e => `<button type="button" class="${(S.editEmoji ?? me.emoji ?? '') === e ? 'on' : ''}" data-act="pickemoji" data-e="${e}" aria-label="${e || 'Без статуса'}">${e || '✕'}</button>`).join('')}</div></div>
     <div class="field"><label for="eStatus">Статус</label><input id="eStatus" maxlength="120" value="${esc(me.status)}"></div>
     <div class="field"><label for="eCity">Город</label><input id="eCity" maxlength="40" value="${esc(me.city)}"></div>
@@ -2733,7 +2793,7 @@ document.addEventListener('click', async e => {
   const stop = e.target.closest('[data-stop]'); if (stop && !stop.contains(b)) return;
   const { act, id } = b.dataset;
   const twoStep = key => { if (S.confirm === key) { S.confirm = null; return true; } S.confirm = key; render(); return false; };
-  if (!['delpost', 'unfriend', 'delvideo', 'delalbum', 'delfile', 'delphoto', 'delmsg', 'postmenu', 'block', 'rpost', 'profmenu', 'roomdel', 'roominfo', 'storydel', 'qdel', 'maildel', 'notedel', 'lotdel', 'tdel', 'evdel'].includes(act)) S.confirm = null;
+  if (!['nickdel', 'delpost', 'unfriend', 'delvideo', 'delalbum', 'delfile', 'delphoto', 'delmsg', 'postmenu', 'block', 'rpost', 'profmenu', 'roomdel', 'roominfo', 'storydel', 'qdel', 'maildel', 'notedel', 'lotdel', 'tdel', 'evdel'].includes(act)) S.confirm = null;
   if (!['selmsg', 'delmsg', 'replymsg', 'playvoice', 'fwdmsg', 'editmsg'].includes(act)) S.msgSel = null;
   if (!['profmenu', 'block', 'modopen', 'ban', 'unban', 'report', 'qr'].includes(act)) S.profMenu = false;
   if (!['postmenu', 'delpost', 'pinpost'].includes(act)) S.postMenu = null;
@@ -3054,10 +3114,16 @@ document.addEventListener('click', async e => {
       }
       case 'ovx': S.newRoom = null; S.fwd = null; S.storyDraft = null; S.giftFor = null; S.qr = null; render(); break;
       case 'qr': {
-        const url = location.origin + location.pathname + '#id/' + id;
+        const url = pageUrl(id === uid() ? S.me : U(id) || { id });
         S.qr = { id, url, img: '' }; S.profMenu = false; render();
         try { S.qr.img = await qrDataUrl(url); } catch (e) { console.error(e); toast('Не получилось сделать QR-код'); S.qr = null; }
         render(); break;
+      }
+      case 'nickmenu': S.nickMenu = S.nickMenu === b.dataset.n ? null : b.dataset.n; render(); break;
+      case 'nickmain': await setMainNick(b.dataset.n); S.nickMenu = null; render(); break;
+      case 'nickdel': {
+        const n = b.dataset.n; if (!twoStep('nickdel:' + n)) break;
+        await deleteDoc(doc(db, 'usernames', n)); nickUid.delete(n); S.nickMenu = null; toast('@' + n + ' теперь свободно'); break;
       }
       case 'giftopen': S.giftFor = id; S.giftSel = null; render(); break;
       case 'giftsel': S.giftSel = b.dataset.k; render(); break;
@@ -3427,7 +3493,7 @@ document.addEventListener('submit', async e => {
         break;
       case 'register': {
         const nick = v('rNick').toLowerCase(), name = v('rName');
-        if (!NICK_RE.test(nick)) { S.authError = 'Короткое имя: от 3 до 30 символов, латиница, цифры, точка и _.'; render(); return; }
+        if (!NICK_RE.test(nick)) { S.authError = NICK_MSG; render(); return; }
         S.authBusy = true; S.authError = ''; render();
         try {
           const taken = await getDoc(doc(db, 'usernames', nick));
@@ -3439,7 +3505,7 @@ document.addEventListener('submit', async e => {
       }
       case 'onboard': {
         const nick = v('oNick').toLowerCase();
-        if (!NICK_RE.test(nick)) { S.authError = 'Короткое имя: от 3 до 30 символов, латиница, цифры, точка и _.'; render(); return; }
+        if (!NICK_RE.test(nick)) { S.authError = NICK_MSG; render(); return; }
         S.authBusy = true; S.authError = ''; render();
         try {
           await createProfile({ name: v('oName'), nick, city: v('oCity'), photo: (S.authUser.photoURL || '').slice(0, 2000) });
@@ -3602,6 +3668,26 @@ document.addEventListener('submit', async e => {
           photo: S.editGroupPhoto === undefined ? (g.photo || '') : S.editGroupPhoto, cover: S.editGroupCover || g.cover || 'blue' });
         S.clubEdit = false; S.editGroupPhoto = undefined; S.editGroupCover = null; toast('Сохранено'); render(); break;
       }
+      case 'nickgive': {
+        const n = f.dataset.n, to = nickOf(v('giftNick')); if (!to) return;
+        nickUid.delete(to);
+        const toId = await nickToUid(to);
+        if (!toId) { toast('Нет человека @' + to); return; }
+        if (toId === uid()) { toast('Это вы сами'); return; }
+        await updateDoc(doc(db, 'usernames', n), { uid: toId });
+        nickUid.set(n, toId); notify(toId, 'nick', '', '@' + n);
+        S.nickMenu = null; toast('@' + n + ' подарено @' + to); break;
+      }
+      case 'nickmint': {
+        const n = nickOf(v('mintNick')), to = nickOf(v('mintTo'));
+        if (!NICK_ANY.test(n)) { toast('Имя: от 1 до 30 символов, латиница, цифры, точка и _'); return; }
+        if ((await getDoc(doc(db, 'usernames', n))).exists()) { toast('@' + n + ' уже занято'); return; }
+        let toId = uid();
+        if (to) { nickUid.delete(to); toId = await nickToUid(to); if (!toId) { toast('Нет человека @' + to); return; } }
+        await setDoc(doc(db, 'usernames', n), { uid: toId, col: true });
+        nickUid.set(n, toId); if (toId !== uid()) notify(toId, 'nick', '', '@' + n);
+        clear('mintNick'); clear('mintTo'); toast('💎 @' + n + ' выпущено' + (to ? ' для @' + to : '')); break;
+      }
       case 'gadmin': {
         const nick = v('gaNick').toLowerCase().replace(/^@/, ''); if (!nick) return;
         const s2 = await getDoc(doc(db, 'usernames', nick));
@@ -3618,22 +3704,23 @@ document.addEventListener('submit', async e => {
       }
       case 'edit': {
         const me = S.me, nick = v('eNick').toLowerCase(), name = v('eName'), city = v('eCity');
-        if (!NICK_RE.test(nick)) { toast('Короткое имя: от 3 до 30 символов, латиница, цифры, точка и _'); return; }
+        if (nick !== me.nick && !(isSiteAdmin() ? NICK_ANY : NICK_RE).test(nick) && !cache.nicks.some(n => n.id === nick)) { toast(NICK_MSG); return; }
         S.busy = true; render();
         try {
           const bt = writeBatch(db);
           if (nick !== me.nick) {
             const taken = await getDoc(doc(db, 'usernames', nick));
-            if (taken.exists()) { toast('Короткое имя уже занято'); return; }
-            bt.set(doc(db, 'usernames', nick), { uid: me.id });
-            bt.delete(doc(db, 'usernames', me.nick));
+            if (taken.exists() && taken.data().uid !== me.id) { toast('Короткое имя уже занято'); return; }
+            if (!taken.exists()) bt.set(doc(db, 'usernames', nick), { uid: me.id });
+            await dropOldNick(bt, me);
+            nickUid.set(nick, me.id);
           }
           bt.update(doc(db, 'users', me.id), {
             name, nick, city, status: v('eStatus'), about: v('eAbout'), color: S.editColor || me.color, cover: S.editCover || me.cover || 'blue',
             photo: S.editPhoto === undefined ? (me.photo || '') : S.editPhoto, search: buildSearch(name, nick, city),
             bday: /^\d{4}-\d{2}-\d{2}$/.test(v('eBday')) ? v('eBday') : '', emoji: S.editEmoji ?? me.emoji ?? '',
           });
-          await bt.commit(); S.editColor = null; S.editCover = null; S.editPhoto = undefined; toast('Сохранено'); go('id/' + me.id);
+          await bt.commit(); S.editColor = null; S.editCover = null; S.editPhoto = undefined; toast('Сохранено'); go('@' + nick);
         } finally { S.busy = false; render(); }
         break;
       }

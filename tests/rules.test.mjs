@@ -622,3 +622,64 @@ test('текст песни и обложку меняет только авто
   await assertFails(updateDoc(t, { cover: 'https://evil.example/c.jpg' }));
   await assertFails(updateDoc(t, { lyrics: 'x'.repeat(20001) }));
 });
+
+test('3.2: обычный ник от 4 символов, админ может от 1', async () => {
+  const f = db('dddd');
+  let b = writeBatch(f);
+  b.set(doc(f, 'usernames', 'dim'), { uid: 'dddd' });
+  b.set(doc(f, 'users', 'dddd'), { ...profile('dim'), createdAt: serverTimestamp() });
+  await assertFails(b.commit());
+  b = writeBatch(f);
+  b.set(doc(f, 'usernames', 'dima'), { uid: 'dddd' });
+  b.set(doc(f, 'users', 'dddd'), { ...profile('dima'), createdAt: serverTimestamp() });
+  await assertSucceeds(b.commit());
+  // обычный не может сменить ник на короткий
+  const fb = db(B); b = writeBatch(fb);
+  b.set(doc(fb, 'usernames', 'bo'), { uid: B }); b.delete(doc(fb, 'usernames', 'bob')); b.update(doc(fb, 'users', B), { nick: 'bo' });
+  await assertFails(b.commit());
+  // админ может взять ник из одной буквы
+  await env.withSecurityRulesDisabled(ctx => updateDoc(doc(ctx.firestore(), 'users', A), { admin: true }));
+  const fa = db(A); b = writeBatch(fa);
+  b.set(doc(fa, 'usernames', 'a'), { uid: A }); b.delete(doc(fa, 'usernames', 'alice')); b.update(doc(fa, 'users', A), { nick: 'a' });
+  await assertSucceeds(b.commit());
+});
+test('3.2: коллекционные юзернеймы — выпуск, подарок, основной, удаление', async () => {
+  // выпускать может только админ
+  await assertFails(setDoc(doc(db(B), 'usernames', 'vld'), { uid: B, col: true }));
+  await assertFails(setDoc(doc(db(B), 'usernames', 'boss.bob'), { uid: B, col: true }));
+  await env.withSecurityRulesDisabled(ctx => updateDoc(doc(ctx.firestore(), 'users', A), { admin: 'true' }));
+  const fa = db(A);
+  await assertFails(setDoc(doc(fa, 'usernames', 'vld'), { uid: 'nobody', col: true }));   // только существующему человеку
+  await assertFails(setDoc(doc(fa, 'usernames', 'carol'), { uid: B, col: true }));         // занятое не перезаписать
+  await assertSucceeds(setDoc(doc(fa, 'usernames', 'vld'), { uid: B, col: true }));
+  await assertSucceeds(setDoc(doc(fa, 'usernames', 'x'), { uid: A, col: true }));
+  // B дарит vld Кэрол, чужое подарить нельзя
+  await assertFails(updateDoc(doc(db(C), 'usernames', 'vld'), { uid: C }));
+  await assertFails(updateDoc(doc(db(B), 'usernames', 'vld'), { uid: B, col: false }));
+  await assertSucceeds(updateDoc(doc(db(B), 'usernames', 'vld'), { uid: C }));
+  // обычный (не коллекционный) ник подарить нельзя
+  await assertFails(updateDoc(doc(db(B), 'usernames', 'bob'), { uid: C }));
+  // C ставит vld основным, старый ник освобождает
+  const fc = db(C); let b = writeBatch(fc);
+  b.delete(doc(fc, 'usernames', 'carol')); b.update(doc(fc, 'users', C), { nick: 'vld' });
+  await assertSucceeds(b.commit());
+  // основной коллекционный ник не подарить, не удалить, админ не забирает
+  await assertFails(updateDoc(doc(fc, 'usernames', 'vld'), { uid: B }));
+  await assertFails(deleteDoc(doc(fc, 'usernames', 'vld')));
+  await assertFails(deleteDoc(doc(fa, 'usernames', 'vld')));
+  await assertFails(updateDoc(doc(fa, 'usernames', 'vld'), { uid: A }));
+  // не основной коллекционный админ может забрать или переназначить
+  await assertSucceeds(setDoc(doc(fa, 'usernames', 'top'), { uid: B, col: true }));
+  await assertSucceeds(updateDoc(doc(fa, 'usernames', 'top'), { uid: C }));
+  await assertSucceeds(deleteDoc(doc(fa, 'usernames', 'top')));
+  // уведомление о подарке ника
+  await assertSucceeds(setDoc(doc(db(B), 'notifs', 'n_nick'), { to: C, from: B, type: 'nick', postId: '', text: '@vld', createdAt: serverTimestamp() }));
+});
+test('3.2: без входа ничего не пишется', async () => {
+  const f = anon();
+  await assertFails(setDoc(doc(f, 'usernames', 'zzzz'), { uid: 'x' }));
+  await assertFails(updateDoc(doc(f, 'users', A), { name: 'x' }));
+  await assertFails(deleteDoc(doc(f, 'posts', 'p1')));
+  await assertFails(setDoc(doc(f, 'notifs', 'n1'), { to: A, from: 'x', type: 'like', postId: '', text: '', createdAt: serverTimestamp() }));
+  await assertFails(updateDoc(doc(f, 'posts', 'p1'), { likes: [] }));
+});

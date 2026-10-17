@@ -39,16 +39,22 @@ service cloud.firestore {
     // освободить — только когда профиль уже на другом имени.
     match /usernames/{nick} {
       allow read: if true;
-      allow create: if signed() && nick.matches('^[a-z0-9._]{3,30}$')
-        && fields(['uid']) && d().uid == me()
-        && getAfter(path('users', me())).data.nick == nick;
-      allow delete: if signed() && resource.data.uid == me()
-        && getAfter(path('users', me())).data.nick != nick;
+      // обычный человек занимает основное имя от 4 символов, админ — от 1;
+      // коллекционное имя (col) выпускает только админ — себе или в подарок любому человеку
+      allow create: if signed() && (nick.matches('^[a-z0-9._]{4,30}$') || (nick.matches('^[a-z0-9._]{1,30}$') && isAdmin()))
+        && ((fields(['uid']) && d().uid == me() && getAfter(path('users', me())).data.nick == nick)
+          || (isAdmin() && fields(['uid', 'col']) && d().col == true && exists(path('users', d().uid))));
+      // коллекционное имя можно подарить (владелец) или переназначить (админ), но не то, что стоит основным
+      allow update: if signed() && resource.data.col == true && onlyChanged(['uid'])
+        && (resource.data.uid == me() || isAdmin()) && exists(path('users', d().uid))
+        && user(resource.data.uid).nick != nick;
+      allow delete: if signed() && (resource.data.uid == me() || (isAdmin() && resource.data.col == true))
+        && getAfter(path('users', resource.data.uid)).data.nick != nick;
     }
 
     // ---------- Пользователи ----------
     function validProfile(u) {
-      return str(u.name, 1, 60) && u.nick is string && u.nick.matches('^[a-z0-9._]{3,30}$')
+      return str(u.name, 1, 60) && u.nick is string && u.nick.matches('^[a-z0-9._]{1,30}$')
         && str(u.get('city', ''), 0, 40) && str(u.get('status', ''), 0, 120) && str(u.get('about', ''), 0, 600)
         && str(u.get('photo', ''), 0, 130000) && str(u.get('color', ''), 0, 20)
         && u.keys().hasOnly(['name', 'nick', 'city', 'status', 'about', 'photo', 'color', 'friends', 'search', 'createdAt', 'privacy',
@@ -279,7 +285,7 @@ service cloud.firestore {
       allow read: if signed() && resource.data.to == me();
       allow create: if signed() && fields(['to', 'from', 'type', 'postId', 'text', 'createdAt'])
         && d().from == me() && d().to is string && d().to != me() && notBanned() && !blockedBy(d().to)
-        && d().type in ['like', 'comment', 'wall', 'friend', 'repost', 'answer', 'best', 'mention', 'gift']
+        && d().type in ['like', 'comment', 'wall', 'friend', 'repost', 'answer', 'best', 'mention', 'gift', 'nick']
         && str(d().postId, 0, 40) && str(d().text, 0, 120) && now(d().createdAt);
       allow delete: if signed() && (resource.data.to == me() || resource.data.from == me());
     }

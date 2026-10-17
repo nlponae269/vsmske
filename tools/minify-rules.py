@@ -61,6 +61,10 @@ text = re.sub(r'\b(is|in)\b', r' \1 ', text); text = re.sub(r' {2,}', ' ', text)
 text = re.sub(r'\blet\b', 'let ', text).replace('let  ', 'let ')
 # строки склеиваем; перенос оставляем только перед каждым match, чтобы файл можно было окинуть взглядом
 text = re.sub(r'\n(?!match )', '', text).replace('\nmatch ', '\nmatch ')
+# «вошёл ли» (signed) лишний, если следующая проверка сама читает request.auth.uid: без входа она падает с ошибкой, а это тоже отказ
+signed = re.search(r'function (\w+)\(\)\{return request\.auth!=null;\}', text).group(1)
+me = re.search(r'function (\w+)\(\)\{return request\.auth\.uid;\}', text).group(1)
+text = re.sub(r':if ' + signed + r'\(\)&&(?=(ro\(\)|no\(\)|\w[\w.()\']*[!=]=' + me + r'\(\)|' + me + r'\(\) in [\w.()]+)(&&|;))', ':if ', text)
 text = text.rstrip('\n') + '\n'
 (root / 'firestore.min.rules').write_text(text, encoding='utf-8')
 print(f'{len(src)} → {len(text)} символов, {text.count(chr(10))} строк')
