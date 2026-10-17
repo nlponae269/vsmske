@@ -47,7 +47,7 @@ const MAX_POST_IMG = 700000;   // символов dataURL (~520 КБ), лими
 const MAX_AVATAR = 120000;
 const CHUNK = 700000;                                   // символов base64 в одном куске (кратно 4)
 const LIMITS = { disk: 10 * 1024 * 1024, video: 20 * 1024 * 1024, music: 12 * 1024 * 1024 };
-const VERSION = '5.1';
+const VERSION = '5.2';
 const MAX_MSG_IMG = 380000;    // фото в сообщении
 const ONLINE_MS = 5 * 60 * 1000; // «в сети», если заходил не раньше 5 минут назад
 
@@ -1024,10 +1024,60 @@ function render() {
     box.querySelectorAll('img').forEach(im => { if (!im.complete) im.addEventListener('load', () => { box.scrollTop = box.scrollHeight; }, { once: true }); });
   }
   animate();
+  syncGlass();
   if (S.fullPlayer && S.fpLyrics) { syncLyrics(); if (!lyrRaf) lyrLoop(); }
   if (S.fullPlayer && !fpRaf) fpLoop();
 }
 const resetIds = new Set();
+
+/* ---------- Liquid glass, как в iOS ----------
+   Для шапки, дока и мини-плеера строим карту преломления точно под их размер и скругление:
+   у кромки фон «затягивается» внутрь, центр чуть увеличен, а три канала цвета смещаются по-разному —
+   отсюда радужный развод по краю. Работает там, где браузер умеет SVG-фильтры в backdrop-filter (Chrome);
+   в остальных остаётся обычное размытое стекло. */
+const GLASS = [['.top', 'lgTop'], ['.nav', 'lgNav'], ['.mbar', 'lgBar']], glassKeys = {};
+function lensMap(w, h, r, scale) {
+  const c = document.createElement('canvas'); c.width = w; c.height = h;
+  const x = c.getContext('2d'), img = x.createImageData(w, h), d = img.data;
+  const cx = w / 2, cy = h / 2, hw = w / 2, hh = h / 2, band = Math.min(hh * .7, 18), maxBend = scale * 0.3;
+  for (let py = 0; py < h; py++) for (let px = 0; px < w; px++) {
+    const qx = Math.abs(px + .5 - cx) - (hw - r), qy = Math.abs(py + .5 - cy) - (hh - r);
+    const ox = Math.max(qx, 0), oy = Math.max(qy, 0), out = Math.hypot(ox, oy), sd = out + Math.min(Math.max(qx, qy), 0) - r;
+    let nx, ny; if (qx > 0 && qy > 0) { nx = ox / out; ny = oy / out; } else if (qx > qy) { nx = 1; ny = 0; } else { nx = 0; ny = 1; }
+    nx *= Math.sign(px + .5 - cx) || 1; ny *= Math.sign(py + .5 - cy) || 1;
+    const depth = Math.max(0, -sd), e = Math.max(0, 1 - depth / band), bend = e * e * maxBend;
+    const offX = -nx * bend + (cx - px) * 0.025, offY = -ny * bend + (cy - py) * 0.025;   // внутрь у кромки + лёгкая линза
+    const i = (py * w + px) * 4;
+    d[i] = Math.max(0, Math.min(255, 128 + offX / scale * 255)); d[i + 1] = Math.max(0, Math.min(255, 128 + offY / scale * 255)); d[i + 2] = 128; d[i + 3] = 255;
+  }
+  x.putImageData(img, 0, 0); return c.toDataURL();
+}
+function syncGlass() {
+  const defs = document.getElementById('lgDefs'); if (!defs) return;
+  let changed = false;
+  for (const [sel, id] of GLASS) {
+    const el = document.querySelector(sel); if (!el) continue;
+    const rc = el.getBoundingClientRect(), w = Math.round(rc.width), h = Math.round(rc.height);
+    if (w < 20 || h < 20) continue;
+    const r = Math.min(parseFloat(getComputedStyle(el).borderTopLeftRadius) || 20, h / 2), key = w + 'x' + h + 'x' + r;
+    if (glassKeys[id] === key) continue;
+    glassKeys[id] = key; changed = true;
+    const S = Math.round(Math.min(h, 60)), map = lensMap(w, h, r, S);
+    const ch = (k, sc, m) => `<feDisplacementMap in="SourceGraphic" in2="m" scale="${sc}" xChannelSelector="R" yChannelSelector="G" result="d${k}"/><feColorMatrix in="d${k}" type="matrix" values="${m}" result="c${k}"/>`;
+    const html = `<filter id="${id}" x="0" y="0" width="${w}" height="${h}" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
+      <feImage href="${map}" x="0" y="0" width="${w}" height="${h}" preserveAspectRatio="none" result="m"/>
+      ${ch('r', S * 1.1, '1 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 1 0')}${ch('g', S, '0 0 0 0 0  0 1 0 0 0  0 0 0 0 0  0 0 0 1 0')}${ch('b', S * 0.9, '0 0 0 0 0  0 0 0 0 0  0 0 1 0 0  0 0 0 1 0')}
+      <feBlend in="cr" in2="cg" mode="screen" result="rg"/><feBlend in="rg" in2="cb" mode="screen" result="rgb"/>
+      <feGaussianBlur in="rgb" stdDeviation="0.8" result="bl"/><feColorMatrix in="bl" type="saturate" values="1.5"/></filter>`;
+    const old = document.getElementById(id); if (old) old.remove();
+    defs.insertAdjacentHTML('beforeend', html);
+  }
+  // Chrome кэширует фильтр: после замены переприсваиваем свойство, чтобы он подхватил новую карту
+  if (changed) GLASS.forEach(([sel]) => { const el = document.querySelector(sel + '>.lg'); if (el) { el.style.backdropFilter = 'none'; el.offsetWidth; el.style.backdropFilter = ''; } });
+}
+// SVG-фильтр внутри backdrop-filter понимает только Chromium (Chrome, Edge, Яндекс, Samsung); userAgentData есть только у него
+if (navigator.userAgentData?.brands?.some(b => /Chromium/.test(b.brand))) document.documentElement.classList.add('lg-on');
+window.addEventListener('resize', () => setTimeout(syncGlass, 100));
 
 /* ---------- Анимации ----------
    render() каждый раз пересоздаёт страницу, поэтому анимируем только то, что появилось впервые (по ключу).
@@ -1124,7 +1174,7 @@ function navHtml() {
   const on = v => (groups[v] ? groups[v].includes(S.view) : S.view === v) && (v !== 'profile' || S.profileId === me.id) ? 'on' : '';
   const nav = (v, href, icon, label, badge = 0, cls = '') => `<a class="navlink ${on(v)} ${cls}" href="#${href}">${icon}<span>${label}</span>${badge ? `<span class="badge">${badge}</span>` : ''}</a>`;
   const moreOn = ['more', 'profile', 'people', 'albums', 'album', 'disk', 'vid', 'settings', 'edit', 'notif', 'post', 'clubs', 'club', 'admin', 'guests', 'tag', 'apps', 'answers', 'question', 'mail', 'notes', 'weather', 'games', 'market', 'lot', 'music', 'saved', 'events', 'event', 'rates', 'radio', 'horo'].includes(S.view) ? 'on' : '';
-  return `<nav class="nav">
+  return `<nav class="nav"><i class="lg" aria-hidden="true"></i>
       ${nav('profile', 'id/' + me.id, I.home, 'Профиль', 0, 'm-hide')}
       ${nav('feed', 'feed', I.feed, 'Лента')}
       ${nav('messages', 'im', I.msg, 'Чаты', unread)}
@@ -1191,7 +1241,7 @@ function shell() {
   else main = viewFeed();
   const up = S.upload ? `<div class="card pad upbar" role="status"><div class="row"><span class="grow">${esc(S.upload.label)}</span><b class="tnum">${Math.round(S.upload.pct * 100)}%</b></div><div class="bar"><i style="width:${Math.round(S.upload.pct * 100)}%"></i></div><div class="hint">Не закрывайте страницу до конца загрузки</div></div>` : '';
   return `
-  <header class="top"><div class="top-in">
+  <header class="top"><i class="lg" aria-hidden="true"></i><div class="top-in">
     <a class="logo" href="#feed" aria-label="VСмске, лента"><span class="logo-mark">вс</span><span class="logo-word" style="color:var(--fg)">VСмске</span></a>
     <form class="search" data-form="search">${I.search}<input id="q" type="search" placeholder="Поиск людей" autocomplete="off" value="${esc(S.view === 'people' ? S.query : '')}"></form>
     <a class="top-bell icon-btn ${S.view === 'notif' ? 'on' : ''}" href="#notif" aria-label="Уведомления">${I.bell}${unseenNotifs() ? `<span class="badge">${unseenNotifs()}</span>` : ''}</a>
@@ -2196,7 +2246,7 @@ function lyrPicker() {
 function musicBar() {
   const t = curTrack(); if (!t) return '';
   const a = player.audio, pct = a.duration ? a.currentTime / a.duration * 100 : 0;
-  return `<div class="mbar" role="region" aria-label="Плеер"><div class="mbar-fill" id="mbarFill" style="width:${pct}%"></div>
+  return `<div class="mbar" role="region" aria-label="Плеер"><i class="lg" aria-hidden="true"></i><div class="mbar-fill" id="mbarFill" style="width:${pct}%"></div>
     <button class="icon-btn" data-act="mprev" aria-label="Предыдущий">${I.prev}</button>
     <button class="mbar-play" data-act="mplay" aria-label="${a.paused ? 'Играть' : 'Пауза'}">${player.loading ? '<span class="spin sm"></span>' : a.paused ? I.play : I.pause}</button>
     <button class="icon-btn" data-act="mnext" aria-label="Следующий">${I.next}</button>

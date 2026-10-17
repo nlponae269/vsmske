@@ -1279,7 +1279,6 @@ body:has(.fp) .toast{bottom:auto;top:calc(64px + env(safe-area-inset-top,0px))}
 .top,.nav,.mbar,.card:not(.admin-card),.ov-in.modal,.app-tile,.login .card{position:relative;isolation:isolate;
   box-shadow:inset 0 1px 0 var(--rim),inset 1px 0 0 var(--rim2),inset -1px 0 0 var(--rim2),inset 0 -1px 0 var(--rim2),var(--shadow)}
 .top,.nav,.mbar{-webkit-backdrop-filter:var(--lq);backdrop-filter:var(--lq)}
-.top,.nav,.mbar{backdrop-filter:url(#lg) var(--lq)}
 .top{position:sticky}
 .nav,.mbar{position:fixed}
 .top{background:color-mix(in srgb,var(--glass) 70%,transparent)}
@@ -1417,3 +1416,22 @@ body:has(.fp) .toast{bottom:auto;top:calc(64px + env(safe-area-inset-top,0px))}
 @media (max-height:640px){.fp-play{width:62px;height:62px}.fp-wave{height:40px}.fp-in{gap:10px}}
 .fp-art,.fp-viz,.fp-top{touch-action:none;-webkit-user-select:none;user-select:none}
 .fp-cover{-webkit-user-drag:none}
+
+/* 5.2: liquid glass как в iOS — почти прозрачное стекло с преломлением (карта #lgTop/#lgNav/#lgBar строится в app.js).
+   Тонировка слабая, чтобы было видно, как изгибается фон; в браузерах без SVG-фильтров остаётся размытие (-webkit-backdrop-filter). */
+:root{--lq-tint:rgba(255,255,255,.28)}
+:root[data-theme="dark"]{--lq-tint:rgba(20,10,38,.3)}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){--lq-tint:rgba(20,10,38,.3)}}
+.top,.nav,.mbar{background:var(--lq-tint)}
+.top::before,.nav::before,.mbar::before{padding:1.5px;background:linear-gradient(150deg,rgba(255,255,255,.95) 0%,rgba(255,255,255,.2) 22%,transparent 45%,transparent 70%,rgba(255,255,255,.55) 100%)}
+.nav :is(a,button):not(.on){text-shadow:0 1px 2px rgba(0,0,0,.15)}
+.top .search input{background:color-mix(in srgb,var(--surface-2) 60%,transparent)}
+/* Преломление — на отдельном пустом слое .lg внутри (у самого дока фильтр сбивается из-за всплывающих подписей).
+   Класс lg-on ставит app.js только в Chromium: там SVG-фильтр в backdrop-filter работает, и размытие у родителя снимается,
+   иначе слой видел бы только его. Safari и Firefox остаются с размытием. */
+.lg{position:absolute;inset:0;border-radius:inherit;z-index:-1;pointer-events:none;display:none}
+.lg-on .lg{display:block}
+.lg-on :is(.top,.nav,.mbar){-webkit-backdrop-filter:none;backdrop-filter:none}
+.lg-on .top>.lg{backdrop-filter:url(#lgTop) brightness(1.05)}
+.lg-on .nav>.lg{backdrop-filter:url(#lgNav) brightness(1.05)}
+.lg-on .mbar>.lg{backdrop-filter:url(#lgBar) brightness(1.05)}
