@@ -47,7 +47,7 @@ const MAX_POST_IMG = 700000;   // символов dataURL (~520 КБ), лими
 const MAX_AVATAR = 120000;
 const CHUNK = 700000;                                   // символов base64 в одном куске (кратно 4)
 const LIMITS = { disk: 10 * 1024 * 1024, video: 20 * 1024 * 1024, music: 12 * 1024 * 1024 };
-const VERSION = '3.2';
+const VERSION = '3.3';
 const MAX_MSG_IMG = 380000;    // фото в сообщении
 const ONLINE_MS = 5 * 60 * 1000; // «в сети», если заходил не раньше 5 минут назад
 
@@ -79,6 +79,7 @@ applyTheme(lsGet('vs_theme'));
 const ACCENTS = [['blue', 'Синий', '#2F44D0'], ['violet', 'Фиолетовый', '#6A47C9'], ['green', 'Зелёный', '#1F8A5B'], ['orange', 'Оранжевый', '#D9641E'], ['pink', 'Розовый', '#C2357A']];
 function applyAccent(a) { if (a && a !== 'blue') document.documentElement.dataset.accent = a; else delete document.documentElement.dataset.accent; }
 applyAccent(lsGet('vs_accent'));
+if (lsGet('vs_anim') === 'off') document.documentElement.dataset.anim = 'off';
 
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 // Текст с кликабельными ссылками (всё остальное экранируется)
@@ -1004,7 +1005,7 @@ function render() {
   const msgs = app.querySelector('.msgs');
   const atBottom = !msgs || msgs.scrollHeight - msgs.scrollTop - msgs.clientHeight < 80;
 
-  if (S.phase === 'boot') app.innerHTML = `<div class="boot"><div class="spin"></div></div>`;
+  if (S.phase === 'boot') app.innerHTML = `<div class="boot"><span class="boot-logo">VС</span></div>`;
   else if (S.phase === 'auth') app.innerHTML = viewAuth();
   else if (S.phase === 'onboarding') app.innerHTML = viewOnboarding();
   else app.innerHTML = shell();
@@ -1017,8 +1018,51 @@ function render() {
     box.scrollTop = box.scrollHeight;
     box.querySelectorAll('img').forEach(im => { if (!im.complete) im.addEventListener('load', () => { box.scrollTop = box.scrollHeight; }, { once: true }); });
   }
+  animate();
 }
 const resetIds = new Set();
+
+/* ---------- Анимации ----------
+   render() каждый раз пересоздаёт страницу, поэтому анимируем только то, что появилось впервые (по ключу).
+   Если перерисовка случилась посреди анимации, она продолжается с того же места (отрицательная задержка). */
+const ANIM_ITEMS = 'main > *, .post, .uitem, .app-tile, .msg, .comment, .gift, .login-in, .boot-logo';
+const ANIM_ONCE = ['.ov', '.fp', '.post-menu', '.nick-menu', '.mod-box', '.emoji-pop'];   // окна: снова анимируются, когда открываются заново
+const ANIM_POP = '.pill.liked, .fp-ic.on, .badge, .fp-chip.on';
+const animSeen = new Map();
+let animPage = '', animStart = 0, lastTap = 0;
+document.addEventListener('pointerdown', () => { lastTap = performance.now(); }, true);
+const animOff = () => document.documentElement.dataset.anim === 'off' || matchMedia('(prefers-reduced-motion: reduce)').matches;
+function animate() {
+  if (animOff()) return;
+  const now = performance.now();
+  const page = S.phase + '|' + (S.phase === 'app' ? location.hash : S.authTab || '');
+  if (page !== animPage) { animPage = page; animStart = now; animSeen.clear(); }
+  const fresh = now - animStart < 1500;   // первые полторы секунды на странице — появление «лесенкой»
+  const run = (el, key, cls, delay) => {
+    const was = animSeen.get(key);
+    if (!was) { animSeen.set(key, { t: now, d: delay }); el.classList.add(cls); el.style.animationDelay = delay + 'ms'; }
+    else if (now - was.t < was.d + 600) { el.classList.add(cls); el.style.animationDelay = (was.d - (now - was.t)) + 'ms'; }
+  };
+  let n = 0, born = 0;
+  app.querySelectorAll(ANIM_ITEMS).forEach((el, i) => {
+    const key = 'i|' + (el.matches('.post, .uitem, .app-tile, .msg, .comment, .gift') ? el.className.split(' ')[0] : el.className.split(' ').slice(0, 3).join('.'))
+      + '|' + (el.dataset.id || el.querySelector('[data-id]')?.dataset.id || el.getAttribute('href') || el.textContent.slice(0, 60));
+    if (animSeen.has(key)) return run(el, key, 'a-in', 0);
+    born++;
+    if (born > (fresh ? 40 : 14)) { animSeen.set(key, { t: 0, d: 0 }); return; }   // пачка из сотни сообщений не анимируется
+    run(el, key, 'a-in', fresh ? Math.min(n++, 12) * 40 : 0);
+  });
+  const present = new Set();
+  ANIM_ONCE.forEach(sel => app.querySelectorAll(sel).forEach(el => { present.add('o|' + sel); run(el, 'o|' + sel, 'a-in', 0); }));
+  ANIM_ONCE.forEach(sel => { if (!present.has('o|' + sel)) animSeen.delete('o|' + sel); });
+  app.querySelectorAll(ANIM_POP).forEach(el => {
+    const key = 'p|' + el.className + '|' + (el.dataset.id || el.closest('[href]')?.getAttribute('href') || '') + '|' + el.textContent.trim();
+    // сердечко прыгает только сразу после нажатия, счётчик — когда меняется уже на открытой странице
+    const ok = el.classList.contains('badge') ? !fresh : now - lastTap < 1500;
+    if (!animSeen.has(key) && !ok) { animSeen.set(key, { t: 0, d: 0 }); return; }
+    run(el, key, 'pop', 0);
+  });
+}
 
 function viewAuth() {
   const login = S.authTab === 'login';
@@ -1406,7 +1450,8 @@ function viewSettings() {
       <p class="hint" style="margin:0">Сохраняется на этом устройстве.</p></div>
     ${installCard()}
     <div class="card pad set"><h2 class="h" style="font-size:16px">Музыка</h2>
-      <div class="set-row"><span class="grow">Показывать в профиле, что я слушаю</span>${seg('listen', lsGet('vs_listen') === '0' ? 'off' : 'on', [['on', 'Да'], ['off', 'Нет']])}</div></div>
+      <div class="set-row"><span class="grow">Показывать в профиле, что я слушаю</span>${seg('listen', lsGet('vs_listen') === '0' ? 'off' : 'on', [['on', 'Да'], ['off', 'Нет']])}</div>
+      <div class="set-row"><span class="grow">Анимации</span>${seg('anim', lsGet('vs_anim') === 'off' ? 'off' : 'on', [['on', 'Вкл'], ['off', 'Выкл']])}</div></div>
     ${canNotify() ? `<div class="card pad set"><h2 class="h" style="font-size:16px">Уведомления</h2>
       <div class="set-row"><span class="grow">Новые сообщения, когда вкладка VСмске в фоне</span>${
         Notification.permission === 'denied' ? '<span class="muted small">Запрещены в настройках браузера</span>'
@@ -2906,6 +2951,7 @@ document.addEventListener('click', async e => {
       case 'resetpass': await sendPasswordResetEmail(auth, auth.currentUser.email); toast('Письмо для смены пароля отправлено на ' + auth.currentUser.email); break;
       case 'verify': await sendEmailVerification(auth.currentUser); toast('Письмо отправлено на ' + auth.currentUser.email + '. Откройте ссылку и войдите заново.'); break;
       case 'theme': lsSet('vs_theme', b.dataset.v); applyTheme(b.dataset.v); render(); break;
+      case 'anim': lsSet('vs_anim', b.dataset.v); document.documentElement.dataset.anim = b.dataset.v; render(); break;
       case 'listen': lsSet('vs_listen', b.dataset.v === 'off' ? '0' : '1'); if (b.dataset.v === 'off') { lastShared = 'off'; updateDoc(doc(db, 'users', uid()), { listening: null }).catch(console.error); } else lastShared = ''; render(); break;
       case 'accent': lsSet('vs_accent', b.dataset.v); applyAccent(b.dataset.v); render(); break;
       case 'pmsg': await updateDoc(doc(db, 'users', uid()), { 'privacy.messages': b.dataset.v }); toast('Сохранено'); break;
