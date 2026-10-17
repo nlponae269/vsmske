@@ -43,8 +43,8 @@ const NICK_RE = /^[a-z0-9._]{3,30}$/;
 const MAX_POST_IMG = 700000;   // символов dataURL (~520 КБ), лимит документа Firestore — 1 МБ
 const MAX_AVATAR = 120000;
 const CHUNK = 700000;                                   // символов base64 в одном куске (кратно 4)
-const LIMITS = { disk: 10 * 1024 * 1024, video: 20 * 1024 * 1024 };
-const VERSION = '1.9';
+const LIMITS = { disk: 10 * 1024 * 1024, video: 20 * 1024 * 1024, music: 12 * 1024 * 1024 };
+const VERSION = '2.0';
 const MAX_MSG_IMG = 380000;    // фото в сообщении
 const ONLINE_MS = 5 * 60 * 1000; // «в сети», если заходил не раньше 5 минут назад
 
@@ -73,11 +73,29 @@ function applyTheme(t) {
   else delete document.documentElement.dataset.theme;
 }
 applyTheme(lsGet('vs_theme'));
+const ACCENTS = [['blue', 'Синий', '#2F44D0'], ['violet', 'Фиолетовый', '#6A47C9'], ['green', 'Зелёный', '#1F8A5B'], ['orange', 'Оранжевый', '#D9641E'], ['pink', 'Розовый', '#C2357A']];
+function applyAccent(a) { if (a && a !== 'blue') document.documentElement.dataset.accent = a; else delete document.documentElement.dataset.accent; }
+applyAccent(lsGet('vs_accent'));
 
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 // Текст с кликабельными ссылками (всё остальное экранируется)
 const TAG_RE = /(#[\p{L}\d_]{2,30})/u;
-const tagify = t => t.split(TAG_RE).map((x, i) => i % 2 ? `<a class="tag" href="#tag/${encodeURIComponent(x.slice(1).toLowerCase())}">${esc(x)}</a>` : esc(x)).join('');
+// @ник → ссылка на профиль (но не внутри почтового адреса вроде a@b.ru)
+const mentionify = t => {
+  const parts = t.split(/(@[a-zA-Z0-9._]{3,30})/);
+  return parts.map((x, i) => i % 2 && !/[a-zA-Z0-9._]$/.test(parts[i - 1]) ? `<a class="tag" href="#u/${encodeURIComponent(x.slice(1).toLowerCase())}">${esc(x)}</a>` : esc(x)).join('');
+};
+const tagify = t => t.split(TAG_RE).map((x, i) => i % 2 ? `<a class="tag" href="#tag/${encodeURIComponent(x.slice(1).toLowerCase())}">${esc(x)}</a>` : mentionify(x)).join('');
+const extractMentions = t => [...new Set([...String(t || '').matchAll(/(?:^|[\s(,.!?])@([a-z0-9._]{3,30})/gi)].map(m => m[1].toLowerCase()))].slice(0, 5);
+// Уведомляем упомянутых (по короткому имени), себя и уже уведомлённого автора пропускаем
+async function notifyMentions(text, postId, skip = []) {
+  for (const nick of extractMentions(text)) {
+    try { const s = await getDoc(doc(db, 'usernames', nick)); const to = s.exists() ? s.data().uid : null; if (to && !skip.includes(to)) notify(to, 'mention', postId, text); }
+    catch (e) { console.error(e); }
+  }
+}
+// Сообщение только из 1–3 смайликов показываем крупно
+const isJumbo = t => { const s = String(t || '').trim(); if (!s || s.length > 24) return false; const em = s.match(/\p{Extended_Pictographic}/gu) || []; return em.length >= 1 && em.length <= 3 && !s.replace(/[\p{Extended_Pictographic}\p{Emoji_Component}\u200d\ufe0f\s]/gu, '').length; };
 const linkify = t => String(t ?? '').split(/(https?:\/\/[^\s<]+[^\s<.,:;!?)\]"'»])/g)
   .map((part, i) => i % 2 ? `<a href="${esc(part)}" target="_blank" rel="noopener nofollow ugc">${esc(part)}</a>` : tagify(part)).join('');
 const extractTags = t => [...new Set([...String(t || '').matchAll(/#([\p{L}\d_]{2,30})/gu)].map(m => m[1].toLowerCase()))].slice(0, 10);
@@ -267,6 +285,10 @@ const I = {
   gear:'<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>',
   poll:'<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M5 20V10M12 20V4M19 20v-7"/></svg>',
   eye:'<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg>',
+  music:'<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18V5l11-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="17" cy="16" r="3"/></svg>',
+  cart:'<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 4h2l2.4 11.2a2 2 0 0 0 2 1.6h7.7a2 2 0 0 0 2-1.5L21 8H6.2"/><circle cx="10" cy="20" r="1.4"/><circle cx="17" cy="20" r="1.4"/></svg>',
+  next:'<svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M6 5l9 7-9 7zM17 5h2v14h-2z"/></svg>',
+  prev:'<svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M18 5l-9 7 9 7zM5 5h2v14H5z"/></svg>',
   apps:'<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="2"/><rect x="14" y="3" width="7" height="7" rx="2"/><rect x="3" y="14" width="7" height="7" rx="2"/><rect x="14" y="14" width="7" height="7" rx="2"/></svg>',
   ask:'<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M9.5 9a2.5 2.5 0 1 1 3.5 2.3c-.6.3-1 .9-1 1.6V14M12 17h.01"/></svg>',
   mail:'<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 7l9 6 9-6"/></svg>',
@@ -327,6 +349,7 @@ const uid = () => S.authUser?.uid;
 const app = document.getElementById('app');
 
 function stopAll() {
+  if (typeof player !== 'undefined') { player.audio.pause(); player.queue = []; player.i = -1; }
   globalUnsubs.forEach(u => u()); globalUnsubs = [];
   clearView(); routedOnce = false;
   Object.assign(cache, { users: new Map(), feed: new Map(), wall: [], comments: new Map(), chats: [], messages: [], incoming: [], outgoing: [], people: [],
@@ -521,6 +544,10 @@ function route() {
   else if (v === 'post' && arg) { S.view = 'post'; S.postId = arg; }
   else if (v === 'club' && arg) { S.view = 'club'; S.clubId = arg; }
   else if (v === 'q' && arg) { S.view = 'question'; S.qId = arg; }
+  else if (v === 'market') { S.view = 'market'; S.mktCat = arg || 'all'; }
+  else if (v === 'lot' && arg) { S.view = 'lot'; S.lotId = arg; }
+  else if (v === 'music') { S.view = 'music'; S.musicTab = arg || 'my'; }
+  else if (v === 'u' && arg) { getDoc(doc(db, 'usernames', decodeURIComponent(arg).toLowerCase())).then(s => s.exists() ? go('id/' + s.data().uid) : (toast('Нет пользователя @' + decodeURIComponent(arg)), history.back())).catch(() => history.back()); return; }
   else if (v === 'answers') { S.view = 'answers'; S.ansCat = arg || 'all'; }
   else if (v === 'mail') { S.view = 'mail'; S.mailBox = arg === 'sent' ? 'sent' : arg === 'new' ? 'new' : 'in'; S.mailId = arg && !['sent', 'new', 'in'].includes(arg) ? arg : null; }
   else if (v === 'games') { S.view = 'games'; S.game = arg || null; }
@@ -531,7 +558,7 @@ function route() {
   if (S.view !== 'watch') { S.videoSrc = null; S.videoErr = null; }
   S.lightbox = null; S.lightboxImg = null; S.preview = null; S.linkForm = false; S.newAlbum = false;
   S.viewImg = null; S.postMenu = null; S.emoji = null; S.msgSel = null; S.profMenu = false; S.modOpen = false; S.report = null;
-  S.newQ = false; S.noteEdit = null; if (S.view !== 'mail') S.mailDraft = null;
+  S.newQ = false; S.noteEdit = null; S.giftFor = null; S.newLot = false; if (S.view !== 'mail') S.mailDraft = null;
   S.newRoom = null; S.fwd = null; S.roomInfo = false; S.story = null; S.storyDraft = null; clearTimeout(storyTimer); S.clubEdit = false; S.editGroupPhoto = undefined; S.editGroupCover = null;
   if (S.view !== 'messages') S.replyTo = null;
   recStop(false); players.forEach(p => p.pause()); players.clear();
@@ -564,7 +591,10 @@ function attachView() {
         listen(query(collection(db, 'posts'), where('wallId', 'in', c), orderBy('createdAt', 'desc'), limit(30)), 'g' + i));
     }
   } else if (S.view === 'profile') {
-    const pid = S.profileId; cache.wall = [];
+    const pid = S.profileId; cache.wall = []; cache.gifts = [];
+    viewUnsubs.push(onSnapshot(query(collection(db, 'gifts'), where('to', '==', pid), limit(60)), s => {
+      cache.gifts = s.docs.map(data).sort((a, b) => ms(b.createdAt) - ms(a.createdAt)); ensureUsers(cache.gifts.map(g => g.from)); render();
+    }, console.error));
     if (pid !== id) recordGuest(pid);
     if (pid !== id) viewUnsubs.push(onSnapshot(doc(db, 'users', pid), s => {
       cache.users.set(pid, s.exists() ? data(s) : { id: pid, name: 'Страница не найдена', friends: [], deleted: true }); render();
@@ -647,6 +677,17 @@ function attachView() {
       cache.post = s.exists() ? data(s) : { id: pid, missing: true }; S.loading = false;
       if (!cache.post.missing) ensureUsers([cache.post.authorId, cache.post.wallId]); render();
     }, onViewErr));
+  } else if (S.view === 'market') {
+    cache.lots = [];
+    const q = S.mktCat === 'mine' ? query(collection(db, 'market'), where('ownerId', '==', id), limit(100))
+      : S.mktCat !== 'all' ? query(collection(db, 'market'), where('category', '==', S.mktCat), limit(100))
+      : query(collection(db, 'market'), orderBy('createdAt', 'desc'), limit(60));
+    viewUnsubs.push(onSnapshot(q, s => { cache.lots = s.docs.map(data).sort((a, b) => (a.sold - b.sold) || ms(b.createdAt) - ms(a.createdAt)); S.loading = false; render(); }, onViewErr));
+  } else if (S.view === 'lot') {
+    cache.lot = null;
+    viewUnsubs.push(onSnapshot(doc(db, 'market', S.lotId), s => { cache.lot = s.exists() ? data(s) : { id: S.lotId, missing: true }; if (s.exists()) ensureUsers([cache.lot.ownerId]); S.loading = false; render(); }, onViewErr));
+  } else if (S.view === 'music') {
+    loadMusic();
   } else if (S.view === 'answers') {
     cache.questions = [];
     const q = S.ansCat === 'mine' ? query(collection(db, 'questions'), where('authorId', '==', id), limit(100))
@@ -835,6 +876,10 @@ const blockedMe = u => (u?.blocked || []).includes(S.me?.id);
 const MONTHS_FULL = ['января', 'февраля', 'марта', 'апреля', 'мая', 'июня', 'июля', 'августа', 'сентября', 'октября', 'ноября', 'декабря'];
 const bdayText = b => { const [y, m, d] = String(b || '').split('-').map(Number); return d ? `${d} ${MONTHS_FULL[m - 1]} ${y}` : ''; };
 const isBdayToday = b => { const t = new Date(); return typeof b === 'string' && b.slice(5) === pad2(t.getMonth() + 1) + '-' + pad2(t.getDate()); };
+// Подарки: ключ → [эмодзи, название]
+const GIFTS = { gift: ['🎁', 'Подарок'], rose: ['🌹', 'Роза'], bear: ['🧸', 'Мишка'], cake: ['🎂', 'Торт'], heart: ['❤️', 'Сердце'], clover: ['🍀', 'На удачу'],
+  cup: ['🏆', 'Кубок'], star: ['🌟', 'Звезда'], coffee: ['☕', 'Кофе'], cat: ['🐱', 'Котик'], pizza: ['🍕', 'Пицца'], car: ['🏎️', 'Машина'],
+  crown: ['👑', 'Корона'], balloon: ['🎈', 'Шарик'], diamond: ['💎', 'Бриллиант'], rocket: ['🚀', 'Ракета'] };
 const BAN_DAYS = [[1, '1 день'], [7, 'Неделя'], [30, 'Месяц'], [0, 'Навсегда']];
 const nameLink = u => u && !u.deleted ? `<a class="name" href="#id/${esc(u.id)}" style="color:var(--fg);font-weight:600">${esc(u.name)}</a>${admBadge(u)}` : `<span class="name">${esc(u?.name || '…')}</span>`;
 const loadingBox = () => `<div class="card loading"><div class="spin"></div></div>`;
@@ -924,10 +969,10 @@ function viewOnboarding() {
 
 function navHtml() {
   const me = S.me, unread = cache.chats.filter(isUnread).length, reqs = cache.incoming.length;
-  const groups = { video: ['video', 'watch'], albums: ['albums', 'album'], clubs: ['clubs', 'club'], apps: ['apps', 'answers', 'question', 'mail', 'notes', 'weather', 'games'] };
+  const groups = { video: ['video', 'watch'], albums: ['albums', 'album'], clubs: ['clubs', 'club'], apps: ['apps', 'answers', 'question', 'mail', 'notes', 'weather', 'games', 'market', 'lot'], music: ['music'] };
   const on = v => (groups[v] ? groups[v].includes(S.view) : S.view === v) && (v !== 'profile' || S.profileId === me.id) ? 'on' : '';
   const nav = (v, href, icon, label, badge = 0, cls = '') => `<a class="navlink ${on(v)} ${cls}" href="#${href}">${icon}<span>${label}</span>${badge ? `<span class="badge">${badge}</span>` : ''}</a>`;
-  const moreOn = ['more', 'profile', 'people', 'albums', 'album', 'disk', 'vid', 'settings', 'edit', 'notif', 'post', 'clubs', 'club', 'admin', 'guests', 'tag', 'apps', 'answers', 'question', 'mail', 'notes', 'weather', 'games'].includes(S.view) ? 'on' : '';
+  const moreOn = ['more', 'profile', 'people', 'albums', 'album', 'disk', 'vid', 'settings', 'edit', 'notif', 'post', 'clubs', 'club', 'admin', 'guests', 'tag', 'apps', 'answers', 'question', 'mail', 'notes', 'weather', 'games', 'market', 'lot', 'music'].includes(S.view) ? 'on' : '';
   return `<nav class="nav">
       ${nav('profile', 'id/' + me.id, I.home, 'Моя страница', 0, 'm-hide')}
       ${nav('feed', 'feed', I.feed, 'Новости')}
@@ -936,6 +981,7 @@ function navHtml() {
       ${nav('notif', 'notif', I.bell, 'Уведомления', unseenNotifs(), 'm-hide')}
       ${nav('people', 'people', I.people, 'Люди', 0, 'm-hide')}
       ${nav('apps', 'apps', I.apps, 'Сервисы', unreadMail(), 'm-hide')}
+      ${nav('music', 'music', I.music, 'Музыка', 0, 'm-hide')}
       ${nav('clubs', 'clubs', I.club, 'Сообщества', 0, 'm-hide')}
       ${nav('video', 'video', I.video, 'Видео')}
       ${nav('albums', 'albums', I.album, 'Альбомы', 0, 'm-hide')}
@@ -971,6 +1017,9 @@ function shell() {
   else if (S.view === 'clubs') main = viewClubs();
   else if (S.view === 'guests') main = viewGuests();
   else if (S.view === 'apps') main = viewApps();
+  else if (S.view === 'market') main = viewMarket();
+  else if (S.view === 'lot') main = viewLot();
+  else if (S.view === 'music') main = viewMusic();
   else if (S.view === 'answers') main = viewAnswers();
   else if (S.view === 'question') main = viewQuestion();
   else if (S.view === 'mail') main = viewMail();
@@ -994,6 +1043,7 @@ function shell() {
     <main>${banOf(me) ? `<div class="card pad ban-banner" role="alert"><b>⛔ Ваш аккаунт заблокирован ${banText(banOf(me))}</b>
       ${banOf(me).reason ? `<div class="small">Причина: ${esc(banOf(me).reason)}</div>` : ''}<div class="small">Пока действует блокировка, нельзя писать записи, комментарии и сообщения.</div></div>` : ''}${up}${main}</main>
   </div>
+  ${musicBar()}
   ${overlay()}`;
 }
 
@@ -1001,6 +1051,14 @@ function shell() {
 const REPORT_REASONS = { spam: 'Спам', abuse: 'Оскорбления', nsfw: 'Неприемлемый контент', fraud: 'Мошенничество', other: 'Другое' };
 function overlay() {
   if (S.story) return storyOverlay();
+  if (S.giftFor) {
+    const u = U(S.giftFor);
+    return `<div class="ov" data-act="ovx"><div class="ov-in modal" data-stop="1">
+      <div class="row"><b class="grow">Подарок для ${esc(u?.name || '')}</b><button class="icon-btn" data-act="ovx" aria-label="Закрыть">✕</button></div>
+      <div class="gift-pick">${Object.entries(GIFTS).map(([k, [e, l]]) => `<button class="${S.giftSel === k ? 'on' : ''}" data-act="giftsel" data-k="${k}" title="${l}" aria-label="${l}">${e}<span>${l}</span></button>`).join('')}</div>
+      <input id="giftText" class="inp" maxlength="200" placeholder="Подпись (необязательно)">
+      <button class="btn" data-act="giftsend" ${S.giftSel ? '' : 'disabled'}>Подарить ${S.giftSel ? GIFTS[S.giftSel][0] : ''}</button></div></div>`;
+  }
   if (S.storyDraft) return `<div class="ov" data-act="ovx"><div class="ov-in modal" data-stop="1">
       <div class="row"><b class="grow">Новая история</b><button class="icon-btn" data-act="ovx" aria-label="Закрыть">✕</button></div>
       <img class="story-prev" src="${esc(S.storyDraft.image)}" alt="Предпросмотр">
@@ -1227,6 +1285,7 @@ function viewSettings() {
   return `<div class="card pad"><h1 class="h brandh">Настройки</h1></div>
     <div class="card pad set"><h2 class="h" style="font-size:16px">Оформление</h2>
       <div class="set-row"><span class="grow">Тема</span>${seg('theme', th, [['system', 'Как в системе'], ['light', 'Светлая'], ['dark', 'Тёмная']])}</div>
+      <div class="set-row"><span class="grow">Цвет</span><div class="accents" role="radiogroup">${ACCENTS.map(([k, l, c]) => `<button role="radio" aria-checked="${(lsGet('vs_accent') || 'blue') === k}" aria-label="${l}" title="${l}" class="${(lsGet('vs_accent') || 'blue') === k ? 'on' : ''}" style="background:${c}" data-act="accent" data-v="${k}"></button>`).join('')}</div></div>
       <p class="hint" style="margin:0">Сохраняется на этом устройстве.</p></div>
     ${installCard()}
     ${canNotify() ? `<div class="card pad set"><h2 class="h" style="font-size:16px">Уведомления</h2>
@@ -1379,6 +1438,8 @@ function viewApps() {
   return `<div class="card pad"><h1 class="h brandh">Сервисы VС</h1><p class="muted small" style="margin:4px 0 0">Всё, что есть в VСмске, в одном месте</p></div>
     <div class="app-grid">
       ${tile('mail', I.mail, 'ВС Почта', mailAddr(S.me), 'c-mail', unreadMail())}
+      ${tile('music', I.music, 'ВС Музыка', 'Ваши треки и плеер', 'c-music')}
+      ${tile('market', I.cart, 'ВС Маркет', 'Купить и продать', 'c-market')}
       ${tile('answers', I.ask, 'ВС Ответы', 'Задайте вопрос — ответят люди', 'c-ask')}
       ${tile('notes', I.note, 'ВС Заметки', 'Списки и мысли — только для вас', 'c-note')}
       ${tile('weather', I.sun, 'ВС Погода', 'Прогноз на неделю', 'c-sun')}
@@ -1389,6 +1450,150 @@ function viewApps() {
       ${tile('clubs', I.club, 'Сообщества', 'Группы по интересам', 'c-club')}
       ${tile('vid', I.vid, 'VС ID', 'Вход, почта, пароль', 'c-vid')}
     </div>`;
+}
+
+/* ---------- ВС Музыка ---------- */
+// Плеер живёт вне #app, поэтому играет при переходах по сайту
+const player = { audio: new Audio(), queue: [], i: -1, loading: false };
+player.audio.preload = 'auto';
+const curTrack = () => player.queue[player.i];
+player.audio.addEventListener('timeupdate', () => {
+  const a = player.audio, fill = document.getElementById('mbarFill'), t = document.getElementById('mbarTime');
+  if (fill && a.duration) fill.style.width = (a.currentTime / a.duration * 100) + '%';
+  if (t) t.textContent = fmtDur(a.currentTime) + ' / ' + fmtDur(a.duration || curTrack()?.duration);
+});
+['play', 'pause'].forEach(ev => player.audio.addEventListener(ev, () => render()));
+player.audio.addEventListener('ended', () => playAt(player.i + 1));
+async function playAt(i) {
+  if (i < 0 || i >= player.queue.length) { player.audio.pause(); return; }
+  player.i = i; player.loading = true; render();
+  const t = curTrack();
+  try {
+    const url = await getFileUrl(t.fileId, t.type || 'audio/mpeg');
+    if (curTrack() !== t) return;
+    player.audio.src = url; await player.audio.play();
+    if ('mediaSession' in navigator) {
+      navigator.mediaSession.metadata = new MediaMetadata({ title: t.title, artist: t.artist || '', album: 'ВС Музыка' });
+      navigator.mediaSession.setActionHandler('nexttrack', () => playAt(player.i + 1));
+      navigator.mediaSession.setActionHandler('previoustrack', () => playAt(player.i - 1));
+    }
+  } catch (e) { console.error(e); toast('Не получилось включить трек'); }
+  finally { player.loading = false; render(); }
+}
+function playList(list, i) {
+  const t = list[i];
+  if (curTrack()?.id === t.id) { player.audio.paused ? player.audio.play() : player.audio.pause(); return; }
+  player.queue = list.slice(); playAt(i);
+}
+function musicBar() {
+  const t = curTrack(); if (!t) return '';
+  const a = player.audio, pct = a.duration ? a.currentTime / a.duration * 100 : 0;
+  return `<div class="mbar" role="region" aria-label="Плеер"><div class="mbar-fill" id="mbarFill" style="width:${pct}%"></div>
+    <button class="icon-btn" data-act="mprev" aria-label="Предыдущий">${I.prev}</button>
+    <button class="mbar-play" data-act="mplay" aria-label="${a.paused ? 'Играть' : 'Пауза'}">${player.loading ? '<span class="spin sm"></span>' : a.paused ? I.play : I.pause}</button>
+    <button class="icon-btn" data-act="mnext" aria-label="Следующий">${I.next}</button>
+    <a class="grow mbar-info" href="#music"><b>${esc(t.title)}</b><span class="muted small">${esc(t.artist || 'Неизвестный исполнитель')}</span></a>
+    <span class="small muted tnum" id="mbarTime">${fmtDur(a.currentTime)} / ${fmtDur(a.duration || t.duration)}</span>
+    <button class="icon-btn" data-act="mclose" aria-label="Закрыть плеер">✕</button></div>`;
+}
+async function loadMusic() {
+  const tab = S.musicTab, me = uid(); cache.tracks = [];
+  try {
+    let list = [];
+    if (tab === 'all') list = (await getDocs(query(collection(db, 'tracks'), orderBy('createdAt', 'desc'), limit(60)))).docs.map(data);
+    else {
+      const owner = tab === 'my' ? me : tab;
+      list = (await getDocs(query(collection(db, 'tracks'), where('ownerId', '==', owner), limit(200)))).docs.map(data);
+      if (tab === 'my') {
+        const saved = (S.me.tracks || []).filter(id => !list.some(t => t.id === id)).slice(0, 100);
+        const got = await Promise.all(saved.map(id => getDoc(doc(db, 'tracks', id)).catch(() => null)));
+        got.forEach(s2 => { if (s2?.exists()) list.push({ ...data(s2), saved: true }); });
+      }
+      list.sort((a, b) => ms(b.createdAt) - ms(a.createdAt));
+      ensureUsers([owner]);
+    }
+    if (S.view !== 'music' || S.musicTab !== tab) return;
+    cache.tracks = list; ensureUsers(list.map(t => t.ownerId));
+  } catch (e) { console.error(e); S.viewError = e; }
+  S.loading = false; render();
+}
+function trackDuration(file) {
+  return new Promise(res => {
+    const a = new Audio(), url = URL.createObjectURL(file); let done = false;
+    const fin = d => { if (done) return; done = true; URL.revokeObjectURL(url); res(isFinite(d) ? d : 0); };
+    a.preload = 'metadata'; a.onloadedmetadata = () => fin(a.duration); a.onerror = () => fin(0); a.src = url; setTimeout(() => fin(0), 6000);
+  });
+}
+async function uploadTrack(f) {
+  if (!(f.type || '').startsWith('audio/') && !/\.(mp3|m4a|aac|ogg|wav|flac|opus)$/i.test(f.name)) { toast('Выберите аудиофайл (mp3, m4a, ogg…)'); return; }
+  if (f.size > LIMITS.music) { toast(`Трек весит ${fmtSize(f.size)}, а можно до ${fmtSize(LIMITS.music)}`); return; }
+  if (S.upload) return;
+  const base = f.name.replace(/\.[^.]+$/, '').replace(/_/g, ' ').trim(), m = base.match(/^(.+?)\s+[-–—]\s+(.+)$/);
+  const artist = (m ? m[1] : '').slice(0, 120), title = (m ? m[2] : base).slice(0, 120) || 'Без названия';
+  const duration = await trackDuration(f);
+  const fileId = await putFile(f, 'music', `Загружаем «${title}»`);
+  await addDoc(collection(db, 'tracks'), { ownerId: uid(), title, artist, fileId, type: f.type || 'audio/mpeg', duration, size: f.size, createdAt: serverTimestamp() });
+  toast('Трек загружен'); if (S.view === 'music') loadMusic();
+}
+function viewMusic() {
+  const tab = S.musicTab, me = S.me, other = !['my', 'all'].includes(tab) ? U(tab) : null;
+  const t2 = (k, l) => `<a class="${tab === k ? 'on' : ''}" href="#music/${k}">${l}</a>`;
+  const list = cache.tracks || [], cur = curTrack();
+  return `<div class="card"><div class="pad" style="padding-bottom:0"><div class="row" style="flex-wrap:wrap"><div class="grow"><h1 class="h brandh">ВС Музыка</h1>
+      <div class="muted small">mp3, m4a, ogg до ${fmtSize(LIMITS.music)}. Название берётся из имени файла «Исполнитель - Песня».</div></div>
+      ${banOf(me) ? '' : `<button class="btn" data-act="pickmusic" ${S.upload ? 'disabled' : ''}>${I.upload}<span>Загрузить трек</span></button>`}</div></div>
+    <div class="tabs">${t2('my', 'Моя музыка')}${t2('all', 'Новое')}${other ? `<a class="on" href="#music/${esc(tab)}">${esc(other.name)}</a>` : ''}</div></div>
+    <div class="card ulist">${S.loading ? '<div class="loading"><div class="spin"></div></div>' : list.length ? list.map((t, i) => {
+      const playing = cur?.id === t.id && !player.audio.paused, mine = t.ownerId === me.id, saved = (me.tracks || []).includes(t.id);
+      return `<div class="uitem track ${cur?.id === t.id ? 'cur' : ''}"><button class="track-play" data-act="tplay" data-i="${i}" aria-label="${playing ? 'Пауза' : 'Играть'}">${playing ? I.pause : I.play}</button>
+        <div class="grow" style="min-width:0"><b class="track-title">${esc(t.title)}</b><div class="muted small">${esc(t.artist || 'Неизвестный исполнитель')}${!mine && U(t.ownerId) ? ' · добавил(а) ' + esc(U(t.ownerId).name) : ''}</div></div>
+        <span class="muted small tnum">${fmtDur(t.duration)}</span>
+        ${mine ? `<button class="icon-btn" data-act="tdel" data-id="${esc(t.id)}" aria-label="Удалить трек">${S.confirm === 'track:' + t.id ? 'Удалить?' : '🗑'}</button>`
+          : `<button class="icon-btn ${saved ? 'on' : ''}" data-act="tsave" data-id="${esc(t.id)}" aria-label="${saved ? 'Убрать из моей музыки' : 'Добавить в мою музыку'}" title="${saved ? 'Убрать из моей музыки' : 'Добавить в мою музыку'}">${saved ? '✓' : '＋'}</button>`}
+        ${isSiteAdmin() && !mine ? `<button class="icon-btn" data-act="tdel" data-id="${esc(t.id)}" aria-label="Удалить трек (админ)">${S.confirm === 'track:' + t.id ? 'Удалить?' : '🗑'}</button>` : ''}</div>`;
+    }).join('') : `<div class="empty">${tab === 'my' ? 'Здесь будут ваши треки. Загрузите первый или добавьте из «Нового».' : 'Треков пока нет'}</div>`}</div>`;
+}
+
+/* ---------- ВС Маркет ---------- */
+const MKT_CATS = { electronics: 'Электроника', clothes: 'Одежда', home: 'Для дома', auto: 'Авто', hobby: 'Хобби и спорт', kids: 'Детям', services: 'Услуги', other: 'Другое' };
+const fmtPrice = n => n ? Number(n).toLocaleString('ru-RU') + ' ₽' : 'Бесплатно';
+function viewMarket() {
+  const tab = (k, l) => `<a class="${S.mktCat === k ? 'on' : ''}" href="#market/${k}">${l}</a>`;
+  return `<div class="card"><div class="pad" style="padding-bottom:0"><div class="row" style="flex-wrap:wrap"><h1 class="h brandh grow">ВС Маркет</h1>
+      ${banOf(S.me) ? '' : `<button class="btn" data-act="newlot">Продать вещь</button>`}</div></div>
+    <div class="tabs scroll-x">${tab('all', 'Все')}${tab('mine', 'Мои')}${Object.entries(MKT_CATS).map(([k, l]) => tab(k, l)).join('')}</div></div>
+    ${S.newLot ? `<div class="card pad"><form class="form" data-form="lot">
+      <div class="lot-photo">${S.lotImage ? `<img src="${esc(S.lotImage)}" alt="Фото товара">` : `<span class="muted small">Фото товара</span>`}<button type="button" class="btn sec small" data-act="lotphoto">${S.lotImage ? 'Другое фото' : 'Добавить фото'}</button></div>
+      <div class="field"><label for="lTitle">Что продаёте</label><input id="lTitle" required minlength="2" maxlength="100" placeholder="Велосипед Stels, 26 дюймов"></div>
+      <div class="row" style="gap:10px;flex-wrap:wrap"><div class="field grow"><label for="lPrice">Цена, ₽</label><input id="lPrice" type="number" min="0" max="1000000000" step="1" inputmode="numeric" placeholder="0 — бесплатно"></div>
+        <div class="field grow"><label for="lCat">Раздел</label><select id="lCat" class="inp">${Object.entries(MKT_CATS).map(([k, l]) => `<option value="${k}" ${S.mktCat === k ? 'selected' : ''}>${l}</option>`).join('')}</select></div></div>
+      <div class="field"><label for="lCity">Город</label><input id="lCity" maxlength="40" value="${esc(S.me.city || '')}"></div>
+      <div class="field"><label for="lText">Описание</label><textarea id="lText" rows="4" maxlength="3000" placeholder="Состояние, размеры, как забрать"></textarea></div>
+      <div class="row"><button class="btn" type="submit" ${S.busy ? 'disabled' : ''}>Опубликовать</button><button type="button" class="btn ghost" data-act="newlot">Отмена</button></div></form></div>` : ''}
+    ${S.loading ? loadingBox() : cache.lots?.length ? `<div class="lot-grid">${cache.lots.map(l => `<a class="lot-card ${l.sold ? 'sold' : ''}" href="#lot/${esc(l.id)}">
+        <div class="lot-img">${safeImg(l.image) ? `<img src="${esc(l.image)}" alt="" loading="lazy">` : `<span>${I.cart}</span>`}${l.sold ? '<span class="lot-sold">Продано</span>' : ''}</div>
+        <b class="lot-price">${fmtPrice(l.price)}</b><span class="lot-title">${esc(l.title)}</span><span class="muted small">${esc(l.city || '')}${l.city ? ' · ' : ''}${ago(l.createdAt)}</span></a>`).join('')}</div>`
+      : `<div class="card empty">${S.mktCat === 'mine' ? 'У вас пока нет объявлений' : 'Объявлений пока нет'}</div>`}`;
+}
+function viewLot() {
+  const l = cache.lot;
+  if (!l) return loadingBox();
+  if (l.missing) return `<div class="card empty"><b>Объявление снято</b><a class="btn sec" href="#market">ВС Маркет</a></div>`;
+  const u = U(l.ownerId), own = l.ownerId === S.me.id;
+  return `<div class="card lot-page">
+    <div class="lot-big">${safeImg(l.image) ? `<img src="${esc(l.image)}" alt="${esc(l.title)}" data-act="viewlot">` : `<span>${I.cart}</span>`}</div>
+    <div class="pad" style="display:flex;flex-direction:column;gap:10px">
+      <div class="row"><a class="icon-btn" href="#market" aria-label="Назад">${I.back}</a><span class="chip">${esc(MKT_CATS[l.category] || '')}</span>${l.sold ? '<span class="chip ban-chip">Продано</span>' : ''}</div>
+      <div class="lot-price big">${fmtPrice(l.price)}</div><h1 class="h" style="font-size:20px">${esc(l.title)}</h1>
+      <div class="muted small">${esc(l.city || '')}${l.city ? ' · ' : ''}${ago(l.createdAt)}</div>
+      ${l.text ? `<div class="post-text">${linkify(l.text)}</div>` : ''}
+      <div class="row seller">${avatar(u, 44)}<div class="grow">${nameLink(u)}<div class="muted small">Продавец</div></div>
+        ${own ? '' : `<a class="btn" href="#im/${esc(l.ownerId)}">Написать продавцу</a>`}</div>
+      <div class="row" style="flex-wrap:wrap">
+        ${own ? `<button class="btn sec" data-act="lotsold" data-id="${esc(l.id)}">${l.sold ? 'Снова в продаже' : 'Отметить проданным'}</button>` : ''}
+        ${own || isSiteAdmin() ? `<button class="btn ${S.confirm === 'lot:' + l.id ? 'danger' : 'ghost'}" data-act="lotdel" data-id="${esc(l.id)}">${S.confirm === 'lot:' + l.id ? 'Снять объявление?' : 'Удалить'}</button>` : ''}
+        ${own ? '' : `<button class="btn ghost" data-act="report" data-type="post" data-id="${esc(l.id)}" data-user="${esc(l.ownerId)}" data-post="" data-text="${esc(l.title)}">Пожаловаться</button>`}
+      </div></div></div>`;
 }
 
 /* ---------- ВС Ответы ---------- */
@@ -1637,13 +1842,13 @@ function viewTag() {
 }
 
 /* Уведомления */
-const NOTIF_TEXT = { like: 'оценил(а) вашу запись', comment: 'прокомментировал(а) вашу запись', wall: 'написал(а) у вас на стене', friend: 'принял(а) вашу заявку в друзья', repost: 'поделился(ась) вашей записью', answer: 'ответил(а) на ваш вопрос', best: 'выбрал(а) ваш ответ лучшим' };
+const NOTIF_TEXT = { like: 'оценил(а) вашу запись', comment: 'прокомментировал(а) вашу запись', wall: 'написал(а) у вас на стене', friend: 'принял(а) вашу заявку в друзья', repost: 'поделился(ась) вашей записью', mention: 'упомянул(а) вас', gift: 'сделал(а) вам подарок', answer: 'ответил(а) на ваш вопрос', best: 'выбрал(а) ваш ответ лучшим' };
 function viewNotifs() {
   const list = cache.notifs.filter(n => n.from !== S.me.id);
   return `<div class="card"><div class="pad" style="padding-bottom:4px"><h1 class="h">Уведомления <span class="muted">${list.length}</span></h1></div>
     <div class="ulist">${list.length ? list.map(n => {
       const u = U(n.from); if (!u) return '';
-      const href = n.type === 'friend' ? '#id/' + n.from : ['answer', 'best'].includes(n.type) ? '#q/' + n.postId : n.postId ? '#post/' + n.postId : '#id/' + n.from;
+      const href = n.type === 'gift' ? '#id/' + uid() : n.type === 'friend' ? '#id/' + n.from : ['answer', 'best'].includes(n.type) ? '#q/' + n.postId : n.postId ? '#post/' + n.postId : '#id/' + n.from;
       return `<a class="uitem notif" href="${esc(href)}" style="color:var(--fg)">${avatar(u, 46, false)}
         <div class="grow" style="min-width:0"><b>${esc(u.name)}</b> ${NOTIF_TEXT[n.type] || ''}
           ${n.text ? `<div class="muted small notif-text">«${esc(n.text)}»</div>` : ''}<div class="muted small">${ago(n.createdAt)}</div></div>
@@ -1866,10 +2071,18 @@ function viewProfile() {
         ${friends.length ? `<div class="fgrid">${friends.map(f => `<a href="#id/${esc(f.id)}" style="color:var(--fg);display:flex;flex-direction:column;align-items:center;gap:6px;font-size:13px;min-width:0">${avatar(f, 52, false)}<span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:100%">${esc(f.name.split(' ')[0])}</span></a>`).join('')}</div>`
           : `<p class="muted small" style="margin:8px 0 0">${own ? 'Найдите знакомых в разделе «Люди»' : 'Пока никого'}</p>`}
       </div>
+      <div class="card pad"><div class="row"><b class="grow">Подарки</b><span class="muted small">${cache.gifts.length}</span></div>
+        ${cache.gifts.length ? `<div class="gift-grid">${cache.gifts.slice(0, 12).map(g => { const fr = U(g.from), [e, l] = GIFTS[g.gift] || GIFTS.gift;
+          return `<span class="gift" title="${esc(l + (fr ? ' от ' + fr.name : '') + (g.text ? ': ' + g.text : ''))}">${e}${own ? `<button class="gift-x" data-act="giftdel" data-id="${esc(g.id)}" aria-label="Убрать подарок">×</button>` : ''}</span>`; }).join('')}</div>
+          ${cache.gifts[0]?.text ? `<p class="muted small" style="margin:8px 0 0">«${esc(cache.gifts[0].text)}» — ${esc(U(cache.gifts[0].from)?.name || '')}</p>` : ''}`
+          : `<p class="muted small" style="margin:8px 0 0">${own ? 'Вам пока ничего не дарили' : 'Подарков пока нет'}</p>`}
+        ${!own && !banOf(me) ? `<button class="btn sec" style="margin-top:10px;width:100%" data-act="giftopen" data-id="${esc(u.id)}">🎁 Подарить</button>` : ''}
+      </div>
       <div class="card ulist">
         ${own ? `<a class="uitem setlink" href="#guests"><span class="ficon">${I.eye}</span><span class="grow">Гости страницы</span>›</a>` : ''}
         <a class="uitem setlink" href="#albums/${esc(u.id)}"><span class="ficon">${I.album}</span><span class="grow">Фотоальбомы</span>›</a>
         <a class="uitem setlink" href="#videos/${esc(u.id)}"><span class="ficon">${I.video}</span><span class="grow">Видео</span>›</a>
+        <a class="uitem setlink" href="#music/${own ? 'my' : esc(u.id)}"><span class="ficon">${I.music}</span><span class="grow">Музыка</span>›</a>
       </div>
     </div>
   </div>`;
@@ -1962,7 +2175,8 @@ function msgHtml(m, id, peerRead, room = false) {
   const quote = rp ? `<div class="msg-quote"><b>${esc(rp.from === id ? 'Вы' : (U(rp.from)?.name || '').split(' ')[0])}</b>${esc(rp.text || '')}</div>` : '';
   const who = room && !mine ? `<a class="msg-from" href="#id/${esc(m.from)}">${esc(U(m.from)?.name || '…')}</a>` : '';
   const fwd = fw ? `<div class="fwd"><div class="small">↪ Переслано${fw.name ? ` от <b>${esc(fw.name)}</b>` : ''}</div>${fw.text ? `<span>${linkify(fw.text)}</span>` : ''}</div>` : '';
-  return `<div class="msg ${mine ? 'me' : ''} ${img ? 'has-img' : ''} ${sel ? 'sel' : ''}" data-act="selmsg" data-id="${esc(m.id)}">${who}${quote}${fwd}${img ? `<img class="msg-img" src="${esc(img)}" alt="Фото" data-act="viewimg" data-kind="msg" data-id="${esc(m.id)}">` : ''}${typeof m.audio === 'string' && m.audio.startsWith('data:audio/') ? voiceHtml(m) : ''}${m.text ? `<span>${linkify(m.text)}</span>` : ''}${reactsHtml(m, id)}<time>${hm(new Date(ms(m.createdAt)))}${ticks}</time>${sel ? `<div class="react-pick">${REACTS.map(e => `<button data-act="react" data-id="${esc(m.id)}" data-e="${e}" aria-label="Реакция ${e}">${e}</button>`).join('')}</div><div class="msg-acts"><button data-act="replymsg" data-id="${esc(m.id)}">${I.reply}Ответить</button><button data-act="fwdmsg" data-id="${esc(m.id)}">↪ Переслать</button>${mine ? `<button data-act="delmsg" data-id="${esc(m.id)}">${S.confirm === 'msg:' + m.id ? 'Удалить у всех?' : 'Удалить'}</button>` : ''}</div>` : ''}</div>`;
+  const jumbo = !img && !m.audio && !fw && !rp && isJumbo(m.text);
+  return `<div class="msg ${mine ? 'me' : ''} ${img ? 'has-img' : ''} ${sel ? 'sel' : ''} ${jumbo ? 'jumbo' : ''}" data-act="selmsg" data-id="${esc(m.id)}">${who}${quote}${fwd}${img ? `<img class="msg-img" src="${esc(img)}" alt="Фото" data-act="viewimg" data-kind="msg" data-id="${esc(m.id)}">` : ''}${typeof m.audio === 'string' && m.audio.startsWith('data:audio/') ? voiceHtml(m) : ''}${m.text ? `<span>${linkify(m.text)}</span>` : ''}${reactsHtml(m, id)}<time>${hm(new Date(ms(m.createdAt)))}${ticks}</time>${sel ? `<div class="react-pick">${REACTS.map(e => `<button data-act="react" data-id="${esc(m.id)}" data-e="${e}" aria-label="Реакция ${e}">${e}</button>`).join('')}</div><div class="msg-acts"><button data-act="replymsg" data-id="${esc(m.id)}">${I.reply}Ответить</button><button data-act="fwdmsg" data-id="${esc(m.id)}">↪ Переслать</button>${mine ? `<button data-act="delmsg" data-id="${esc(m.id)}">${S.confirm === 'msg:' + m.id ? 'Удалить у всех?' : 'Удалить'}</button>` : ''}</div>` : ''}</div>`;
 }
 const roomAvatar = (c, size) => `<span class="av room-av" style="width:${size}px;height:${size}px;font-size:${Math.round(size * .38)}px">${esc(initials(c?.name || 'Б'))}</span>`;
 
@@ -2060,7 +2274,7 @@ document.addEventListener('click', async e => {
   const stop = e.target.closest('[data-stop]'); if (stop && !stop.contains(b)) return;
   const { act, id } = b.dataset;
   const twoStep = key => { if (S.confirm === key) { S.confirm = null; return true; } S.confirm = key; render(); return false; };
-  if (!['delpost', 'unfriend', 'delvideo', 'delalbum', 'delfile', 'delphoto', 'delmsg', 'postmenu', 'block', 'rpost', 'profmenu', 'roomdel', 'roominfo', 'storydel', 'qdel', 'maildel', 'notedel'].includes(act)) S.confirm = null;
+  if (!['delpost', 'unfriend', 'delvideo', 'delalbum', 'delfile', 'delphoto', 'delmsg', 'postmenu', 'block', 'rpost', 'profmenu', 'roomdel', 'roominfo', 'storydel', 'qdel', 'maildel', 'notedel', 'lotdel', 'tdel'].includes(act)) S.confirm = null;
   if (!['selmsg', 'delmsg', 'replymsg', 'playvoice', 'fwdmsg'].includes(act)) S.msgSel = null;
   if (!['profmenu', 'block', 'modopen', 'ban', 'unban', 'report'].includes(act)) S.profMenu = false;
   if (!['postmenu', 'delpost', 'pinpost'].includes(act)) S.postMenu = null;
@@ -2173,6 +2387,7 @@ document.addEventListener('click', async e => {
       case 'resetpass': await sendPasswordResetEmail(auth, auth.currentUser.email); toast('Письмо для смены пароля отправлено на ' + auth.currentUser.email); break;
       case 'verify': await sendEmailVerification(auth.currentUser); toast('Письмо отправлено на ' + auth.currentUser.email + '. Откройте ссылку и войдите заново.'); break;
       case 'theme': lsSet('vs_theme', b.dataset.v); applyTheme(b.dataset.v); render(); break;
+      case 'accent': lsSet('vs_accent', b.dataset.v); applyAccent(b.dataset.v); render(); break;
       case 'pmsg': await updateDoc(doc(db, 'users', uid()), { 'privacy.messages': b.dataset.v }); toast('Сохранено'); break;
       case 'pwall': await updateDoc(doc(db, 'users', uid()), { 'privacy.wall': b.dataset.v }); toast('Сохранено'); break;
       case 'notify':
@@ -2229,6 +2444,30 @@ document.addEventListener('click', async e => {
       case 'noavatar': S.editPhoto = ''; render(); break;
       case 'color': S.editColor = b.dataset.c; render(); break;
       case 'cover': S.editCover = b.dataset.c; render(); break;
+      // ---- ВС Музыка
+      case 'pickmusic': pick('music', 'audio/*', false); break;
+      case 'tplay': playList(cache.tracks || [], Number(b.dataset.i)); break;
+      case 'mplay': if (player.audio.src) player.audio.paused ? player.audio.play() : player.audio.pause(); break;
+      case 'mnext': playAt(player.i + 1); break;
+      case 'mprev': if (player.audio.currentTime > 3) player.audio.currentTime = 0; else playAt(player.i - 1); break;
+      case 'mclose': player.audio.pause(); player.queue = []; player.i = -1; render(); break;
+      case 'tsave': {
+        const has = (S.me.tracks || []).includes(id);
+        await updateDoc(doc(db, 'users', uid()), { tracks: has ? arrayRemove(id) : arrayUnion(id) }); toast(has ? 'Убрано из вашей музыки' : 'Добавлено в вашу музыку'); break;
+      }
+      case 'tdel': {
+        if (!twoStep('track:' + id)) return;
+        const t = (cache.tracks || []).find(x => x.id === id);
+        await deleteDoc(doc(db, 'tracks', id));
+        if (t?.ownerId === uid()) await deleteFile(t.fileId).catch(console.error);
+        cache.tracks = (cache.tracks || []).filter(x => x.id !== id); toast('Трек удалён'); render(); break;
+      }
+      // ---- ВС Маркет
+      case 'newlot': S.newLot = !S.newLot; S.lotImage = ''; render(); if (S.newLot) document.getElementById('lTitle')?.focus(); break;
+      case 'lotphoto': pick('lot', 'image/*', false); break;
+      case 'lotsold': await updateDoc(doc(db, 'market', id), { sold: !cache.lot?.sold }); toast(cache.lot?.sold ? 'Снова в продаже' : 'Отмечено как продано'); break;
+      case 'lotdel': if (!twoStep('lot:' + id)) return; await deleteDoc(doc(db, 'market', id)); toast('Объявление снято'); go('market'); break;
+      case 'viewlot': if (safeImg(cache.lot?.image)) { S.viewImg = cache.lot.image; render(); } break;
       // ---- ВС Ответы
       case 'newq': S.newQ = !S.newQ; render(); if (S.newQ) document.getElementById('qTitle')?.focus(); break;
       case 'alike': {
@@ -2287,7 +2526,17 @@ document.addEventListener('click', async e => {
         const w = tttWin(t.b); if (w === 'X') t.wins++; else if (w === 'O') t.losses++; else if (w === 'draw') t.draws++;
         render(); break;
       }
-      case 'ovx': S.newRoom = null; S.fwd = null; S.storyDraft = null; render(); break;
+      case 'ovx': S.newRoom = null; S.fwd = null; S.storyDraft = null; S.giftFor = null; render(); break;
+      case 'giftopen': S.giftFor = id; S.giftSel = null; render(); break;
+      case 'giftsel': S.giftSel = b.dataset.k; render(); break;
+      case 'giftsend': {
+        if (!S.giftFor || !S.giftSel) return;
+        const to = S.giftFor, gift = S.giftSel, text = (document.getElementById('giftText')?.value || '').trim().slice(0, 200);
+        await addDoc(collection(db, 'gifts'), { from: uid(), to, gift, text, createdAt: serverTimestamp() });
+        notify(to, 'gift', '', GIFTS[gift][0] + ' ' + GIFTS[gift][1] + (text ? ': ' + text : ''));
+        S.giftFor = null; toast('Подарок отправлен ' + GIFTS[gift][0]); render(); break;
+      }
+      case 'giftdel': await deleteDoc(doc(db, 'gifts', id)); toast('Подарок убран'); break;
       case 'storyadd': pick('story', 'image/*', false); break;
       case 'storypub': {
         if (!S.storyDraft || S.busy) return;
@@ -2596,6 +2845,8 @@ document.getElementById('filePick').addEventListener('change', async e => {
       render();
     }
     else if (pickTarget === 'photos') await uploadPhotos(files);
+    else if (pickTarget === 'lot') { S.lotImage = await compress(f, 1080, 420000); render(); }
+    else if (pickTarget === 'music') await uploadTrack(f);
     else if (pickTarget === 'story') { S.storyDraft = { image: await compress(f, 1080, 420000) }; render(); document.getElementById('stText')?.focus(); }
     else if (pickTarget === 'gphoto') { S.editGroupPhoto = await compress(f, 256, MAX_AVATAR, true); render(); }
     else if (pickTarget === 'msgphoto') {
@@ -2699,6 +2950,7 @@ document.addEventListener('submit', async e => {
           if (f.dataset.group) post.groupId = wall;
           const ref = await addDoc(collection(db, 'posts'), post);
           if (wall !== uid() && !f.dataset.group) notify(wall, 'wall', ref.id, text || (poll ? poll.q : 'Фото'));
+          notifyMentions(text, ref.id, [uid(), wall]);
           d.files.forEach(x => URL.revokeObjectURL(x.url));
           S.draft = { files: [], poll: false, pollN: 2 }; S.emoji = null;
           ['postText', 'pollQ', 'pollO0', 'pollO1', 'pollO2', 'pollO3', 'pollO4', 'pollO5'].forEach(clear); toast('Опубликовано');
@@ -2714,12 +2966,23 @@ document.addEventListener('submit', async e => {
         bt.update(doc(db, 'posts', pid), { commentCount: increment(1) });
         await bt.commit();
         const p = findPost(pid); if (p) notify(p.authorId, 'comment', pid, text);
+        notifyMentions(text, pid, [uid(), p?.authorId]);
         break;
       }
       case 'msg': {
         const text = v('msgInput'); if (!text) return;
         clear('msgInput'); S.emoji = null;
         await sendMessage(f.dataset.to, text);
+        break;
+      }
+      case 'lot': {
+        const title = v('lTitle'); if (title.length < 2 || S.busy) return;
+        S.busy = true; render();
+        try {
+          const ref = await addDoc(collection(db, 'market'), { ownerId: uid(), title: title.slice(0, 100), price: Math.max(0, Math.min(1e9, Math.round(Number(v('lPrice')) || 0))),
+            category: document.getElementById('lCat').value, city: v('lCity').slice(0, 40), text: (document.getElementById('lText')?.value || '').trim().slice(0, 3000), image: S.lotImage || '', sold: false, createdAt: serverTimestamp() });
+          S.newLot = false; S.lotImage = ''; toast('Объявление опубликовано'); go('lot/' + ref.id);
+        } finally { S.busy = false; render(); }
         break;
       }
       case 'question': {

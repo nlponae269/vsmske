@@ -18,13 +18,13 @@ for line in src.splitlines():
 text = '\n'.join(lines) + '\n'
 text = re.sub(r'\n(&&|\|\||\?|:(?!\s*if))', r' \1', text)
 text = re.sub(r'[ \t]+', ' ', text)
-# короткие имена для своих функций
-names = re.findall(r'\bfunction (\w+)\(', text)
-for i, n in enumerate(sorted(set(names), key=len, reverse=True)):
-    short = 'q' + chr(ord('a') + i // 26) + chr(ord('a') + i % 26)
+# короткие имена для своих функций: самые частые получают одну заглавную букву (параметры у нас строчные — не пересекутся)
+names = sorted(set(re.findall(r'\bfunction (\w+)\(', text)), key=lambda n: -len(re.findall(r'\b' + n + r'\(', text)))
+import string
+pool = list(string.ascii_uppercase) + ['Z' + c for c in string.ascii_uppercase]
+for n, short in zip(names, pool):
     text = re.sub(r'\b' + n + r'\(', short + '(', text)
 # resource.data (но не request.resource.data) → функция
-text = text.replace('function qaa(', 'function qaa(', 1)
 text = re.sub(r'(?<!request\.)\bresource\.data\b', 'rd()', text)
 text = text.replace('match /databases/{database}/documents {', 'match /databases/{database}/documents {\nfunction rd() { return resource.data; }', 1)
 text = re.sub(r' ?([(){}\[\],=!<>&|+\-?:;]) ?', r'\1', text)

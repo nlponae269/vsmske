@@ -519,3 +519,41 @@ test('ВС Заметки: только свои', async () => {
   await assertFails(deleteDoc(doc(db(B), 'notes', n.id)));
   await assertSucceeds(deleteDoc(n));
 });
+
+/* ---------- 2.0: музыка, подарки, маркет ---------- */
+test('ВС Музыка: трек только со своим музыкальным файлом, файл слушают все', async () => {
+  const f = db(A), file = doc(collection(f, 'files'));
+  await setDoc(file, { ownerId: A, kind: 'music', name: 'song.mp3', size: 1000, type: 'audio/mpeg', chunks: 1, status: 'uploading', createdAt: serverTimestamp() });
+  await setDoc(doc(f, 'files', file.id, 'chunks', '0000'), { i: 0, data: 'AAAA' });
+  const t = doc(collection(f, 'tracks'));
+  await assertSucceeds(setDoc(t, { ownerId: A, title: 'Песня', artist: 'Группа', fileId: file.id, type: 'audio/mpeg', duration: 180.5, size: 1000, createdAt: serverTimestamp() }));
+  await assertSucceeds(getDoc(doc(db(B), 'files', file.id, 'chunks', '0000')));
+  await assertFails(setDoc(doc(collection(db(B), 'tracks')), { ownerId: B, title: 'Чужая', artist: '', fileId: file.id, type: 'audio/mpeg', duration: 1, size: 1, createdAt: serverTimestamp() }));
+  await assertSucceeds(updateDoc(doc(db(B), 'users', B), { tracks: arrayUnion(t.id) }));
+  await assertFails(deleteDoc(doc(db(B), 'tracks', t.id)));
+  await assertSucceeds(deleteDoc(t));
+});
+test('Подарки: дарить другому, не себе; удалить может получатель', async () => {
+  const g = doc(collection(db(B), 'gifts'));
+  await assertSucceeds(setDoc(g, { from: B, to: A, gift: 'rose', text: 'С днём рождения!', createdAt: serverTimestamp() }));
+  await assertFails(setDoc(doc(collection(db(B), 'gifts')), { from: B, to: B, gift: 'rose', text: '', createdAt: serverTimestamp() }));
+  await assertFails(setDoc(doc(collection(db(B), 'gifts')), { from: C, to: A, gift: 'rose', text: '', createdAt: serverTimestamp() }));
+  await assertSucceeds(getDoc(doc(db(C), 'gifts', g.id)));
+  await assertFails(deleteDoc(doc(db(C), 'gifts', g.id)));
+  await assertSucceeds(deleteDoc(doc(db(A), 'gifts', g.id)));
+});
+test('ВС Маркет: объявление, продано, чужое не менять', async () => {
+  const l = doc(collection(db(A), 'market'));
+  const lot = { ownerId: A, title: 'Велосипед', price: 15000, category: 'hobby', city: 'Казань', text: 'Почти новый', image: '', sold: false, createdAt: serverTimestamp() };
+  await assertSucceeds(setDoc(l, lot));
+  await assertFails(setDoc(doc(collection(db(A), 'market')), { ...lot, price: -5 }));
+  await assertFails(setDoc(doc(collection(db(A), 'market')), { ...lot, sold: true }));
+  await assertSucceeds(updateDoc(l, { sold: true, price: 12000 }));
+  await assertFails(updateDoc(doc(db(B), 'market', l.id), { price: 1 }));
+  await assertFails(updateDoc(l, { ownerId: B }));
+  await assertSucceeds(deleteDoc(l));
+});
+test('уведомления об упоминании и подарке', async () => {
+  await assertSucceeds(setDoc(doc(collection(db(B), 'notifs')), { to: A, from: B, type: 'mention', postId: 'p1', text: '@alice смотри', createdAt: serverTimestamp() }));
+  await assertSucceeds(setDoc(doc(collection(db(B), 'notifs')), { to: A, from: B, type: 'gift', postId: '', text: '🌹', createdAt: serverTimestamp() }));
+});

@@ -17,7 +17,8 @@
   `#video`, `#video/<id>`, `#videos/<uid>`, `#albums/<uid>`, `#album/<id>`, `#disk`, `#vid`, `#settings`, `#more`,
   `#post/<id>` (одна запись), `#notif` (уведомления), `#clubs` (сообщества), `#club/<id>` (сообщество), `#admin` (админ-панель, только для админов),
   `#guests` (гости страницы), `#tag/<тег>` (записи с хэштегом), `#im/g_<id>` (беседа),
-  `#apps` (все сервисы), `#answers[/<раздел>|/mine]`, `#q/<id>`, `#mail[/in|/sent|/new|/<id>]`, `#notes`, `#weather`, `#games[/2048|/ttt]`. `#im/<свой uid>` — «Избранное» (чат с самим собой, id `uid_uid`).
+  `#apps` (все сервисы), `#answers[/<раздел>|/mine]`, `#q/<id>`, `#mail[/in|/sent|/new|/<id>]`, `#notes`, `#weather`, `#games[/2048|/ttt]`,
+  `#music[/my|/all|/<uid>]`, `#market[/<раздел>|/mine]`, `#lot/<id>`, `#u/<ник>` (переход к профилю по @нику). `#im/<свой uid>` — «Избранное» (чат с самим собой, id `uid_uid`).
 - Рендер: функция `render()` целиком перерисовывает `#app` через innerHTML, а значения полей ввода сохраняются между перерисовками.
   Исключение — страница видео: там обновляются только части страницы, чтобы плеер не перезапускался (см. `playerKey`).
 
@@ -31,7 +32,11 @@
 `users/{uid}/guests/{кто}` (гости страницы: `at`; видит только хозяин; пишется не чаще раза в 30 минут на страницу),
 `questions` + `questions/{id}/answers` (ВС Ответы: `title`, `text`, `category`, `answersCount`, `bestId`; ответы с `likes`),
 `mail` (ВС Почта: `from`, `to`, `subject`, `text`, `read`, `delFrom`, `delTo`; документ стирается, когда удалили оба; адрес — `ник@vsmske`),
-`notes` (ВС Заметки: личные, `ownerId`, `title`, `text`, `color`, `pinned`).
+`notes` (ВС Заметки: личные, `ownerId`, `title`, `text`, `color`, `pinned`),
+`tracks` (ВС Музыка: `ownerId`, `title`, `artist`, `fileId` → `files` с `kind: 'music'`, `duration`; `users.tracks` — добавленные себе чужие треки),
+`gifts` (подарки: `from`, `to`, `gift` — ключ из `GIFTS`, `text`), `market` (ВС Маркет: `title`, `price`, `category`, `city`, `text`, `image`, `sold`).
+Плеер музыки (`player`) живёт вне `#app` и играет при переходах; панель — `musicBar()`.
+@упоминания в записях и комментариях дают уведомление `mention` (`notifyMentions()`); цвет оформления — `data-accent` на `<html>` (localStorage `vs_accent`).
 ВС Погода берёт данные из бесплатного Open-Meteo (без ключа), ВС Игры (2048, крестики-нолики) работают без базы, рекорд — в localStorage.
 
 Поля, добавленные в 1.3: `users.lastSeen` (статус «в сети», пишется не чаще раза в 4 минуты),
