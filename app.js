@@ -34,7 +34,7 @@ const db = getFirestore(fbApp);
 /* ---------- Константы и утилиты ---------- */
 // Обложки профиля: ключ хранится в users.cover
 const COVERS = {
-  blue: 'linear-gradient(135deg,#6C4DFF,#B25CC0 60%,#FF6B57)', sunset: 'linear-gradient(135deg,#F2994A,#D0462F 55%,#B4398F)',
+  blue: 'linear-gradient(135deg,#4F46E5,#7C3AED 50%,#C026D3)', sunset: 'linear-gradient(135deg,#F2994A,#D0462F 55%,#B4398F)',
   sea: 'linear-gradient(135deg,#1F8A5B,#2B8BB5)', night: 'linear-gradient(135deg,#141A33,#4E5B76)',
   rose: 'linear-gradient(135deg,#B4398F,#F06C9B)', gold: 'linear-gradient(135deg,#C98A12,#F2C94C)',
 };
@@ -47,7 +47,7 @@ const MAX_POST_IMG = 700000;   // символов dataURL (~520 КБ), лими
 const MAX_AVATAR = 120000;
 const CHUNK = 700000;                                   // символов base64 в одном куске (кратно 4)
 const LIMITS = { disk: 10 * 1024 * 1024, video: 20 * 1024 * 1024, music: 12 * 1024 * 1024 };
-const VERSION = '4.0';
+const VERSION = '5.0';
 const MAX_MSG_IMG = 380000;    // фото в сообщении
 const ONLINE_MS = 5 * 60 * 1000; // «в сети», если заходил не раньше 5 минут назад
 
@@ -76,7 +76,7 @@ function applyTheme(t) {
   else delete document.documentElement.dataset.theme;
 }
 applyTheme(lsGet('vs_theme'));
-const ACCENTS = [['blue', 'Фирменный', '#6C4DFF'], ['violet', 'Фиолетовый', '#6A47C9'], ['green', 'Зелёный', '#1F8A5B'], ['orange', 'Оранжевый', '#D9641E'], ['pink', 'Розовый', '#C2357A']];
+const ACCENTS = [['blue', 'Фирменный', '#7C3AED'], ['violet', 'Фиолетовый', '#6A47C9'], ['green', 'Зелёный', '#1F8A5B'], ['orange', 'Оранжевый', '#D9641E'], ['pink', 'Розовый', '#C2357A']];
 function applyAccent(a) { if (a && a !== 'blue') document.documentElement.dataset.accent = a; else delete document.documentElement.dataset.accent; }
 applyAccent(lsGet('vs_accent'));
 if (lsGet('vs_anim') === 'off') document.documentElement.dataset.anim = 'off';
