@@ -34,7 +34,7 @@ const db = getFirestore(fbApp);
 /* ---------- Константы и утилиты ---------- */
 // Обложки профиля: ключ хранится в users.cover
 const COVERS = {
-  blue: 'linear-gradient(135deg,#2F44D0,#6A47C9)', sunset: 'linear-gradient(135deg,#F2994A,#D0462F 55%,#B4398F)',
+  blue: 'linear-gradient(135deg,#6C4DFF,#B25CC0 60%,#FF6B57)', sunset: 'linear-gradient(135deg,#F2994A,#D0462F 55%,#B4398F)',
   sea: 'linear-gradient(135deg,#1F8A5B,#2B8BB5)', night: 'linear-gradient(135deg,#141A33,#4E5B76)',
   rose: 'linear-gradient(135deg,#B4398F,#F06C9B)', gold: 'linear-gradient(135deg,#C98A12,#F2C94C)',
 };
@@ -47,7 +47,7 @@ const MAX_POST_IMG = 700000;   // символов dataURL (~520 КБ), лими
 const MAX_AVATAR = 120000;
 const CHUNK = 700000;                                   // символов base64 в одном куске (кратно 4)
 const LIMITS = { disk: 10 * 1024 * 1024, video: 20 * 1024 * 1024, music: 12 * 1024 * 1024 };
-const VERSION = '3.5';
+const VERSION = '3.7';
 const MAX_MSG_IMG = 380000;    // фото в сообщении
 const ONLINE_MS = 5 * 60 * 1000; // «в сети», если заходил не раньше 5 минут назад
 
@@ -76,7 +76,7 @@ function applyTheme(t) {
   else delete document.documentElement.dataset.theme;
 }
 applyTheme(lsGet('vs_theme'));
-const ACCENTS = [['blue', 'Синий', '#2F44D0'], ['violet', 'Фиолетовый', '#6A47C9'], ['green', 'Зелёный', '#1F8A5B'], ['orange', 'Оранжевый', '#D9641E'], ['pink', 'Розовый', '#C2357A']];
+const ACCENTS = [['blue', 'Фирменный', '#6C4DFF'], ['violet', 'Фиолетовый', '#6A47C9'], ['green', 'Зелёный', '#1F8A5B'], ['orange', 'Оранжевый', '#D9641E'], ['pink', 'Розовый', '#C2357A']];
 function applyAccent(a) { if (a && a !== 'blue') document.documentElement.dataset.accent = a; else delete document.documentElement.dataset.accent; }
 applyAccent(lsGet('vs_accent'));
 if (lsGet('vs_anim') === 'off') document.documentElement.dataset.anim = 'off';
@@ -1005,7 +1005,7 @@ function render() {
   const msgs = app.querySelector('.msgs');
   const atBottom = !msgs || msgs.scrollHeight - msgs.scrollTop - msgs.clientHeight < 80;
 
-  if (S.phase === 'boot') app.innerHTML = `<div class="boot"><span class="boot-logo">VС</span></div>`;
+  if (S.phase === 'boot') app.innerHTML = `<div class="boot"><span class="boot-logo">вс</span></div>`;
   else if (S.phase === 'auth') app.innerHTML = viewAuth();
   else if (S.phase === 'onboarding') app.innerHTML = viewOnboarding();
   else app.innerHTML = shell();
@@ -1068,7 +1068,7 @@ function animate() {
 function viewAuth() {
   const login = S.authTab === 'login';
   return `<div class="login"><div class="login-in">
-    <div class="hero"><span class="logo-mark">VС</span>
+    <div class="hero"><span class="logo-mark">вс</span>
       <h1>VСмске — все свои рядом</h1>
       <p>Стена, лента друзей, лайки, комментарии и личные сообщения.</p></div>
     <div class="card pad form">
@@ -1119,23 +1119,23 @@ function navHtml() {
   const nav = (v, href, icon, label, badge = 0, cls = '') => `<a class="navlink ${on(v)} ${cls}" href="#${href}">${icon}<span>${label}</span>${badge ? `<span class="badge">${badge}</span>` : ''}</a>`;
   const moreOn = ['more', 'profile', 'people', 'albums', 'album', 'disk', 'vid', 'settings', 'edit', 'notif', 'post', 'clubs', 'club', 'admin', 'guests', 'tag', 'apps', 'answers', 'question', 'mail', 'notes', 'weather', 'games', 'market', 'lot', 'music', 'saved', 'events', 'event', 'rates', 'radio', 'horo'].includes(S.view) ? 'on' : '';
   return `<nav class="nav">
-      ${nav('profile', 'id/' + me.id, I.home, 'Моя страница', 0, 'm-hide')}
-      ${nav('feed', 'feed', I.feed, 'Новости')}
-      ${nav('messages', 'im', I.msg, 'Сообщения', unread)}
+      ${nav('profile', 'id/' + me.id, I.home, 'Профиль', 0, 'm-hide')}
+      ${nav('feed', 'feed', I.feed, 'Лента')}
+      ${nav('messages', 'im', I.msg, 'Чаты', unread)}
       ${nav('friends', 'friends', I.friends, 'Друзья', reqs)}
-      ${nav('notif', 'notif', I.bell, 'Уведомления', unseenNotifs(), 'm-hide')}
+      ${nav('notif', 'notif', I.bell, 'Сигналы', unseenNotifs(), 'm-hide')}
       ${nav('saved', 'saved', I.bookmark, 'Закладки', 0, 'm-hide')}
       ${nav('people', 'people', I.people, 'Люди', 0, 'm-hide')}
       ${nav('apps', 'apps', I.apps, 'Сервисы', unreadMail(), 'm-hide')}
       ${nav('music', 'music', I.music, 'Музыка', 0, 'm-hide')}
-      ${nav('clubs', 'clubs', I.club, 'Сообщества', 0, 'm-hide')}
+      ${nav('clubs', 'clubs', I.club, 'Клубы', 0, 'm-hide')}
       ${nav('video', 'video', I.video, 'Видео')}
       ${nav('albums', 'albums', I.album, 'Альбомы', 0, 'm-hide')}
       ${nav('disk', 'disk', I.disk, 'Диск', 0, 'm-hide')}
       <a class="navlink m-only ${moreOn}" href="#more">${I.more}<span>Ещё</span></a>
       <hr>
       ${nav('vid', 'vid', I.vid, 'VС ID', 0, 'm-hide sub')}
-      ${isSiteAdmin() ? nav('admin', 'admin', I.shield, 'Админ-панель', cache.reports.length, 'm-hide sub') : ''}
+      ${isSiteAdmin() ? nav('admin', 'admin', I.shield, 'Админка', cache.reports.length, 'm-hide sub') : ''}
       ${nav('settings', 'settings', I.gear, 'Настройки', 0, 'm-hide sub')}
       <button class="sub desk" data-act="logout">${I.out}<span>Выйти</span></button>
     </nav>`;
@@ -1186,7 +1186,7 @@ function shell() {
   const up = S.upload ? `<div class="card pad upbar" role="status"><div class="row"><span class="grow">${esc(S.upload.label)}</span><b class="tnum">${Math.round(S.upload.pct * 100)}%</b></div><div class="bar"><i style="width:${Math.round(S.upload.pct * 100)}%"></i></div><div class="hint">Не закрывайте страницу до конца загрузки</div></div>` : '';
   return `
   <header class="top"><div class="top-in">
-    <a class="logo" href="#feed" aria-label="VСмске, новости"><span class="logo-mark">VС</span><span class="logo-word" style="color:var(--fg)">VСмске</span></a>
+    <a class="logo" href="#feed" aria-label="VСмске, лента"><span class="logo-mark">вс</span><span class="logo-word" style="color:var(--fg)">VСмске</span></a>
     <form class="search" data-form="search">${I.search}<input id="q" type="search" placeholder="Поиск людей" autocomplete="off" value="${esc(S.view === 'people' ? S.query : '')}"></form>
     <a class="top-bell icon-btn ${S.view === 'notif' ? 'on' : ''}" href="#notif" aria-label="Уведомления">${I.bell}${unseenNotifs() ? `<span class="badge">${unseenNotifs()}</span>` : ''}</a>
     <a class="top-me" href="#id/${esc(me.id)}" style="color:var(--fg)">${avatar(me, 32, false)}<span>${esc(me.name.split(' ')[0])}</span></a>
@@ -1205,6 +1205,7 @@ function shell() {
 const REPORT_REASONS = { spam: 'Спам', abuse: 'Оскорбления', nsfw: 'Неприемлемый контент', fraud: 'Мошенничество', other: 'Другое' };
 function overlay() {
   if (S.story) return storyOverlay();
+  if (S.trackForm) return trackFormModal();
   if (S.qr) {
     const u = U(S.qr.id);
     return `<div class="ov" data-act="ovx"><div class="ov-in modal qr-modal" data-stop="1">
@@ -1414,7 +1415,7 @@ function viewVID() {
   const fmtDate = s => { if (!s) return '—'; const d = new Date(s); return d.getDate() + ' ' + MONTHS[d.getMonth()] + ' ' + d.getFullYear() + ' в ' + hm(d); };
   const link = pageUrl(me);
   return `<div class="vid-card">
-      <div class="vid-brand"><span class="logo-mark">VС</span><span>VС ID</span></div>
+      <div class="vid-brand"><span class="logo-mark">вс</span><span>VС ID</span></div>
       <div class="row">${avatar(me, 64, false)}<div class="grow" style="min-width:0"><div class="vid-name">${esc(me.name)}</div><div class="vid-sub">@${esc(me.nick)}</div></div></div>
       <div class="vid-id"><span>Ваш VС ID</span><code>${esc(me.id)}</code><button class="btn sec small" data-act="copy" data-text="${esc(me.id)}">Скопировать</button></div>
     </div>
@@ -1782,17 +1783,19 @@ function fullPlayer() {
   const apStyle = showLyrics && !S.lyrEdit && lyrStyle() !== 'ya' && lyr.lines.length > 0;
   const head = `<div class="fp-top"><button class="icon-btn fp-x" data-act="fpclose" aria-label="Свернуть плеер">${I.down}</button>
       <span class="fp-label">${t.radio ? 'ВС Радио · прямой эфир' : esc(player.label || 'ВС Музыка')}</span>
-      ${own ? `<button class="icon-btn" data-act="fpcover" aria-label="Сменить обложку" title="Сменить обложку">${I.photo}</button>` : '<span style="width:36px"></span>'}</div>`;
+      ${own ? `<button class="icon-btn" data-act="tedit" data-id="cur" aria-label="Изменить трек" title="Название, исполнитель и обложка">✏️</button>` : '<span style="width:36px"></span>'}</div>`;
   const art = cover ? `<img class="fp-cover" src="${esc(cover)}" alt="Обложка">` : `<div class="fp-cover fp-cover-empty" style="${t.radio ? `--rc:${t.c}` : ''}">${t.radio ? '📻' : '🎵'}</div>`;
   const lyricsBox = showLyrics ? (S.lyrEdit ? `<form class="fp-lyrics form" data-form="lyrics">
+        ${lyrFindBox(t)}
         <textarea id="lyrText" rows="12" maxlength="20000" placeholder="Текст песни. Для синхронизации с музыкой начинайте строки с тайм-кода: [00:12.50] Первая строка">${esc(t.lyrics || '')}</textarea>
+        <div class="row lyr-shift"><span class="small">Сдвиг тайм-кодов:</span>${[-1, -0.1, 0.1, 1].map(d => `<button type="button" class="btn ghost small" data-act="lyrshift" data-d="${d}">${d > 0 ? '+' : '−'}${Math.abs(d)} с</button>`).join('')}</div>
         <div class="row"><button type="button" class="btn ghost small" data-act="lyrstamp">⏱ Вставить текущее время</button><span class="grow"></span>
           <button type="button" class="btn ghost small" data-act="lyredit">Отмена</button><button class="btn small">Сохранить</button></div>
         <p class="hint" style="margin:0">Тайм-код ставится в начало строки в формате [минуты:секунды.сотые]. Включите песню и жмите «Вставить текущее время» перед каждой строкой.</p></form>`
       : lyr.lines.length && apStyle ? apLyrics(lyr, own, lyrStyle(), cover)
       : lyr.lines.length ? `<div class="fp-lyrics ${lyr.timed ? 'timed' : ''}" id="fpLyrics" data-timed="${lyr.timed ? 1 : 0}">${lyr.lines.map(l => lyr.timed ? `<p data-t="${l.t}" data-act="lyrseek">${esc(l.text) || '♪'}</p>` : `<p>${esc(l.text) || '&nbsp;'}</p>`).join('')}
           ${own ? `<button class="btn ghost small" data-act="lyredit">Изменить текст</button>` : ''}</div>`
-      : `<div class="fp-lyrics fp-empty"><b>Текста пока нет</b>${own ? `<span class="small">Добавьте слова, можно с тайм-кодами — тогда они будут идти вместе с музыкой</span><button class="btn small" data-act="lyredit">Добавить текст</button>` : '<span class="small">Добавить текст может только автор трека</span>'}</div>`) : '';
+      : `<div class="fp-lyrics fp-empty"><b>Текста пока нет</b>${own ? `<span class="small">Найдём текст с тайм-кодами сами или добавьте свой — тогда слова будут идти вместе с музыкой</span><div class="row" style="justify-content:center;flex-wrap:wrap"><button class="btn small" data-act="lyrauto">🔎 Найти текст автоматически</button><button class="btn ghost small" data-act="lyredit">Добавить вручную</button></div>` : '<span class="small">Добавить текст может только автор трека</span>'}</div>`) : '';
   return `<div class="fp ${apStyle ? 'ap fp-ly-' + lyrStyle() : ''}" role="dialog" aria-label="Плеер"><div class="fp-bg" style="${cover ? `background-image:url('${esc(cover)}')` : ''}"></div><div class="fp-in">
     ${head}
     ${apStyle ? `<div class="ap-head">${cover ? `<img src="${esc(cover)}" alt="">` : `<span class="ap-noart">🎵</span>`}<div class="grow" style="min-width:0"><b>${esc(t.title)}</b><span>${esc(t.artist || 'Неизвестный исполнитель')}</span></div></div>` : ''}
@@ -1814,6 +1817,68 @@ function fullPlayer() {
       ${showLyrics && !S.lyrEdit ? `<button class="fp-chip fp-style ${S.lyrPick ? 'on' : ''}" data-act="lyrpick" aria-label="Вид текста: ${LYR_STYLES[lyrStyle()]}" title="Вид текста: ${LYR_STYLES[lyrStyle()]}">Aa</button>` : ''}
       <button class="fp-chip ${player.shuffle ? 'on' : ''}" data-act="fpshuffle" aria-label="Перемешать" title="Перемешать">${I.shuffle}</button></div>
   </div>${S.lyrPick && showLyrics ? lyrPicker() : ''}</div>`;
+}
+/* Поиск текста с тайм-кодами в бесплатной открытой базе LRCLIB (без ключа) */
+const lyrDefaultQ = t => [t.artist, t.title].filter(Boolean).join(' ').trim();
+function lyrFindBox(t) {
+  const f = S.lyrFind;
+  const dur = player.audio.duration || t.duration || 0;
+  const diffText = x => !dur || !x.dur ? '' : Math.abs(x.dur - dur) <= 2 ? '<span class="lf-ok">совпадает по длине</span>'
+    : `<span class="lf-warn">${x.dur > dur ? 'длиннее' : 'короче'} на ${Math.round(Math.abs(x.dur - dur))} с</span>`;
+  return `<div class="lyr-find"><div class="row" style="gap:6px"><input id="lyrQ" class="inp" maxlength="120" placeholder="Исполнитель и название" value="${esc(f?.q ?? lyrDefaultQ(t))}">
+      <button type="button" class="btn small" data-act="lyrfind" ${f?.busy ? 'disabled' : ''}>${f?.busy ? '<span class="spin sm"></span>' : '🔎 Найти текст'}</button></div>
+    ${f?.err ? `<p class="small lf-warn" style="margin:6px 0 0">${esc(f.err)}</p>` : ''}
+    ${f && !f.busy && !f.err && !f.list.length ? '<p class="small" style="margin:6px 0 0;opacity:.75">Ничего не нашлось. Проверьте название и исполнителя или добавьте текст вручную.</p>' : ''}
+    ${f?.list.length ? `<div class="lf-list">${f.list.map((x, i) => `<button type="button" class="lf-item ${f.took === i ? 'on' : ''}" data-act="lyrtake" data-i="${i}">
+        <b>${esc(x.title)}</b><span>${esc(x.artist)}${x.album ? ' · ' + esc(x.album) : ''}</span>
+        <span class="small">${x.dur ? fmtDur(x.dur) + ' · ' : ''}${x.synced ? '⏱ с тайм-кодами' : 'только текст'} ${diffText(x)}</span></button>`).join('')}</div>` : ''}</div>`;
+}
+async function lrclib(params) {
+  const r = await fetch('https://lrclib.net/api/search?' + new URLSearchParams(params));
+  if (r.status === 429 || r.status === 503) throw new Error('busy');
+  if (!r.ok) return [];
+  const j = await r.json(); return Array.isArray(j) ? j : [];
+}
+async function findLyrics(auto = false) {
+  const t = curTrack(); if (!t || t.ownerId !== uid()) return;
+  const q = (document.getElementById('lyrQ')?.value ?? lyrDefaultQ(t)).trim();
+  if (!q) { toast('Напишите исполнителя и название'); return; }
+  S.lyrFind = { q, busy: true, list: [] }; render();
+  const dur = player.audio.duration || t.duration || 0;
+  let list = [];
+  try {
+    // сначала точный поиск по названию и исполнителю трека, потом — по строке целиком
+    if (q === lyrDefaultQ(t) && t.title) list = await lrclib(t.artist ? { track_name: t.title, artist_name: t.artist } : { track_name: t.title });
+    if (!list.length) list = await lrclib({ q });
+  } catch (e) {
+    S.lyrFind = { q, busy: false, list: [], err: e.message === 'busy' ? 'Сервис текстов сейчас перегружен — попробуйте через минуту' : 'Не получилось связаться с сервисом текстов. Проверьте интернет.' };
+    render(); return;
+  }
+  const near = x => dur && x.duration ? Math.abs(x.duration - dur) : 99;
+  list = list.filter(x => !x.instrumental && (x.syncedLyrics || x.plainLyrics))
+    .sort((a, b) => (!!b.syncedLyrics - !!a.syncedLyrics) || near(a) - near(b)).slice(0, 8)
+    .map(x => ({ title: x.trackName || '', artist: x.artistName || '', album: x.albumName || '', dur: x.duration || 0, synced: x.syncedLyrics || '', plain: x.plainLyrics || '' }));
+  S.lyrFind = { q, busy: false, list };
+  // нашлась версия с тайм-кодами той же длины — подставляем сразу
+  const best = list[0];
+  if (best?.synced && (!dur || near({ duration: best.dur }) <= 3)) { render(); lyrTake(0, true); return; }
+  render();
+  if (auto && !list.length) toast('Текст не нашёлся — можно добавить вручную');
+}
+function lyrTake(i, auto = false) {
+  const x = S.lyrFind?.list[i], ta = document.getElementById('lyrText'); if (!x || !ta) return;
+  let text = (x.synced || x.plain).trim();
+  if (text.length > 20000) { text = text.slice(0, 20000); toast('Текст слишком длинный — обрезан до 20 000 символов'); }
+  ta.value = text; S.lyrFind.took = i;
+  render();
+  toast(x.synced ? (auto ? 'Нашли текст с тайм-кодами — проверьте и нажмите «Сохранить»' : 'Текст с тайм-кодами вставлен — проверьте и сохраните') : 'Вставлен текст без тайм-кодов');
+}
+// сдвинуть все тайм-коды в редакторе на d секунд
+function shiftLrc(text, d) {
+  return text.replace(/\[(\d{1,2}):(\d{2})(?:[.:](\d{1,3}))?\]/g, (m, mm, ss, fr) => {
+    const t = Math.max(Number(mm) * 60 + Number(ss) + (fr ? Number('0.' + fr.padEnd(3, '0')) : 0) + d, 0);
+    return `[${pad2(Math.floor(t / 60))}:${pad2(Math.floor(t % 60))}.${pad2(Math.floor(Math.round(t * 100) % 100))}]`;
+  });
 }
 const lyrStyle = () => { const v = lsGet('vs_lyrstyle'); return LYR_STYLES[v] ? v : 'ya'; };
 // строка → слова; у каждого слова доля строки, с которой оно начинается (для «слово за словом»)
@@ -1895,18 +1960,92 @@ async function uploadTrack(f) {
   if (f.size > LIMITS.music) { toast(`Трек весит ${fmtSize(f.size)}, а можно до ${fmtSize(LIMITS.music)}`); return; }
   if (S.upload) return;
   const base = f.name.replace(/\.[^.]+$/, '').replace(/_/g, ' ').trim(), m = base.match(/^(.+?)\s+[-–—]\s+(.+)$/);
-  const artist = (m ? m[1] : '').slice(0, 120), title = (m ? m[2] : base).slice(0, 120) || 'Без названия';
-  const duration = await trackDuration(f);
-  const fileId = await putFile(f, 'music', `Загружаем «${title}»`);
-  await addDoc(collection(db, 'tracks'), { ownerId: uid(), title, artist, fileId, type: f.type || 'audio/mpeg', duration, size: f.size, createdAt: serverTimestamp() });
+  const [tags, duration] = await Promise.all([readTags(f), trackDuration(f)]);
+  let cover = '';
+  if (tags.pic) try { cover = await compress(tags.pic, 600, 250000, true); } catch (e) { }
+  // название и исполнитель — из тегов файла, иначе из имени «Исполнитель - Песня»; перед загрузкой их можно поправить
+  S.trackForm = { mode: 'new', file: f, duration, cover, tags: !!(tags.title || tags.artist || cover),
+    title: (tags.title || (m ? m[2] : base)).slice(0, 120), artist: (tags.artist || (m ? m[1] : '')).slice(0, 120) };
+  render(); setTimeout(() => document.getElementById('tfTitle')?.focus(), 50);
+}
+async function saveTrackForm() {
+  const tf = S.trackForm; if (!tf || S.busy) return;
+  const val = id => (document.getElementById(id)?.value || '').trim();
+  const title = val('tfTitle').slice(0, 120), artist = val('tfArtist').slice(0, 120);
+  if (!title) { toast('Напишите название песни'); return; }
+  if (tf.mode === 'edit') {
+    const patch = { title, artist }; if (tf.cover !== undefined) patch.cover = tf.cover;
+    await updateDoc(doc(db, 'tracks', tf.id), patch);
+    for (const x of [curTrack(), ...(cache.tracks || [])]) if (x?.id === tf.id) Object.assign(x, patch);
+    S.trackForm = null; toast('Трек сохранён'); render(); return;
+  }
+  S.trackForm = null; render();
+  const fileId = await putFile(tf.file, 'music', `Загружаем «${title}»`);
+  const ref = await addDoc(collection(db, 'tracks'), { ownerId: uid(), title, artist, fileId, type: tf.file.type || 'audio/mpeg', duration: tf.duration, size: tf.file.size, createdAt: serverTimestamp() });
+  if (tf.cover) await updateDoc(ref, { cover: tf.cover }).catch(console.error);   // обложку правила разрешают ставить правкой трека
   toast('Трек загружен'); if (S.view === 'music') loadMusic();
 }
+/* Теги MP3 (ID3v2.3/2.4 и ID3v1): название, исполнитель, обложка. Русские старые теги часто в cp1251 — так и читаем */
+async function readTags(f) {
+  const out = {};
+  const dec = (bytes, enc) => {
+    const label = enc === 1 ? 'utf-16' : enc === 2 ? 'utf-16be' : enc === 3 ? 'utf-8' : 'windows-1251';
+    try { return new TextDecoder(label).decode(bytes).replace(/\0+$/g, '').replace(/\0/g, ' ').trim(); } catch (e) { return ''; }
+  };
+  try {
+    const h = new Uint8Array(await f.slice(0, 10).arrayBuffer());
+    if (h[0] === 0x49 && h[1] === 0x44 && h[2] === 0x33 && (h[3] === 3 || h[3] === 4)) {
+      const ver = h[3], ss = (b, i) => (b[i] & 127) << 21 | (b[i + 1] & 127) << 14 | (b[i + 2] & 127) << 7 | (b[i + 3] & 127);
+      const be = (b, i) => (b[i] << 24 | b[i + 1] << 16 | b[i + 2] << 8 | b[i + 3]) >>> 0;
+      const size = ss(h, 6), buf = new Uint8Array(await f.slice(10, 10 + Math.min(size, 6e6)).arrayBuffer());
+      let p = h[5] & 0x40 ? (ver === 4 ? ss(buf, 0) : be(buf, 0) + 4) : 0;
+      while (p + 10 <= buf.length) {
+        const id = String.fromCharCode(buf[p], buf[p + 1], buf[p + 2], buf[p + 3]);
+        if (!/^[A-Z0-9]{4}$/.test(id)) break;
+        const sz = ver === 4 ? ss(buf, p + 4) : be(buf, p + 4);
+        if (!sz || p + 10 + sz > buf.length) break;
+        const body = buf.subarray(p + 10, p + 10 + sz);
+        if (id === 'TIT2') out.title = dec(body.subarray(1), body[0]);
+        else if (id === 'TPE1') out.artist = dec(body.subarray(1), body[0]);
+        else if (id === 'APIC' && !out.pic) {
+          const enc = body[0]; let i = 1; while (i < body.length && body[i]) i++;
+          const mime = String.fromCharCode(...body.subarray(1, i)) || 'image/jpeg'; i += 2;   // ноль после типа и байт «вид картинки»
+          if (enc === 1 || enc === 2) { while (i + 1 < body.length && (body[i] || body[i + 1])) i += 2; i += 2; } else { while (i < body.length && body[i]) i++; i++; }
+          if (i < body.length) out.pic = new Blob([body.subarray(i)], { type: mime.includes('/') ? mime : 'image/' + mime.toLowerCase() });
+        }
+        p += 10 + sz;
+      }
+    }
+    if (!out.title && f.size > 128) {
+      const t = new Uint8Array(await f.slice(f.size - 128).arrayBuffer());
+      if (t[0] === 84 && t[1] === 65 && t[2] === 71) { out.title = dec(t.subarray(3, 33)); out.artist = out.artist || dec(t.subarray(33, 63)); }
+    }
+  } catch (e) { console.warn('теги не прочитались', e); }
+  return out;
+}
+function trackFormModal() {
+  const tf = S.trackForm, isNew = tf.mode === 'new', cover = tf.cover === undefined ? tf.coverNow : tf.cover;
+  return `<div class="ov" data-act="ovx"><div class="ov-in modal track-form" data-stop="1">
+    <div class="row"><b class="grow">${isNew ? 'Новый трек' : 'Изменить трек'}</b><button class="icon-btn" data-act="ovx" aria-label="Закрыть">✕</button></div>
+    <form class="tf-body" data-form="trackform">
+      <button type="button" class="tf-cover" data-act="tfcover" aria-label="Выбрать обложку">${safeImg(cover) ? `<img src="${esc(cover)}" alt="Обложка">` : `<span>${I.photo}<small>Обложка</small></span>`}</button>
+      <div class="tf-fields">
+        <label class="field"><span>Название песни</span><input id="tfTitle" class="inp" maxlength="120" required value="${esc(tf.title)}" placeholder="Например: Кукла колдуна"></label>
+        <label class="field"><span>Исполнитель</span><input id="tfArtist" class="inp" maxlength="120" value="${esc(tf.artist)}" placeholder="Например: Король и Шут"></label>
+        ${cover ? `<button type="button" class="linkbtn small" data-act="tfnocover">Убрать обложку</button>` : ''}
+      </div>
+      <p class="hint" style="margin:0;grid-column:1/-1">${isNew && tf.tags ? '✨ Взяли название, исполнителя' + (tf.cover ? ' и обложку' : '') + ' из файла. Проверьте. ' : ''}Пишите как в оригинале — тогда автопоиск найдёт текст с тайм-кодами.</p>
+      <button class="btn" style="grid-column:1/-1" ${S.busy ? 'disabled' : ''}>${isNew ? 'Загрузить' : 'Сохранить'}</button>
+    </form></div></div>`;
+}
+// cover: undefined — обложку не трогали; '' — убрали
+const openTrackEdit = t => { S.trackForm = { mode: 'edit', id: t.id, title: t.title || '', artist: t.artist || '', cover: undefined, coverNow: t.cover || '' }; render(); };
 function viewMusic() {
   const tab = S.musicTab, me = S.me, other = !['my', 'all'].includes(tab) ? U(tab) : null;
   const t2 = (k, l) => `<a class="${tab === k ? 'on' : ''}" href="#music/${k}">${l}</a>`;
   const list = cache.tracks || [], cur = curTrack();
   return `<div class="card"><div class="pad" style="padding-bottom:0"><div class="row" style="flex-wrap:wrap"><div class="grow"><h1 class="h brandh">ВС Музыка</h1>
-      <div class="muted small">mp3, m4a, ogg до ${fmtSize(LIMITS.music)}. Название берётся из имени файла «Исполнитель - Песня».</div></div>
+      <div class="muted small">mp3, m4a, ogg до ${fmtSize(LIMITS.music)}. Название, исполнителя и обложку можно поправить перед загрузкой.</div></div>
       ${banOf(me) ? '' : `<button class="btn" data-act="pickmusic" ${S.upload ? 'disabled' : ''}>${I.upload}<span>Загрузить трек</span></button>`}</div></div>
     <div class="tabs">${t2('my', 'Моя музыка')}${t2('all', 'Новое')}${other ? `<a class="on" href="#music/${esc(tab)}">${esc(other.name)}</a>` : ''}</div></div>
     <div class="card ulist">${S.loading ? '<div class="loading"><div class="spin"></div></div>' : list.length ? list.map((t, i) => {
@@ -1914,6 +2053,7 @@ function viewMusic() {
       return `<div class="uitem track ${cur?.id === t.id ? 'cur' : ''}"><button class="track-play" data-act="tplay" data-i="${i}" aria-label="${playing ? 'Пауза' : 'Играть'}">${playing ? I.pause : I.play}</button>
         <div class="grow" style="min-width:0"><b class="track-title">${esc(t.title)}</b><div class="muted small">${esc(t.artist || 'Неизвестный исполнитель')}${!mine && U(t.ownerId) ? ' · добавил(а) ' + esc(U(t.ownerId).name) : ''}</div></div>
         <span class="muted small tnum">${fmtDur(t.duration)}</span>
+        ${mine ? `<button class="icon-btn" data-act="tedit" data-id="${esc(t.id)}" aria-label="Изменить трек" title="Изменить название и обложку">✏️</button>` : ''}
         ${mine ? `<button class="icon-btn" data-act="tdel" data-id="${esc(t.id)}" aria-label="Удалить трек">${S.confirm === 'track:' + t.id ? 'Удалить?' : '🗑'}</button>`
           : `<button class="icon-btn ${saved ? 'on' : ''}" data-act="tsave" data-id="${esc(t.id)}" aria-label="${saved ? 'Убрать из моей музыки' : 'Добавить в мою музыку'}" title="${saved ? 'Убрать из моей музыки' : 'Добавить в мою музыку'}">${saved ? '✓' : '＋'}</button>`}
         ${isSiteAdmin() && !mine ? `<button class="icon-btn" data-act="tdel" data-id="${esc(t.id)}" aria-label="Удалить трек (админ)">${S.confirm === 'track:' + t.id ? 'Удалить?' : '🗑'}</button>` : ''}</div>`;
@@ -2644,7 +2784,7 @@ function nickCollection(u, own) {
   const list = cache.nicks.filter(n => n.uid === u.id && n.id !== u.nick).sort((a, b) => a.id.length - b.id.length || a.id.localeCompare(b.id));
   if (!list.length) return '';
   const can = own || isSiteAdmin(), sel = list.find(n => n.id === S.nickMenu);
-  return `<dt>Коллекция</dt><dd><div class="nick-col">${list.map(n => can
+  return `<dt>Коллекция</dt><dd class="f-col"><div class="nick-col">${list.map(n => can
       ? `<button class="nick-chip ${sel?.id === n.id ? 'on' : ''}" data-act="nickmenu" data-n="${esc(n.id)}">💎 @${esc(n.id)}</button>`
       : `<a class="nick-chip" href="#@${esc(n.id)}">💎 @${esc(n.id)}</a>`).join('')}</div>
     ${sel ? `<div class="nick-menu">${own ? `<button class="btn sec small" data-act="nickmain" data-n="${esc(sel.id)}">Сделать основным</button>
@@ -2687,25 +2827,25 @@ function viewProfile() {
         <div class="row" style="flex-wrap:wrap;gap:6px">${BAN_DAYS.map(([d, l]) => `<button class="btn ${d ? 'sec' : 'danger'} small" data-act="ban" data-id="${esc(u.id)}" data-d="${d}">${l}</button>`).join('')}</div>`}
     </div>` : ''}
     <dl class="facts">
-      <dt>Короткое имя</dt><dd>@${esc(u.nick)}${isColNick(u.nick) ? ' <span title="Коллекционный юзернейм">💎</span>' : ''} <button class="linkbtn small" data-act="copy" data-text="${esc(pageUrl(u))}">${I.link} ссылка</button></dd>
+      <dt>Короткое имя</dt><dd class="f-nick">@${esc(u.nick)}${isColNick(u.nick) ? ' <span title="Коллекционный юзернейм">💎</span>' : ''} <button class="linkbtn small" data-act="copy" data-text="${esc(pageUrl(u))}">${I.link} ссылка</button></dd>
       ${nickCollection(u, own)}
       ${adm ? `<dt>Роль</dt><dd><b class="adm-role">Администратор сайта</b></dd>` : ''}
-      ${u.city ? `<dt>Город</dt><dd>${esc(u.city)}</dd>` : ''}
-      ${u.bday ? `<dt>День рождения</dt><dd>${esc(bdayText(u.bday))}${isBdayToday(u.bday) ? ' 🎂 <b>сегодня!</b>' : ''}</dd>` : ''}
-      ${u.about ? `<dt>О себе</dt><dd>${esc(u.about)}</dd>` : ''}
-      ${since ? `<dt>На VСмске</dt><dd>с ${since.getDate()} ${MONTHS[since.getMonth()]} ${since.getFullYear()}</dd>` : ''}
+      ${u.city ? `<dt>Город</dt><dd class="f-city">${esc(u.city)}</dd>` : ''}
+      ${u.bday ? `<dt>День рождения</dt><dd class="f-bday">${esc(bdayText(u.bday))}${isBdayToday(u.bday) ? ' 🎂 <b>сегодня!</b>' : ''}</dd>` : ''}
+      ${u.about ? `<dt>О себе</dt><dd class="f-about">${esc(u.about)}</dd>` : ''}
+      ${since ? `<dt>На VСмске</dt><dd class="f-since">с ${since.getDate()} ${MONTHS[since.getMonth()]} ${since.getFullYear()}</dd>` : ''}
     </dl>
     <div class="stats">
       <div><b>${friendIds.length}</b><span>${plural(friendIds.length, 'друг', 'друга', 'друзей')}</span></div>
-      <div><b>${posts.length}</b><span>${plural(posts.length, 'запись', 'записи', 'записей')}</span></div>
-      <div><b>${likes}</b><span>${plural(likes, 'отметка', 'отметки', 'отметок')} «нравится»</span></div>
+      <div><b>${posts.length}</b><span>${plural(posts.length, 'пост', 'поста', 'постов')}</span></div>
+      <div><b>${likes}</b><span>${plural(likes, 'лайк', 'лайка', 'лайков')}</span></div>
     </div>
     ${(() => { const b = badges(u, friendIds.length, posts.length, likes); return b.length ? `<div class="badges">${b.map(([e, t, d]) => `<span class="badge-a" title="${esc(d)}">${e} ${esc(t)}</span>`).join('')}</div>` : ''; })()}
   </div>
   <div class="two">
     <div>
       ${own || (isFriend && (u.privacy?.wall || 'friends') !== 'me') ? composer(u.id, own ? 'Что у вас нового?' : 'Написать на стене у ' + u.name.split(' ')[0]) : ''}
-      <div class="card pad" style="padding-block:12px"><b>${own ? 'Мои записи' : 'Стена'}</b> <span class="muted">${posts.length}</span></div>
+      <div class="card pad" style="padding-block:12px"><b>${own ? 'Мои посты' : 'Посты'}</b> <span class="muted">${posts.length}</span></div>
       ${S.loading ? loadingBox() : posts.length ? wallPosts(u, posts) : `<div class="card empty">${own ? 'Напишите первую запись: её увидят ваши друзья.' : 'На стене пока нет записей'}</div>`}
     </div>
     <div>
@@ -2787,7 +2927,7 @@ function viewFriends() {
       <div class="ulist">${inc.map(u => userRow(u, '<div class="req">Хочет добавить вас в друзья</div>')).join('')}</div></div>` : ''}
     <div class="card"><div class="pad" style="padding-bottom:4px"><h1 class="h">Друзья <span class="muted">${ids.length}</span></h1></div>
     <div class="ulist">${fr.length ? fr.map(u => userRow(u)).join('') : ids.length ? '<div class="loading"><div class="spin"></div></div>' : `<div class="empty">У вас пока нет друзей<a class="btn sec" href="#people">Найти людей</a></div>`}</div></div>
-    ${sug.length ? `<div class="card"><div class="pad" style="padding-bottom:4px"><h2 class="h" style="font-size:16px">Возможные друзья</h2></div>
+    ${sug.length ? `<div class="card"><div class="pad" style="padding-bottom:4px"><h2 class="h" style="font-size:16px">Может, знакомы</h2></div>
       <div class="ulist">${sug.map(x => userRow(x.u, `<div class="muted small">${x.n} ${plural(x.n, 'общий друг', 'общих друга', 'общих друзей')}</div>`)).join('')}</div></div>` : ''}
     ${out.length ? `<div class="card"><div class="pad" style="padding-bottom:4px"><h2 class="h" style="font-size:16px">Исходящие заявки <span class="muted">${out.length}</span></h2></div>
       <div class="ulist">${out.map(u => userRow(u)).join('')}</div></div>` : ''}`;
@@ -3134,13 +3274,16 @@ document.addEventListener('click', async e => {
       }
       case 'sign': S.sign = b.dataset.s; render(); break;
       // ---- ВС Музыка
+      case 'tfcover': pick('tfcover', 'image/*', false); break;
+      case 'tfnocover': if (S.trackForm) { S.trackForm.cover = ''; render(); } break;
+      case 'tedit': { const t = id === 'cur' ? curTrack() : (cache.tracks || []).find(x => x.id === id); if (t && t.ownerId === uid()) openTrackEdit(t); break; }
       case 'pickmusic': pick('music', 'audio/*', false); break;
       case 'tplay': playList(cache.tracks || [], Number(b.dataset.i), S.musicTab === 'my' ? 'Моя музыка' : S.musicTab === 'all' ? 'Новое в ВС Музыке' : 'Музыка: ' + (U(S.musicTab)?.name || '')); break;
       case 'mplay': if (player.audio.src) player.audio.paused ? player.audio.play() : player.audio.pause(); break;
       case 'mnext': nextTrack(); break;
       case 'mprev': prevTrack(); break;
       case 'fpopen': S.fullPlayer = true; S.lyrEdit = false; lyricIdx = -1; render(); break;
-      case 'fpclose': S.fullPlayer = false; S.lyrEdit = false; S.lyrPick = false; render(); break;
+      case 'fpclose': S.fullPlayer = false; S.lyrEdit = false; S.lyrPick = false; S.lyrFind = null; render(); break;
       case 'fprepeat': player.repeat = { off: 'all', all: 'one', one: 'off' }[player.repeat]; lsSet('vs_repeat', player.repeat); toast(REPEAT_LABEL[player.repeat]); render(); break;
       case 'fpshuffle': player.shuffle = !player.shuffle; lsSet('vs_shuffle', player.shuffle ? '1' : '0'); toast(player.shuffle ? 'Перемешивание включено' : 'Перемешивание выключено'); render(); break;
       case 'fplyrics': S.fpLyrics = !S.fpLyrics; S.lyrEdit = false; lyricIdx = -1; render(); setTimeout(syncLyrics, 50); break;
@@ -3150,8 +3293,16 @@ document.addEventListener('click', async e => {
         lsSet('vs_lyrstyle', v); lyricIdx = -1; S.lyrPick = false;
         toast('Вид текста: ' + LYR_STYLES[v]); render(); break;
       }
-      case 'lyredit': S.lyrEdit = !S.lyrEdit; render(); if (S.lyrEdit) document.getElementById('lyrText')?.focus(); break;
+      case 'lyredit': S.lyrEdit = !S.lyrEdit; S.lyrFind = null; render(); if (S.lyrEdit) document.getElementById('lyrText')?.focus(); break;
       case 'lyrseek': if (b.dataset.t) { player.audio.currentTime = Number(b.dataset.t); if (player.audio.paused) player.audio.play(); } break;
+      case 'lyrfind': findLyrics(); break;
+      case 'lyrauto': S.lyrEdit = true; S.lyrFind = null; render(); findLyrics(true); break;
+      case 'lyrtake': lyrTake(Number(b.dataset.i)); break;
+      case 'lyrshift': {
+        const ta = document.getElementById('lyrText'); if (!ta) return;
+        if (!/\[\d{1,2}:\d{2}/.test(ta.value)) { toast('В тексте нет тайм-кодов'); break; }
+        ta.value = shiftLrc(ta.value, Number(b.dataset.d)); toast('Тайм-коды сдвинуты на ' + (Number(b.dataset.d) > 0 ? '+' : '') + b.dataset.d + ' с'); break;
+      }
       case 'lyrstamp': {
         const ta = document.getElementById('lyrText'); if (!ta) return;
         const tm = player.audio.currentTime, stamp = `[${pad2(Math.floor(tm / 60))}:${pad2(Math.floor(tm % 60))}.${pad2(Math.floor((tm % 1) * 100))}] `;
@@ -3161,7 +3312,6 @@ document.addEventListener('click', async e => {
         const nextNl = ta.value.indexOf('\n', lineStart); const pos = nextNl < 0 ? ta.value.length : nextNl + 1;
         ta.focus(); ta.setSelectionRange(pos, pos); break;
       }
-      case 'fpcover': pick('tcover', 'image/*', false); break;
       case 'fplike': { const t = curTrack(); if (!t || t.radio || t.ownerId === uid()) return;
         const has = (S.me.tracks || []).includes(t.id);
         await updateDoc(doc(db, 'users', uid()), { tracks: has ? arrayRemove(t.id) : arrayUnion(t.id) }); toast(has ? 'Убрано из вашей музыки' : 'Добавлено в вашу музыку'); break; }
@@ -3257,7 +3407,7 @@ document.addEventListener('click', async e => {
         const w = tttWin(t.b); if (w === 'X') t.wins++; else if (w === 'O') t.losses++; else if (w === 'draw') t.draws++;
         render(); break;
       }
-      case 'ovx': S.newRoom = null; S.fwd = null; S.storyDraft = null; S.giftFor = null; S.qr = null; render(); break;
+      case 'ovx': S.trackForm = null; S.newRoom = null; S.fwd = null; S.storyDraft = null; S.giftFor = null; S.qr = null; render(); break;
       case 'qr': {
         const url = pageUrl(id === uid() ? S.me : U(id) || { id });
         S.qr = { id, url, img: '' }; S.profMenu = false; render();
@@ -3549,6 +3699,7 @@ async function openLightbox(i) {
 }
 document.addEventListener('keydown', e => {
   if (S.story) { if (e.key === 'Escape') { clearTimeout(storyTimer); S.story = null; render(); } else if (e.key === 'ArrowRight') storyStep(1); else if (e.key === 'ArrowLeft') storyStep(-1); return; }
+  if (e.key === 'Escape' && S.trackForm) { S.trackForm = null; render(); return; }
   if (e.key === 'Escape' && S.fullPlayer && S.lyrPick) { S.lyrPick = false; render(); return; }
   if (e.key === 'Escape' && S.fullPlayer && !S.lyrEdit) { S.fullPlayer = false; render(); return; }
   if (e.key === 'Escape' && (S.qr || S.giftFor || S.newRoom || S.fwd || S.storyDraft || S.report)) { S.qr = S.giftFor = S.newRoom = S.fwd = S.storyDraft = S.report = null; render(); return; }
@@ -3591,13 +3742,7 @@ document.getElementById('filePick').addEventListener('change', async e => {
       render();
     }
     else if (pickTarget === 'photos') await uploadPhotos(files);
-    else if (pickTarget === 'tcover') {
-      const t = curTrack(); if (!t || t.ownerId !== uid()) return;
-      const cover = await compress(f, 600, 250000, true);
-      await updateDoc(doc(db, 'tracks', t.id), { cover }); t.cover = cover;
-      const c2 = (cache.tracks || []).find(x => x.id === t.id); if (c2) c2.cover = cover;
-      toast('Обложка обновлена'); render();
-    }
+    else if (pickTarget === 'tfcover') { if (S.trackForm) { S.trackForm.cover = await compress(f, 600, 250000, true); render(); } }
     else if (pickTarget === 'evcover') { S.evCover = await compress(f, 1280, 420000); render(); }
     else if (pickTarget === 'lot') { S.lotImage = await compress(f, 1080, 420000); render(); }
     else if (pickTarget === 'music') await uploadTrack(f);
@@ -3734,12 +3879,14 @@ document.addEventListener('submit', async e => {
         await sendMessage(f.dataset.to, text);
         break;
       }
+      case 'trackform': await saveTrackForm(); break;
       case 'lyrics': {
+        if (document.activeElement?.id === 'lyrQ') { findLyrics(); return; }   // Enter в строке поиска — искать, а не сохранять
         const t = curTrack(); if (!t || t.ownerId !== uid()) return;
         const lyrics = (document.getElementById('lyrText')?.value || '').slice(0, 20000);
         await updateDoc(doc(db, 'tracks', t.id), { lyrics }); t.lyrics = lyrics;
         const c2 = (cache.tracks || []).find(x => x.id === t.id); if (c2) c2.lyrics = lyrics;
-        S.lyrEdit = false; lyricIdx = -1; toast(parseLyrics(lyrics).timed ? 'Текст сохранён — будет идти вместе с музыкой' : 'Текст сохранён'); render(); setTimeout(syncLyrics, 50); break;
+        S.lyrEdit = false; S.lyrFind = null; lyricIdx = -1; toast(parseLyrics(lyrics).timed ? 'Текст сохранён — будет идти вместе с музыкой' : 'Текст сохранён'); render(); setTimeout(syncLyrics, 50); break;
       }
       case 'event': {
         const title = v('evTitle'), at = new Date(v('evAt'));
