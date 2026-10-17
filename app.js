@@ -34,7 +34,7 @@ const db = getFirestore(fbApp);
 /* ---------- Константы и утилиты ---------- */
 // Обложки профиля: ключ хранится в users.cover
 const COVERS = {
-  blue: 'linear-gradient(135deg,#2F44D0,#6A47C9)', sunset: 'linear-gradient(135deg,#F2994A,#D0462F 55%,#B4398F)',
+  blue: 'linear-gradient(135deg,#6C4DFF,#B25CC0 60%,#FF6B57)', sunset: 'linear-gradient(135deg,#F2994A,#D0462F 55%,#B4398F)',
   sea: 'linear-gradient(135deg,#1F8A5B,#2B8BB5)', night: 'linear-gradient(135deg,#141A33,#4E5B76)',
   rose: 'linear-gradient(135deg,#B4398F,#F06C9B)', gold: 'linear-gradient(135deg,#C98A12,#F2C94C)',
 };
@@ -47,7 +47,7 @@ const MAX_POST_IMG = 700000;   // символов dataURL (~520 КБ), лими
 const MAX_AVATAR = 120000;
 const CHUNK = 700000;                                   // символов base64 в одном куске (кратно 4)
 const LIMITS = { disk: 10 * 1024 * 1024, video: 20 * 1024 * 1024, music: 12 * 1024 * 1024 };
-const VERSION = '3.6';
+const VERSION = '3.7';
 const MAX_MSG_IMG = 380000;    // фото в сообщении
 const ONLINE_MS = 5 * 60 * 1000; // «в сети», если заходил не раньше 5 минут назад
 
@@ -76,7 +76,7 @@ function applyTheme(t) {
   else delete document.documentElement.dataset.theme;
 }
 applyTheme(lsGet('vs_theme'));
-const ACCENTS = [['blue', 'Синий', '#2F44D0'], ['violet', 'Фиолетовый', '#6A47C9'], ['green', 'Зелёный', '#1F8A5B'], ['orange', 'Оранжевый', '#D9641E'], ['pink', 'Розовый', '#C2357A']];
+const ACCENTS = [['blue', 'Фирменный', '#6C4DFF'], ['violet', 'Фиолетовый', '#6A47C9'], ['green', 'Зелёный', '#1F8A5B'], ['orange', 'Оранжевый', '#D9641E'], ['pink', 'Розовый', '#C2357A']];
 function applyAccent(a) { if (a && a !== 'blue') document.documentElement.dataset.accent = a; else delete document.documentElement.dataset.accent; }
 applyAccent(lsGet('vs_accent'));
 if (lsGet('vs_anim') === 'off') document.documentElement.dataset.anim = 'off';
@@ -1005,7 +1005,7 @@ function render() {
   const msgs = app.querySelector('.msgs');
   const atBottom = !msgs || msgs.scrollHeight - msgs.scrollTop - msgs.clientHeight < 80;
 
-  if (S.phase === 'boot') app.innerHTML = `<div class="boot"><span class="boot-logo">VС</span></div>`;
+  if (S.phase === 'boot') app.innerHTML = `<div class="boot"><span class="boot-logo">вс</span></div>`;
   else if (S.phase === 'auth') app.innerHTML = viewAuth();
   else if (S.phase === 'onboarding') app.innerHTML = viewOnboarding();
   else app.innerHTML = shell();
@@ -1068,7 +1068,7 @@ function animate() {
 function viewAuth() {
   const login = S.authTab === 'login';
   return `<div class="login"><div class="login-in">
-    <div class="hero"><span class="logo-mark">VС</span>
+    <div class="hero"><span class="logo-mark">вс</span>
       <h1>VСмске — все свои рядом</h1>
       <p>Стена, лента друзей, лайки, комментарии и личные сообщения.</p></div>
     <div class="card pad form">
@@ -1119,23 +1119,23 @@ function navHtml() {
   const nav = (v, href, icon, label, badge = 0, cls = '') => `<a class="navlink ${on(v)} ${cls}" href="#${href}">${icon}<span>${label}</span>${badge ? `<span class="badge">${badge}</span>` : ''}</a>`;
   const moreOn = ['more', 'profile', 'people', 'albums', 'album', 'disk', 'vid', 'settings', 'edit', 'notif', 'post', 'clubs', 'club', 'admin', 'guests', 'tag', 'apps', 'answers', 'question', 'mail', 'notes', 'weather', 'games', 'market', 'lot', 'music', 'saved', 'events', 'event', 'rates', 'radio', 'horo'].includes(S.view) ? 'on' : '';
   return `<nav class="nav">
-      ${nav('profile', 'id/' + me.id, I.home, 'Моя страница', 0, 'm-hide')}
-      ${nav('feed', 'feed', I.feed, 'Новости')}
-      ${nav('messages', 'im', I.msg, 'Сообщения', unread)}
+      ${nav('profile', 'id/' + me.id, I.home, 'Профиль', 0, 'm-hide')}
+      ${nav('feed', 'feed', I.feed, 'Лента')}
+      ${nav('messages', 'im', I.msg, 'Чаты', unread)}
       ${nav('friends', 'friends', I.friends, 'Друзья', reqs)}
-      ${nav('notif', 'notif', I.bell, 'Уведомления', unseenNotifs(), 'm-hide')}
+      ${nav('notif', 'notif', I.bell, 'Сигналы', unseenNotifs(), 'm-hide')}
       ${nav('saved', 'saved', I.bookmark, 'Закладки', 0, 'm-hide')}
       ${nav('people', 'people', I.people, 'Люди', 0, 'm-hide')}
       ${nav('apps', 'apps', I.apps, 'Сервисы', unreadMail(), 'm-hide')}
       ${nav('music', 'music', I.music, 'Музыка', 0, 'm-hide')}
-      ${nav('clubs', 'clubs', I.club, 'Сообщества', 0, 'm-hide')}
+      ${nav('clubs', 'clubs', I.club, 'Клубы', 0, 'm-hide')}
       ${nav('video', 'video', I.video, 'Видео')}
       ${nav('albums', 'albums', I.album, 'Альбомы', 0, 'm-hide')}
       ${nav('disk', 'disk', I.disk, 'Диск', 0, 'm-hide')}
       <a class="navlink m-only ${moreOn}" href="#more">${I.more}<span>Ещё</span></a>
       <hr>
       ${nav('vid', 'vid', I.vid, 'VС ID', 0, 'm-hide sub')}
-      ${isSiteAdmin() ? nav('admin', 'admin', I.shield, 'Админ-панель', cache.reports.length, 'm-hide sub') : ''}
+      ${isSiteAdmin() ? nav('admin', 'admin', I.shield, 'Админка', cache.reports.length, 'm-hide sub') : ''}
       ${nav('settings', 'settings', I.gear, 'Настройки', 0, 'm-hide sub')}
       <button class="sub desk" data-act="logout">${I.out}<span>Выйти</span></button>
     </nav>`;
@@ -1186,7 +1186,7 @@ function shell() {
   const up = S.upload ? `<div class="card pad upbar" role="status"><div class="row"><span class="grow">${esc(S.upload.label)}</span><b class="tnum">${Math.round(S.upload.pct * 100)}%</b></div><div class="bar"><i style="width:${Math.round(S.upload.pct * 100)}%"></i></div><div class="hint">Не закрывайте страницу до конца загрузки</div></div>` : '';
   return `
   <header class="top"><div class="top-in">
-    <a class="logo" href="#feed" aria-label="VСмске, новости"><span class="logo-mark">VС</span><span class="logo-word" style="color:var(--fg)">VСмске</span></a>
+    <a class="logo" href="#feed" aria-label="VСмске, лента"><span class="logo-mark">вс</span><span class="logo-word" style="color:var(--fg)">VСмске</span></a>
     <form class="search" data-form="search">${I.search}<input id="q" type="search" placeholder="Поиск людей" autocomplete="off" value="${esc(S.view === 'people' ? S.query : '')}"></form>
     <a class="top-bell icon-btn ${S.view === 'notif' ? 'on' : ''}" href="#notif" aria-label="Уведомления">${I.bell}${unseenNotifs() ? `<span class="badge">${unseenNotifs()}</span>` : ''}</a>
     <a class="top-me" href="#id/${esc(me.id)}" style="color:var(--fg)">${avatar(me, 32, false)}<span>${esc(me.name.split(' ')[0])}</span></a>
@@ -1415,7 +1415,7 @@ function viewVID() {
   const fmtDate = s => { if (!s) return '—'; const d = new Date(s); return d.getDate() + ' ' + MONTHS[d.getMonth()] + ' ' + d.getFullYear() + ' в ' + hm(d); };
   const link = pageUrl(me);
   return `<div class="vid-card">
-      <div class="vid-brand"><span class="logo-mark">VС</span><span>VС ID</span></div>
+      <div class="vid-brand"><span class="logo-mark">вс</span><span>VС ID</span></div>
       <div class="row">${avatar(me, 64, false)}<div class="grow" style="min-width:0"><div class="vid-name">${esc(me.name)}</div><div class="vid-sub">@${esc(me.nick)}</div></div></div>
       <div class="vid-id"><span>Ваш VС ID</span><code>${esc(me.id)}</code><button class="btn sec small" data-act="copy" data-text="${esc(me.id)}">Скопировать</button></div>
     </div>
@@ -2784,7 +2784,7 @@ function nickCollection(u, own) {
   const list = cache.nicks.filter(n => n.uid === u.id && n.id !== u.nick).sort((a, b) => a.id.length - b.id.length || a.id.localeCompare(b.id));
   if (!list.length) return '';
   const can = own || isSiteAdmin(), sel = list.find(n => n.id === S.nickMenu);
-  return `<dt>Коллекция</dt><dd><div class="nick-col">${list.map(n => can
+  return `<dt>Коллекция</dt><dd class="f-col"><div class="nick-col">${list.map(n => can
       ? `<button class="nick-chip ${sel?.id === n.id ? 'on' : ''}" data-act="nickmenu" data-n="${esc(n.id)}">💎 @${esc(n.id)}</button>`
       : `<a class="nick-chip" href="#@${esc(n.id)}">💎 @${esc(n.id)}</a>`).join('')}</div>
     ${sel ? `<div class="nick-menu">${own ? `<button class="btn sec small" data-act="nickmain" data-n="${esc(sel.id)}">Сделать основным</button>
@@ -2827,25 +2827,25 @@ function viewProfile() {
         <div class="row" style="flex-wrap:wrap;gap:6px">${BAN_DAYS.map(([d, l]) => `<button class="btn ${d ? 'sec' : 'danger'} small" data-act="ban" data-id="${esc(u.id)}" data-d="${d}">${l}</button>`).join('')}</div>`}
     </div>` : ''}
     <dl class="facts">
-      <dt>Короткое имя</dt><dd>@${esc(u.nick)}${isColNick(u.nick) ? ' <span title="Коллекционный юзернейм">💎</span>' : ''} <button class="linkbtn small" data-act="copy" data-text="${esc(pageUrl(u))}">${I.link} ссылка</button></dd>
+      <dt>Короткое имя</dt><dd class="f-nick">@${esc(u.nick)}${isColNick(u.nick) ? ' <span title="Коллекционный юзернейм">💎</span>' : ''} <button class="linkbtn small" data-act="copy" data-text="${esc(pageUrl(u))}">${I.link} ссылка</button></dd>
       ${nickCollection(u, own)}
       ${adm ? `<dt>Роль</dt><dd><b class="adm-role">Администратор сайта</b></dd>` : ''}
-      ${u.city ? `<dt>Город</dt><dd>${esc(u.city)}</dd>` : ''}
-      ${u.bday ? `<dt>День рождения</dt><dd>${esc(bdayText(u.bday))}${isBdayToday(u.bday) ? ' 🎂 <b>сегодня!</b>' : ''}</dd>` : ''}
-      ${u.about ? `<dt>О себе</dt><dd>${esc(u.about)}</dd>` : ''}
-      ${since ? `<dt>На VСмске</dt><dd>с ${since.getDate()} ${MONTHS[since.getMonth()]} ${since.getFullYear()}</dd>` : ''}
+      ${u.city ? `<dt>Город</dt><dd class="f-city">${esc(u.city)}</dd>` : ''}
+      ${u.bday ? `<dt>День рождения</dt><dd class="f-bday">${esc(bdayText(u.bday))}${isBdayToday(u.bday) ? ' 🎂 <b>сегодня!</b>' : ''}</dd>` : ''}
+      ${u.about ? `<dt>О себе</dt><dd class="f-about">${esc(u.about)}</dd>` : ''}
+      ${since ? `<dt>На VСмске</dt><dd class="f-since">с ${since.getDate()} ${MONTHS[since.getMonth()]} ${since.getFullYear()}</dd>` : ''}
     </dl>
     <div class="stats">
       <div><b>${friendIds.length}</b><span>${plural(friendIds.length, 'друг', 'друга', 'друзей')}</span></div>
-      <div><b>${posts.length}</b><span>${plural(posts.length, 'запись', 'записи', 'записей')}</span></div>
-      <div><b>${likes}</b><span>${plural(likes, 'отметка', 'отметки', 'отметок')} «нравится»</span></div>
+      <div><b>${posts.length}</b><span>${plural(posts.length, 'пост', 'поста', 'постов')}</span></div>
+      <div><b>${likes}</b><span>${plural(likes, 'лайк', 'лайка', 'лайков')}</span></div>
     </div>
     ${(() => { const b = badges(u, friendIds.length, posts.length, likes); return b.length ? `<div class="badges">${b.map(([e, t, d]) => `<span class="badge-a" title="${esc(d)}">${e} ${esc(t)}</span>`).join('')}</div>` : ''; })()}
   </div>
   <div class="two">
     <div>
       ${own || (isFriend && (u.privacy?.wall || 'friends') !== 'me') ? composer(u.id, own ? 'Что у вас нового?' : 'Написать на стене у ' + u.name.split(' ')[0]) : ''}
-      <div class="card pad" style="padding-block:12px"><b>${own ? 'Мои записи' : 'Стена'}</b> <span class="muted">${posts.length}</span></div>
+      <div class="card pad" style="padding-block:12px"><b>${own ? 'Мои посты' : 'Посты'}</b> <span class="muted">${posts.length}</span></div>
       ${S.loading ? loadingBox() : posts.length ? wallPosts(u, posts) : `<div class="card empty">${own ? 'Напишите первую запись: её увидят ваши друзья.' : 'На стене пока нет записей'}</div>`}
     </div>
     <div>
@@ -2927,7 +2927,7 @@ function viewFriends() {
       <div class="ulist">${inc.map(u => userRow(u, '<div class="req">Хочет добавить вас в друзья</div>')).join('')}</div></div>` : ''}
     <div class="card"><div class="pad" style="padding-bottom:4px"><h1 class="h">Друзья <span class="muted">${ids.length}</span></h1></div>
     <div class="ulist">${fr.length ? fr.map(u => userRow(u)).join('') : ids.length ? '<div class="loading"><div class="spin"></div></div>' : `<div class="empty">У вас пока нет друзей<a class="btn sec" href="#people">Найти людей</a></div>`}</div></div>
-    ${sug.length ? `<div class="card"><div class="pad" style="padding-bottom:4px"><h2 class="h" style="font-size:16px">Возможные друзья</h2></div>
+    ${sug.length ? `<div class="card"><div class="pad" style="padding-bottom:4px"><h2 class="h" style="font-size:16px">Может, знакомы</h2></div>
       <div class="ulist">${sug.map(x => userRow(x.u, `<div class="muted small">${x.n} ${plural(x.n, 'общий друг', 'общих друга', 'общих друзей')}</div>`)).join('')}</div></div>` : ''}
     ${out.length ? `<div class="card"><div class="pad" style="padding-bottom:4px"><h2 class="h" style="font-size:16px">Исходящие заявки <span class="muted">${out.length}</span></h2></div>
       <div class="ulist">${out.map(u => userRow(u)).join('')}</div></div>` : ''}`;

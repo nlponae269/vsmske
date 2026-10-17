@@ -1168,3 +1168,80 @@ body:has(.fp) .toast{bottom:auto;top:calc(64px + env(safe-area-inset-top,0px))}
 .tf-fields .field{display:flex;flex-direction:column;gap:4px;margin:0}
 .tf-fields .field span{font-size:13px;color:var(--muted);font-weight:600}
 @media (max-width:420px){.tf-body{grid-template-columns:1fr}.tf-cover{margin:0 auto}}
+
+/* ==========================================================================
+   3.7 — СВОЙ СТИЛЬ. Ничего общего с ВК: фиолетово-коралловый фирменный цвет,
+   узкая колонка-«рельс» из значков вместо списка слева, аватарки-«скруглённые квадраты»,
+   профиль по центру с плашками, крупные заголовки шрифтом Unbounded.
+   Профиль администратора (.admin-card) по-прежнему не трогаем.
+   ========================================================================== */
+:root:not([data-accent]){--accent:#6C4DFF;--accent-soft:#EEEAFF}
+:root{--coral:#FF6B57;--grad:linear-gradient(135deg,var(--accent) 0%,color-mix(in srgb,var(--accent) 45%,var(--coral)) 60%,var(--coral) 100%);
+  --bg:#F6F3FC;--surface-2:#F2EEFB;--line:#E7E1F5;--r:24px;--blob1:rgba(108,77,255,.13);--blob2:rgba(255,107,87,.11)}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){--bg:#0D0A15;--surface:#16121F;--surface-2:#1F1A2B;--line:#2A2338;--blob1:rgba(124,98,255,.16);--blob2:rgba(255,107,87,.09)}
+  :root:not([data-theme="light"]):not([data-accent]){--accent:#9D87FF;--accent-soft:#2A2350}}
+:root[data-theme="dark"]{--bg:#0D0A15;--surface:#16121F;--surface-2:#1F1A2B;--line:#2A2338;--blob1:rgba(124,98,255,.16);--blob2:rgba(255,107,87,.09)}
+:root[data-theme="dark"]:not([data-accent]){--accent:#9D87FF;--accent-soft:#2A2350}
+
+/* логотип: строчные «вс» на фирменном градиенте, чуть наклонён */
+.logo-mark{border-radius:14px 14px 14px 4px;transform:rotate(-6deg);font-family:Unbounded,system-ui,sans-serif;font-weight:700;letter-spacing:-.04em;text-transform:none}
+.logo-word{font-family:Unbounded,system-ui,sans-serif;font-weight:700;letter-spacing:-.03em}
+.boot-logo{border-radius:28px 28px 28px 8px;transform:rotate(-6deg)}
+/* шапка: без имени у аватарки, поиск — широкая «таблетка» */
+.top-me > span:not(.av){display:none}
+.search{border-radius:99px;background:var(--surface-2);border:1px solid var(--line)}
+/* аватарки — скруглённые квадраты (у админа остаётся круг в кольце) */
+.av{border-radius:32%}
+.adm-ring .av,.admin-card .prof .av{border-radius:50%}
+/* карточки: тоньше тень, видимая граница */
+.card:not(.admin-card){border:1px solid var(--line);box-shadow:0 1px 0 rgba(255,255,255,.4) inset,0 6px 24px -10px rgba(40,20,90,.12)}
+h1.h,.brandh{font-family:Unbounded,system-ui,sans-serif;letter-spacing:-.025em}
+
+/* компьютер: меню — узкий «рельс» из значков с подписями под ними */
+@media (min-width:761px){
+  .wrap{grid-template-columns:88px minmax(0,1fr);max-width:1060px}
+  .nav{padding:10px 6px;gap:2px;border-radius:30px;scrollbar-width:none;border:1px solid var(--line)}
+  .nav::-webkit-scrollbar{display:none}
+  .nav :is(a,button){position:relative;flex-direction:column;justify-content:center;gap:3px;padding:7px 2px;border-radius:18px;font-size:10.5px;font-weight:600;line-height:1.1;text-align:center;color:var(--muted)}
+  .nav :is(a,button) > span:not(.badge){max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .nav :is(a,button) svg{width:42px;height:42px;padding:10px;border-radius:15px;background:transparent}
+  .nav :is(a,button):hover{background:transparent;color:var(--fg)}
+  .nav :is(a,button):hover svg{background:var(--surface-2)}
+  .nav :is(a,button).on{background:transparent;color:var(--accent);box-shadow:none}
+  .nav :is(a,button).on svg{background:var(--grad);color:#fff;box-shadow:0 8px 18px -4px color-mix(in srgb,var(--accent) 55%,transparent)}
+  .nav .badge,.nav :is(a,button).on .badge{position:absolute;top:2px;right:12px;margin:0;padding:0 5px;font-size:10px;line-height:16px;background:var(--coral);color:#fff;box-shadow:0 0 0 2px var(--surface)}
+  .nav hr{margin:6px 12px}
+}
+
+/* профиль: всё по центру, сведения — плашками с значками */
+.card:not(.admin-card) .cover{margin:8px 8px 0;border-radius:18px;height:170px}
+.card:not(.admin-card) .prof{flex-direction:column;align-items:center;text-align:center;margin-top:-62px;gap:10px}
+.card:not(.admin-card) .prof-info{min-width:0;width:100%}
+.card:not(.admin-card) .prof-name{font-family:Unbounded,system-ui,sans-serif;letter-spacing:-.03em}
+.card:not(.admin-card) .prof-btns{justify-content:center}
+.card:not(.admin-card) .facts{display:flex;flex-wrap:wrap;justify-content:center;gap:8px;border-top:0;padding:4px 20px 18px}
+.card:not(.admin-card) .facts dt{display:none}
+.card:not(.admin-card) .facts dd{display:inline-flex;align-items:center;gap:6px;padding:6px 12px;border-radius:99px;background:var(--surface-2);font-size:14px}
+.card:not(.admin-card) .facts dd.f-city::before{content:"📍"}
+.card:not(.admin-card) .facts dd.f-bday::before{content:"🎂"}
+.card:not(.admin-card) .facts dd.f-since::before{content:"✨"}
+.card:not(.admin-card) .facts dd.f-about{flex-basis:100%;justify-content:center;background:none;padding:2px 8px;border-radius:0;color:var(--fg);font-size:15px;white-space:pre-line}
+.card:not(.admin-card) .facts dd.f-col{flex-basis:100%;justify-content:center;background:none;padding:0;flex-direction:column}
+.card:not(.admin-card) .facts .nick-col,.card:not(.admin-card) .facts .nick-menu{justify-content:center}
+.card:not(.admin-card) .stats{justify-content:center;border-top:0;padding-top:0}
+.card:not(.admin-card) .stats div{align-items:center;min-width:92px;padding:10px 14px;border-radius:18px;background:var(--surface-2)}
+
+/* записи: значки действий в цветных кружках вместо серых «таблеток» */
+.post-head .av{border-radius:32%}
+.post-text{font-size:15.5px;line-height:1.5}
+.post-actions{gap:4px;padding-top:6px;border-top:1px dashed var(--line);margin-top:10px}
+.post-actions .pill{background:transparent;padding:4px 10px 4px 4px;gap:8px;color:var(--muted);font-weight:600}
+.post-actions .pill svg{width:34px;height:34px;padding:8px;border-radius:12px;background:var(--surface-2);transition:background .2s,color .2s}
+.post-actions .pill[data-act=like] svg{color:#FF4D7E;background:color-mix(in srgb,#FF4D7E 12%,transparent)}
+.post-actions .pill[data-act=togglec] svg{color:var(--accent);background:var(--accent-soft)}
+.post-actions .pill[data-act=repost] svg{color:var(--coral);background:color-mix(in srgb,var(--coral) 14%,transparent)}
+.post-actions .pill.liked{color:#FF4D7E;background:transparent}
+.post-actions .pill.liked svg{background:#FF4D7E;color:#fff}
+.post-actions .pill:hover svg{filter:brightness(1.05)}
+/* кнопки — фирменный градиент */
+.btn:not(.sec):not(.ghost):not(.danger){background:var(--grad);border:0;color:#fff}
