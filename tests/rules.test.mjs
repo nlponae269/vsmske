@@ -557,3 +557,36 @@ test('уведомления об упоминании и подарке', async
   await assertSucceeds(setDoc(doc(collection(db(B), 'notifs')), { to: A, from: B, type: 'mention', postId: 'p1', text: '@alice смотри', createdAt: serverTimestamp() }));
   await assertSucceeds(setDoc(doc(collection(db(B), 'notifs')), { to: A, from: B, type: 'gift', postId: '', text: '🌹', createdAt: serverTimestamp() }));
 });
+
+/* ---------- 2.1: защита ---------- */
+test('безопасность: картинки только загруженные, не ссылки на чужие серверы', async () => {
+  await assertFails(updateDoc(doc(db(A), 'users', A), { photo: 'https://evil.example/track.gif' }));
+  await assertSucceeds(updateDoc(doc(db(A), 'users', A), { photo: 'https://lh3.googleusercontent.com/a/abc=s96-c' }));
+  await assertSucceeds(updateDoc(doc(db(A), 'users', A), { photo: 'data:image/jpeg;base64,AAAA' }));
+  await assertFails(setDoc(doc(collection(db(A), 'posts')), post(A, A, { image: 'https://evil.example/x.jpg' })));
+  await assertFails(setDoc(doc(collection(db(A), 'posts')), post(A, A, { text: '', images: ['data:image/jpeg;base64,A', 'https://evil.example/x.jpg'] })));
+  await assertFails(send(B, A, '', 'https://evil.example/x.jpg'));
+  await assertFails(setDoc(doc(collection(db(A), 'market')), { ownerId: A, title: 'Лот', price: 1, category: 'other', city: '', text: '', image: 'https://evil.example/x.jpg', sold: false, createdAt: serverTimestamp() }));
+});
+test('безопасность: цвет аватара, лишние поля профиля', async () => {
+  await assertFails(updateDoc(doc(db(A), 'users', A), { color: 'red;background:url(x)' }));
+  await assertSucceeds(updateDoc(doc(db(A), 'users', A), { color: '#1F8A5B' }));
+  await assertFails(updateDoc(doc(db(A), 'users', A), { junk: 'x'.repeat(1000) }));
+});
+test('безопасность: уведомления от заблокированного, видео-ссылки, кривые id диалогов', async () => {
+  await updateDoc(doc(db(A), 'users', A), { blocked: arrayUnion(B) });
+  await assertFails(setDoc(doc(collection(db(B), 'notifs')), { to: A, from: B, type: 'like', postId: '', text: '', createdAt: serverTimestamp() }));
+  const vid = { ownerId: A, title: 'v', description: '', source: 'link', likes: [], createdAt: serverTimestamp() };
+  await assertSucceeds(setDoc(doc(collection(db(A), 'videos')), { ...vid, provider: 'youtube', vid: 'dQw4w9WgXcQ' }));
+  await assertFails(setDoc(doc(collection(db(A), 'videos')), { ...vid, provider: 'direct', vid: 'javascript:alert(1)' }));
+  await assertFails(setDoc(doc(collection(db(A), 'videos')), { ...vid, provider: 'evil', vid: 'x' }));
+  await assertFails(setDoc(doc(collection(db(A), 'chats', A + '_' + B + '_x', 'messages')), { from: A, text: 'x', createdAt: serverTimestamp() }));
+});
+test('2.1: правка своего сообщения и закладки', async () => {
+  const ref = await send(B, A, 'опечатка');
+  const cid = [A, B].sort().join('_');
+  await assertSucceeds(updateDoc(doc(db(B), 'chats', cid, 'messages', ref.id), { text: 'исправлено', edited: serverTimestamp() }));
+  await assertFails(updateDoc(doc(db(A), 'chats', cid, 'messages', ref.id), { text: 'чужое', edited: serverTimestamp() }));
+  await assertFails(updateDoc(doc(db(B), 'chats', cid, 'messages', ref.id), { text: 'x', from: A, edited: serverTimestamp() }));
+  await assertSucceeds(updateDoc(doc(db(A), 'users', A), { saved: arrayUnion('p1') }));
+});

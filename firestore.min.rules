@@ -5,206 +5,212 @@ function rd(){return resource.data;}
 function C(){return request.auth!=null;}
 function B(){return request.auth.uid;}
 function A(){return request.resource.data;}
-function L(){return A().diff(rd()).affectedKeys();}
-function F(keys){return L().hasOnly(keys);}
+function M(){return A().diff(rd()).affectedKeys();}
+function F(keys){return M().hasOnly(keys);}
+function H(keys){return A().keys().hasOnly(keys);}
 function D(v,min,max){return v is string&&v.size()>=min&&v.size()<=max;}
 function G(v){return v==request.time;}
 function E(c,id){return /databases/$(database)/documents/$(c)/$(id);}
-function J(id){return get(E('users',id)).data;}
-function I(){return J(B()).get('admin',false) in [true,'true'];}
-function H(){
-let b=J(B()).get('ban',null);
+function N(id){return get(E('users',id)).data;}
+function J(x){return x is string&&(x==''||x.matches('^data:image/(jpeg|png|webp|gif);base64,.*'));}
+function X(x){return J(x)||(x is string&&x.size()<=2000&&x.matches('^https://[a-z0-9-]+[.]googleusercontent[.]com/.*'));}
+function V(x){return x==''||(x is string&&x.matches('^#[0-9A-Fa-f]{6}$'));}
+function K(){return N(B()).get('admin',false) in [true,'true'];}
+function I(){
+let b=N(B()).get('ban',null);
 return b==null||(b.get('until',null)!=null&&b.until<=request.time);
 }
-function M(id){return id!=B()&&B() in J(id).get('blocked',[]);}
-function Y(id){return get(E('groups',id)).data;}
-function V(id){return B() in Y(id).admins;}
-function N(before,after){
+function O(id){return id!=B()&&B() in N(id).get('blocked',[]);}
+function ZD(id){return get(E('groups',id)).data;}
+function Z(id){return B() in ZD(id).admins;}
+function P(before,after){
 return after.toSet().difference(before.toSet()).union(before.toSet().difference(after.toSet())).hasOnly([B()]);
 }
 match /usernames/{nick}{
-allow read: if true;
-allow create: if C()&&nick.matches('^[a-z0-9._]{3,30}$')&&A().keys().hasOnly(['uid'])&&A().uid==B()&&getAfter(E('users',B())).data.nick==nick;
-allow delete: if C()&&rd().uid==B()&&getAfter(E('users',B())).data.nick!=nick;
+allow read:if true;
+allow create:if C()&&nick.matches('^[a-z0-9._]{3,30}$')&&H(['uid'])&&A().uid==B()&&getAfter(E('users',B())).data.nick==nick;
+allow delete:if C()&&rd().uid==B()&&getAfter(E('users',B())).data.nick!=nick;
 }
-function W(u){
-return D(u.name,1,60)&&u.nick is string&&u.nick.matches('^[a-z0-9._]{3,30}$')&&D(u.get('city',''),0,40)&&D(u.get('status',''),0,120)&&D(u.get('about',''),0,600)&&D(u.get('photo',''),0,130000)&&D(u.get('color',''),0,20)&&u.get('search',[]) is list&&u.get('search',[]).size()<=150&&u.get('friends',[]) is list&&u.get('friends',[]).size()<=5000&&u.get('privacy',{}) is map&&u.get('privacy',{}).keys().hasOnly(['messages','wall'])&&u.get('privacy',{}).get('messages','all') in ['all','friends']&&u.get('privacy',{}).get('wall','friends') in ['friends','me']&&(!('lastSeen' in u)||u.lastSeen is timestamp)&&(!('notifSeenAt' in u)||u.notifSeenAt is timestamp)&&D(u.get('pinned',''),0,40)&&u.get('cover','blue') in ['blue','sunset','sea','night','rose','gold']&&u.get('groups',[]) is list&&u.get('groups',[]).size()<=500&&u.get('blocked',[]) is list&&u.get('blocked',[]).size()<=500&&u.get('tracks',[]) is list&&u.get('tracks',[]).size()<=1000&&(u.get('bday','')==''||(u.bday is string&&u.bday.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$')));
+function Y(u){
+return D(u.name,1,60)&&u.nick is string&&u.nick.matches('^[a-z0-9._]{3,30}$')&&D(u.get('city',''),0,40)&&D(u.get('status',''),0,120)&&D(u.get('about',''),0,600)&&D(u.get('photo',''),0,130000)&&D(u.get('color',''),0,20)&&u.keys().hasOnly(['name','nick','city','status','about','photo','color','friends','search','createdAt','privacy',
+'lastSeen','notifSeenAt','pinned','cover','groups','blocked','bday','tracks','saved','admin','ban'])&&u.get('search',[]) is list&&u.get('search',[]).size()<=150&&u.get('friends',[]) is list&&u.get('friends',[]).size()<=5000&&u.get('privacy',{}) is map&&u.get('privacy',{}).keys().hasOnly(['messages','wall'])&&u.get('privacy',{}).get('messages','all') in ['all','friends']&&u.get('privacy',{}).get('wall','friends') in ['friends','me']&&(!('lastSeen' in u)||u.lastSeen is timestamp)&&(!('notifSeenAt' in u)||u.notifSeenAt is timestamp)&&D(u.get('pinned',''),0,40)&&u.get('cover','blue') in ['blue','sunset','sea','night','rose','gold']&&u.get('groups',[]) is list&&u.get('groups',[]).size()<=500&&u.get('blocked',[]) is list&&u.get('blocked',[]).size()<=500&&u.get('tracks',[]) is list&&u.get('tracks',[]).size()<=1000&&u.get('saved',[]) is list&&u.get('saved',[]).size()<=500&&(u.get('bday','')==''||(u.bday is string&&u.bday.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$')));
 }
-function T(u){return getAfter(E('usernames',u.nick)).data.uid==B();}
+function ZA(u){return getAfter(E('usernames',u.nick)).data.uid==B();}
 function ZC(before,after){
 let added=after.toSet().difference(before.toSet());
 return added.size()==0||(added.size()==1&&added.hasOnly([after[after.size()-1]])&&exists(E('friendRequests',after[after.size()-1]+'_'+B())));
 }
 match /users/{uid}{
-allow read: if C();
-allow create: if C()&&uid==B()&&W(A())&&A().friends.size()==0&&!('admin' in A())&&!('ban' in A())&&G(A().createdAt)&&T(A());
-allow update: if C()&&uid==B()&&W(A())&&!L().hasAny(['createdAt','admin','ban'])&&(!L().hasAny(['nick'])||T(A()))&&(!L().hasAny(['friends'])||ZC(rd().get('friends',[]),A().friends));
+allow read:if C();
+allow create:if C()&&uid==B()&&Y(A())&&A().friends.size()==0&&!('admin' in A())&&!('ban' in A())&&X(A().get('photo',''))&&V(A().get('color',''))&&G(A().createdAt)&&ZA(A());
+allow update:if C()&&uid==B()&&Y(A())&&!M().hasAny(['createdAt','admin','ban'])&&(!M().hasAny(['photo'])||X(A().photo))&&(!M().hasAny(['color'])||V(A().color))&&(!M().hasAny(['nick'])||ZA(A()))&&(!M().hasAny(['friends'])||ZC(rd().get('friends',[]),A().friends));
 match /guests/{gid}{
-allow read,delete: if C()&&uid==B();
-allow create,update: if C()&&gid==B()&&uid!=B()&&A().keys().hasOnly(['at'])&&G(A().at);
+allow read,delete:if C()&&uid==B();
+allow create,update:if C()&&gid==B()&&uid!=B()&&H(['at'])&&G(A().at);
 }
-allow update: if C()&&uid!=B()&&I()&&F(['ban'])&&!(rd().get('admin',false) in [true,'true'])&&(!('ban' in A())||(A().ban is map&&A().ban.keys().hasOnly(['until','reason','by','at'])&&(A().ban.until==null||A().ban.until is timestamp)&&D(A().ban.reason,0,300)&&A().ban.by==B()&&G(A().ban.at)));
-allow update: if C()&&uid!=B()&&F(['friends'])&&N(rd().get('friends',[]),A().friends)&&(!(B() in A().friends)||exists(E('friendRequests',uid+'_'+B())));
+allow update:if C()&&uid!=B()&&K()&&F(['ban'])&&!(rd().get('admin',false) in [true,'true'])&&(!('ban' in A())||(A().ban is map&&A().ban.keys().hasOnly(['until','reason','by','at'])&&(A().ban.until==null||A().ban.until is timestamp)&&D(A().ban.reason,0,300)&&A().ban.by==B()&&G(A().ban.at)));
+allow update:if C()&&uid!=B()&&F(['friends'])&&P(rd().get('friends',[]),A().friends)&&(!(B() in A().friends)||exists(E('friendRequests',uid+'_'+B())));
 }
 match /friendRequests/{rid}{
-allow read: if C()&&(rd().from==B()||rd().to==B());
-allow create: if C()&&A().keys().hasOnly(['from','to','createdAt'])&&A().from==B()&&A().to is string&&A().to!=B()&&rid==B()+'_'+A().to&&G(A().createdAt)&&exists(E('users',A().to))&&H()&&!M(A().to);
-allow delete: if C()&&(rd().from==B()||rd().to==B());
+allow read:if C()&&(rd().from==B()||rd().to==B());
+allow create:if C()&&H(['from','to','createdAt'])&&A().from==B()&&A().to is string&&A().to!=B()&&rid==B()+'_'+A().to&&G(A().createdAt)&&exists(E('users',A().to))&&I()&&!O(A().to);
+allow delete:if C()&&(rd().from==B()||rd().to==B());
 }
-function Z(wallId){
-return wallId==B()||(B() in J(wallId).get('friends',[])&&J(wallId).get('privacy',{}).get('wall','friends')!='me'&&!M(wallId));
+function ZB(wallId){
+return wallId==B()||(B() in N(wallId).get('friends',[])&&N(wallId).get('privacy',{}).get('wall','friends')!='me'&&!O(wallId));
 }
-function ZB(p){
+function ZG(p){
 return p is map&&p.keys().hasOnly(['q','options','votes'])&&D(p.q,1,200)&&p.options is list&&p.options.size()>=2&&p.options.size()<=6&&p.votes=={};
 }
 match /posts/{pid}{
-allow read: if C();
-allow create: if C()&&H()&&A().keys().hasOnly(['authorId','wallId','groupId','text','image','images','tags','poll','repostOf','likes','commentCount','createdAt'])&&(!('images' in A())||(A().images is list&&A().images.size()>=2&&A().images.size()<=4))&&(!('tags' in A())||(A().tags is list&&A().tags.size()<=10))&&A().authorId==B()&&A().wallId is string&&(!('repostOf' in A())||(D(A().repostOf,1,40)&&exists(E('posts',A().repostOf))))&&(('groupId' in A())?(A().groupId==A().wallId&&V(A().groupId)):Z(A().wallId))&&D(A().text,0,4000)&&D(A().image,0,750000)&&(A().text.size()>0||A().image.size()>0||'images' in A()||'poll' in A()||'repostOf' in A())&&(!('poll' in A())||ZB(A().poll))&&A().likes==[]&&A().commentCount==0&&G(A().createdAt);
-allow update: if C()&&H()&&F(['poll'])&&A().poll.diff(rd().poll).affectedKeys().hasOnly(['votes'])&&A().poll.votes.diff(rd().poll.votes).affectedKeys().hasOnly([B()])&&(!(B() in A().poll.votes)||(A().poll.votes[B()] is int&&A().poll.votes[B()]>=0&&A().poll.votes[B()]<rd().poll.options.size()));
-allow update: if C()&&H()&&F(['likes'])&&N(rd().likes,A().likes);
-allow update: if C()&&H()&&F(['reposts'])&&A().reposts==rd().get('reposts',0)+1;
-allow update: if C()&&F(['commentCount'])&&(A().commentCount==rd().commentCount+1||A().commentCount==rd().commentCount-1);
-allow update: if C()&&rd().authorId==B()&&F(['text','editedAt','tags'])&&D(A().text,0,4000)&&(!('tags' in A())||(A().tags is list&&A().tags.size()<=10))&&(A().text.size()>0||rd().image.size()>0||'images' in rd()||'poll' in rd()||'repostOf' in rd())&&G(A().editedAt);
-allow delete: if C()&&(rd().authorId==B()||rd().wallId==B()||(('groupId' in rd())&&V(rd().groupId))||I());
+allow read:if C();
+allow create:if C()&&I()&&H(['authorId','wallId','groupId','text','image','images','tags','poll','repostOf','likes','commentCount','createdAt'])&&(!('images' in A())||(A().images is list&&A().images.size()>=2&&A().images.size()<=4&&J(A().images[0])&&J(A().images[1])&&(A().images.size()<3||J(A().images[2]))&&(A().images.size()<4||J(A().images[3]))))&&(!('tags' in A())||(A().tags is list&&A().tags.size()<=10))&&A().authorId==B()&&A().wallId is string&&(!('repostOf' in A())||(D(A().repostOf,1,40)&&exists(E('posts',A().repostOf))))&&(('groupId' in A())?(A().groupId==A().wallId&&Z(A().groupId)):ZB(A().wallId))&&D(A().text,0,4000)&&D(A().image,0,750000)&&J(A().image)&&(A().text.size()>0||A().image.size()>0||'images' in A()||'poll' in A()||'repostOf' in A())&&(!('poll' in A())||ZG(A().poll))&&A().likes==[]&&A().commentCount==0&&G(A().createdAt);
+allow update:if C()&&I()&&F(['poll'])&&A().poll.diff(rd().poll).affectedKeys().hasOnly(['votes'])&&A().poll.votes.diff(rd().poll.votes).affectedKeys().hasOnly([B()])&&(!(B() in A().poll.votes)||(A().poll.votes[B()] is int&&A().poll.votes[B()]>=0&&A().poll.votes[B()]<rd().poll.options.size()));
+allow update:if C()&&I()&&F(['likes'])&&P(rd().likes,A().likes);
+allow update:if C()&&I()&&F(['reposts'])&&A().reposts==rd().get('reposts',0)+1;
+allow update:if C()&&F(['commentCount'])&&(A().commentCount==rd().commentCount+1||A().commentCount==rd().commentCount-1);
+allow update:if C()&&rd().authorId==B()&&F(['text','editedAt','tags'])&&D(A().text,0,4000)&&(!('tags' in A())||(A().tags is list&&A().tags.size()<=10))&&(A().text.size()>0||rd().image.size()>0||'images' in rd()||'poll' in rd()||'repostOf' in rd())&&G(A().editedAt);
+allow delete:if C()&&(rd().authorId==B()||rd().wallId==B()||(('groupId' in rd())&&Z(rd().groupId))||K());
 match /comments/{cid}{
-allow read: if C();
-allow create: if C()&&H()&&A().keys().hasOnly(['authorId','text','createdAt'])&&A().authorId==B()&&D(A().text,1,1000)&&G(A().createdAt)&&!M(get(E('posts',pid)).data.authorId);
-allow update: if C()&&H()&&F(['likes'])&&N(rd().get('likes',[]),A().likes);
-allow delete: if C()&&(rd().authorId==B()||get(E('posts',pid)).data.authorId==B()||get(E('posts',pid)).data.wallId==B()||I());
+allow read:if C();
+allow create:if C()&&I()&&H(['authorId','text','createdAt'])&&A().authorId==B()&&D(A().text,1,1000)&&G(A().createdAt)&&!O(get(E('posts',pid)).data.authorId);
+allow update:if C()&&I()&&F(['likes'])&&P(rd().get('likes',[]),A().likes);
+allow delete:if C()&&(rd().authorId==B()||get(E('posts',pid)).data.authorId==B()||get(E('posts',pid)).data.wallId==B()||K());
 }
 }
-function K(cid){return cid.matches('^g_.*');}
-function P(cid){return !K(cid)&&B() in cid.split('_');}
-function R(cid){return K(cid)?B() in get(E('chats',cid)).data.members:P(cid);}
-function O(cid){return cid.split('_')[0]==B()?cid.split('_')[1]:cid.split('_')[0];}
-function S(before,after){
+function L(cid){return cid.matches('^g_.*');}
+function S(cid){return !L(cid)&&cid.split('_').size()==2&&B() in cid.split('_');}
+function U(cid){return L(cid)?B() in get(E('chats',cid)).data.members:S(cid);}
+function Q(cid){return cid.split('_')[0]==B()?cid.split('_')[1]:cid.split('_')[0];}
+function T(before,after){
 return after is map&&after.diff(before).affectedKeys().hasOnly([B()])&&after.get(B(),request.time)==request.time;
 }
-function Q(){
-return (!L().hasAny(['lastText','lastFrom','lastAt'])||(A().lastFrom==B()&&D(A().lastText,0,200)))&&(!L().hasAny(['lastAt'])||G(A().lastAt))&&(!L().hasAny(['read'])||S(rd().get('read',{}),A().read));
+function R(){
+return (!M().hasAny(['lastText','lastFrom','lastAt'])||(A().lastFrom==B()&&D(A().lastText,0,200)))&&(!M().hasAny(['lastAt'])||G(A().lastAt))&&(!M().hasAny(['read'])||T(rd().get('read',{}),A().read));
 }
 match /chats/{cid}{
-allow read: if C()&&B() in rd().members;
-allow create: if C()&&P(cid)&&cid.split('_').size()==2&&A().keys().hasOnly(['members','lastText','lastFrom','lastAt','read'])&&A().members==cid.split('_')&&A().lastFrom==B()&&D(A().lastText,0,200)&&G(A().lastAt)&&S({},A().read);
-allow update: if C()&&P(cid)&&F(['lastText','lastFrom','lastAt','read'])&&Q();
-allow create: if C()&&K(cid)&&H()&&A().keys().hasOnly(['members','group','name','ownerId','lastText','lastFrom','lastAt','read'])&&A().group==true&&D(A().name,1,60)&&A().ownerId==B()&&A().members is list&&B() in A().members&&A().members.size()>=2&&A().members.size()<=50&&A().lastFrom==B()&&D(A().lastText,0,200)&&G(A().lastAt)&&S({},A().read);
-allow update: if C()&&K(cid)&&B() in rd().members&&F(['lastText','lastFrom','lastAt','read'])&&Q();
-allow update: if C()&&K(cid)&&rd().ownerId==B()&&F(['name','members','lastText','lastFrom','lastAt','read'])&&Q()&&D(A().name,1,60)&&A().members is list&&B() in A().members&&A().members.size()<=50;
-allow update: if C()&&K(cid)&&rd().ownerId!=B()&&F(['members'])&&N(rd().members,A().members)&&!(B() in A().members);
-allow delete: if C()&&K(cid)&&rd().ownerId==B();
-function X(){
-return K(cid)||O(cid)==B()||J(O(cid)).get('privacy',{}).get('messages','all')!='friends'||B() in J(O(cid)).get('friends',[])||exists(E('chats',cid));
+allow read:if C()&&B() in rd().members;
+allow create:if C()&&S(cid)&&cid.split('_').size()==2&&H(['members','lastText','lastFrom','lastAt','read'])&&A().members==cid.split('_')&&A().lastFrom==B()&&D(A().lastText,0,200)&&G(A().lastAt)&&T({},A().read);
+allow update:if C()&&S(cid)&&F(['lastText','lastFrom','lastAt','read'])&&R();
+allow create:if C()&&L(cid)&&I()&&H(['members','group','name','ownerId','lastText','lastFrom','lastAt','read'])&&A().group==true&&D(A().name,1,60)&&A().ownerId==B()&&A().members is list&&B() in A().members&&A().members.size()>=2&&A().members.size()<=50&&A().lastFrom==B()&&D(A().lastText,0,200)&&G(A().lastAt)&&T({},A().read);
+allow update:if C()&&L(cid)&&B() in rd().members&&F(['lastText','lastFrom','lastAt','read'])&&R();
+allow update:if C()&&L(cid)&&rd().ownerId==B()&&F(['name','members','lastText','lastFrom','lastAt','read'])&&R()&&D(A().name,1,60)&&A().members is list&&B() in A().members&&A().members.size()<=50;
+allow update:if C()&&L(cid)&&rd().ownerId!=B()&&F(['members'])&&P(rd().members,A().members)&&!(B() in A().members);
+allow delete:if C()&&L(cid)&&rd().ownerId==B();
+function ZE(){
+return L(cid)||Q(cid)==B()||N(Q(cid)).get('privacy',{}).get('messages','all')!='friends'||B() in N(Q(cid)).get('friends',[])||exists(E('chats',cid));
 }
-function ZA(f){
+function ZF(f){
 return f is map&&f.keys().hasOnly(['from','name','text'])&&D(f.from,0,40)&&D(f.name,0,60)&&D(f.text,0,2000);
 }
 match /messages/{mid}{
-allow read: if C()&&R(cid);
-allow create: if C()&&R(cid)&&X()&&H()&&(K(cid)||!M(O(cid)))&&A().keys().hasOnly(['from','text','image','audio','dur','replyTo','fwd','createdAt'])&&(!('audio' in A())||(D(A().audio,1,700000)&&A().audio.matches('^data:audio/.*')&&A().dur is number&&A().dur<=61))&&A().from==B()&&D(A().text,0,2000)&&D(A().get('image',''),0,400000)&&(!('replyTo' in A())||(A().replyTo is map&&A().replyTo.keys().hasOnly(['id','from','text'])&&D(A().replyTo.text,0,120)&&D(A().replyTo.id,1,40)))&&(!('fwd' in A())||ZA(A().fwd))&&(A().text.size()>0||A().get('image','').size()>0||'audio' in A()||'fwd' in A())&&G(A().createdAt);
-allow delete: if C()&&rd().from==B();
-allow update: if C()&&R(cid)&&F(['reacts'])&&A().reacts is map&&A().reacts.diff(rd().get('reacts',{})).affectedKeys().hasOnly([B()])&&(!(B() in A().reacts)||A().reacts[B()] in ['❤️','😂','👍','😮','😢','🔥']);
+allow read:if C()&&U(cid);
+allow create:if C()&&U(cid)&&ZE()&&I()&&(L(cid)||!O(Q(cid)))&&H(['from','text','image','audio','dur','replyTo','fwd','createdAt'])&&(!('audio' in A())||(D(A().audio,1,700000)&&A().audio.matches('^data:audio/.*')&&A().dur is number&&A().dur<=61))&&A().from==B()&&D(A().text,0,2000)&&D(A().get('image',''),0,400000)&&J(A().get('image',''))&&(!('replyTo' in A())||(A().replyTo is map&&A().replyTo.keys().hasOnly(['id','from','text'])&&D(A().replyTo.text,0,120)&&D(A().replyTo.id,1,40)))&&(!('fwd' in A())||ZF(A().fwd))&&(A().text.size()>0||A().get('image','').size()>0||'audio' in A()||'fwd' in A())&&G(A().createdAt);
+allow delete:if C()&&rd().from==B();
+allow update:if C()&&rd().from==B()&&F(['text','edited'])&&D(A().text,1,2000)&&G(A().edited);
+allow update:if C()&&U(cid)&&F(['reacts'])&&A().reacts is map&&A().reacts.diff(rd().get('reacts',{})).affectedKeys().hasOnly([B()])&&(!(B() in A().reacts)||A().reacts[B()] in ['❤️','😂','👍','😮','😢','🔥']);
 }
 }
-function U(g){
-return D(g.name,1,60)&&D(g.get('about',''),0,600)&&D(g.get('photo',''),0,130000)&&g.get('cover','blue') in ['blue','sunset','sea','night','rose','gold'];
+function W(g){
+return D(g.name,1,60)&&D(g.get('about',''),0,600)&&D(g.get('photo',''),0,130000)&&J(g.get('photo',''))&&g.get('cover','blue') in ['blue','sunset','sea','night','rose','gold'];
 }
 match /groups/{gid}{
-allow read: if C();
-allow create: if C()&&H()&&A().keys().hasOnly(['name','about','photo','cover','ownerId','admins','membersCount','createdAt'])&&U(A())&&A().ownerId==B()&&A().admins==[B()]&&A().membersCount==1&&G(A().createdAt)&&gid in getAfter(E('users',B())).data.get('groups',[]);
-allow update: if C()&&B() in rd().admins&&F(['name','about','photo','cover'])&&U(A());
-allow update: if C()&&rd().ownerId==B()&&F(['admins'])&&A().admins is list&&B() in A().admins&&A().admins.size()<=20;
-allow update: if C()&&F(['membersCount'])&&((A().membersCount==rd().membersCount+1&&!(gid in J(B()).get('groups',[]))&&gid in getAfter(E('users',B())).data.get('groups',[]))||(A().membersCount==rd().membersCount-1&&gid in J(B()).get('groups',[])&&!(gid in getAfter(E('users',B())).data.get('groups',[]))));
-allow delete: if C()&&(rd().ownerId==B()||I());
+allow read:if C();
+allow create:if C()&&I()&&H(['name','about','photo','cover','ownerId','admins','membersCount','createdAt'])&&W(A())&&A().ownerId==B()&&A().admins==[B()]&&A().membersCount==1&&G(A().createdAt)&&gid in getAfter(E('users',B())).data.get('groups',[]);
+allow update:if C()&&B() in rd().admins&&F(['name','about','photo','cover'])&&W(A());
+allow update:if C()&&rd().ownerId==B()&&F(['admins'])&&A().admins is list&&B() in A().admins&&A().admins.size()<=20;
+allow update:if C()&&F(['membersCount'])&&((A().membersCount==rd().membersCount+1&&!(gid in N(B()).get('groups',[]))&&gid in getAfter(E('users',B())).data.get('groups',[]))||(A().membersCount==rd().membersCount-1&&gid in N(B()).get('groups',[])&&!(gid in getAfter(E('users',B())).data.get('groups',[]))));
+allow delete:if C()&&(rd().ownerId==B()||K());
 }
 match /notifs/{nid}{
-allow read: if C()&&rd().to==B();
-allow create: if C()&&A().keys().hasOnly(['to','from','type','postId','text','createdAt'])&&A().from==B()&&A().to is string&&A().to!=B()&&A().type in ['like','comment','wall','friend','repost','answer','best','mention','gift']&&D(A().postId,0,40)&&D(A().text,0,120)&&G(A().createdAt);
-allow delete: if C()&&(rd().to==B()||rd().from==B());
+allow read:if C()&&rd().to==B();
+allow create:if C()&&H(['to','from','type','postId','text','createdAt'])&&A().from==B()&&A().to is string&&A().to!=B()&&I()&&!O(A().to)&&A().type in ['like','comment','wall','friend','repost','answer','best','mention','gift']&&D(A().postId,0,40)&&D(A().text,0,120)&&G(A().createdAt);
+allow delete:if C()&&(rd().to==B()||rd().from==B());
 }
 match /stories/{sid}{
-allow read: if C();
-allow create: if C()&&H()&&A().keys().hasOnly(['ownerId','image','text','views','createdAt'])&&A().ownerId==B()&&D(A().image,1,450000)&&A().image.matches('^data:image/.*')&&D(A().text,0,200)&&A().views=={}&&G(A().createdAt);
-allow update: if C()&&rd().ownerId!=B()&&F(['views'])&&A().views.diff(rd().views).affectedKeys().hasOnly([B()])&&A().views[B()]==request.time;
-allow delete: if C()&&(rd().ownerId==B()||I());
+allow read:if C();
+allow create:if C()&&I()&&H(['ownerId','image','text','views','createdAt'])&&A().ownerId==B()&&D(A().image,1,450000)&&A().image!=''&&J(A().image)&&D(A().text,0,200)&&A().views=={}&&G(A().createdAt);
+allow update:if C()&&rd().ownerId!=B()&&F(['views'])&&A().views.diff(rd().views).affectedKeys().hasOnly([B()])&&A().views[B()]==request.time;
+allow delete:if C()&&(rd().ownerId==B()||K());
 }
 match /questions/{qid}{
-allow read: if C();
-allow create: if C()&&H()&&A().keys().hasOnly(['authorId','title','text','category','answersCount','bestId','createdAt'])&&A().authorId==B()&&D(A().title,5,150)&&D(A().text,0,2000)&&A().category in ['life','study','tech','games','sport','love','food','other']&&A().answersCount==0&&A().bestId==''&&G(A().createdAt);
-allow update: if C()&&rd().authorId==B()&&F(['bestId'])&&D(A().bestId,0,40);
-allow update: if C()&&F(['answersCount'])&&(A().answersCount==rd().answersCount+1||A().answersCount==rd().answersCount-1);
-allow delete: if C()&&(rd().authorId==B()||I());
+allow read:if C();
+allow create:if C()&&I()&&H(['authorId','title','text','category','answersCount','bestId','createdAt'])&&A().authorId==B()&&D(A().title,5,150)&&D(A().text,0,2000)&&A().category in ['life','study','tech','games','sport','love','food','other']&&A().answersCount==0&&A().bestId==''&&G(A().createdAt);
+allow update:if C()&&rd().authorId==B()&&F(['bestId'])&&D(A().bestId,0,40);
+allow update:if C()&&F(['answersCount'])&&(A().answersCount==rd().answersCount+1||A().answersCount==rd().answersCount-1);
+allow delete:if C()&&(rd().authorId==B()||K());
 match /answers/{aid}{
-allow read: if C();
-allow create: if C()&&H()&&A().keys().hasOnly(['authorId','text','likes','createdAt'])&&A().authorId==B()&&D(A().text,1,3000)&&A().likes==[]&&G(A().createdAt);
-allow update: if C()&&H()&&F(['likes'])&&N(rd().likes,A().likes);
-allow delete: if C()&&(rd().authorId==B()||get(E('questions',qid)).data.authorId==B()||I());
+allow read:if C();
+allow create:if C()&&I()&&H(['authorId','text','likes','createdAt'])&&A().authorId==B()&&D(A().text,1,3000)&&A().likes==[]&&G(A().createdAt);
+allow update:if C()&&I()&&F(['likes'])&&P(rd().likes,A().likes);
+allow delete:if C()&&(rd().authorId==B()||get(E('questions',qid)).data.authorId==B()||K());
 }
 }
 match /mail/{mid}{
-allow read: if C()&&(rd().from==B()||rd().to==B());
-allow create: if C()&&H()&&A().keys().hasOnly(['from','to','subject','text','read','delFrom','delTo','createdAt'])&&A().from==B()&&A().to is string&&exists(E('users',A().to))&&!M(A().to)&&D(A().subject,0,200)&&D(A().text,1,10000)&&A().read==(A().to==B())&&A().delFrom==false&&A().delTo==false&&G(A().createdAt);
-allow update: if C()&&rd().to==B()&&F(['read','delTo'])&&A().read is bool&&A().delTo is bool;
-allow update: if C()&&rd().from==B()&&F(['delFrom'])&&A().delFrom==true;
-allow delete: if C()&&((rd().from==B()&&rd().delTo==true)||(rd().to==B()&&rd().delFrom==true));
+allow read:if C()&&(rd().from==B()||rd().to==B());
+allow create:if C()&&I()&&H(['from','to','subject','text','read','delFrom','delTo','createdAt'])&&A().from==B()&&A().to is string&&exists(E('users',A().to))&&!O(A().to)&&D(A().subject,0,200)&&D(A().text,1,10000)&&A().read==(A().to==B())&&A().delFrom==false&&A().delTo==false&&G(A().createdAt);
+allow update:if C()&&rd().to==B()&&F(['read','delTo'])&&A().read is bool&&A().delTo is bool;
+allow update:if C()&&rd().from==B()&&F(['delFrom'])&&A().delFrom==true;
+allow delete:if C()&&((rd().from==B()&&rd().delTo==true)||(rd().to==B()&&rd().delFrom==true));
 }
 match /notes/{nid}{
-allow read,delete: if C()&&rd().ownerId==B();
-allow create,update: if C()&&A().keys().hasOnly(['ownerId','title','text','color','pinned','updatedAt'])&&A().ownerId==B()&&(resource==null||rd().ownerId==B())&&D(A().title,0,120)&&D(A().text,0,20000)&&A().color in ['','yellow','green','blue','pink','violet']&&A().pinned is bool&&G(A().updatedAt);
+allow read,delete:if C()&&rd().ownerId==B();
+allow create,update:if C()&&H(['ownerId','title','text','color','pinned','updatedAt'])&&A().ownerId==B()&&(resource==null||rd().ownerId==B())&&D(A().title,0,120)&&D(A().text,0,20000)&&A().color in ['','yellow','green','blue','pink','violet']&&A().pinned is bool&&G(A().updatedAt);
 }
 match /tracks/{tid}{
-allow read: if C();
-allow create: if C()&&H()&&A().keys().hasOnly(['ownerId','title','artist','fileId','type','duration','size','createdAt'])&&A().ownerId==B()&&D(A().title,1,120)&&D(A().artist,0,120)&&D(A().type,0,60)&&A().duration is number&&A().size is int&&G(A().createdAt)&&get(E('files',A().fileId)).data.ownerId==B()&&get(E('files',A().fileId)).data.kind=='music';
-allow update: if C()&&rd().ownerId==B()&&F(['title','artist'])&&D(A().title,1,120)&&D(A().artist,0,120);
-allow delete: if C()&&(rd().ownerId==B()||I());
+allow read:if C();
+allow create:if C()&&I()&&H(['ownerId','title','artist','fileId','type','duration','size','createdAt'])&&A().ownerId==B()&&D(A().title,1,120)&&D(A().artist,0,120)&&D(A().type,0,60)&&A().duration is number&&A().size is int&&G(A().createdAt)&&get(E('files',A().fileId)).data.ownerId==B()&&get(E('files',A().fileId)).data.kind=='music';
+allow update:if C()&&rd().ownerId==B()&&F(['title','artist'])&&D(A().title,1,120)&&D(A().artist,0,120);
+allow delete:if C()&&(rd().ownerId==B()||K());
 }
 match /gifts/{gid}{
-allow read: if C();
-allow create: if C()&&H()&&A().keys().hasOnly(['from','to','gift','text','createdAt'])&&A().from==B()&&A().to is string&&A().to!=B()&&exists(E('users',A().to))&&!M(A().to)&&A().gift is string&&A().gift.size()<=20&&D(A().text,0,200)&&G(A().createdAt);
-allow delete: if C()&&(rd().to==B()||rd().from==B()||I());
+allow read:if C();
+allow create:if C()&&I()&&H(['from','to','gift','text','createdAt'])&&A().from==B()&&A().to is string&&A().to!=B()&&exists(E('users',A().to))&&!O(A().to)&&A().gift is string&&A().gift.size()<=20&&D(A().text,0,200)&&G(A().createdAt);
+allow delete:if C()&&(rd().to==B()||rd().from==B()||K());
 }
 match /market/{lid}{
-allow read: if C();
-allow create: if C()&&H()&&A().keys().hasOnly(['ownerId','title','price','category','city','text','image','sold','createdAt'])&&A().ownerId==B()&&D(A().title,2,100)&&A().price is int&&A().price>=0&&A().price<=1000000000&&A().category in ['electronics','clothes','home','auto','hobby','kids','services','other']&&D(A().city,0,40)&&D(A().text,0,3000)&&D(A().image,0,450000)&&A().sold==false&&G(A().createdAt);
-allow update: if C()&&rd().ownerId==B()&&F(['title','price','text','sold'])&&D(A().title,2,100)&&A().price is int&&A().price>=0&&A().price<=1000000000&&D(A().text,0,3000)&&A().sold is bool;
-allow delete: if C()&&(rd().ownerId==B()||I());
+allow read:if C();
+allow create:if C()&&I()&&H(['ownerId','title','price','category','city','text','image','sold','createdAt'])&&A().ownerId==B()&&D(A().title,2,100)&&A().price is int&&A().price>=0&&A().price<=1000000000&&A().category in ['electronics','clothes','home','auto','hobby','kids','services','other']&&D(A().city,0,40)&&D(A().text,0,3000)&&D(A().image,0,450000)&&J(A().image)&&A().sold==false&&G(A().createdAt);
+allow update:if C()&&rd().ownerId==B()&&F(['title','price','text','sold'])&&D(A().title,2,100)&&A().price is int&&A().price>=0&&A().price<=1000000000&&D(A().text,0,3000)&&A().sold is bool;
+allow delete:if C()&&(rd().ownerId==B()||K());
 }
 match /reports/{rid}{
-allow read,delete: if C()&&I();
-allow create: if C()&&H()&&A().keys().hasOnly(['from','type','targetId','targetUser','postId','reason','text','createdAt'])&&A().from==B()&&A().type in ['post','user','comment','group']&&D(A().targetId,1,80)&&D(A().targetUser,0,40)&&D(A().postId,0,40)&&A().reason in ['spam','abuse','nsfw','fraud','other']&&D(A().text,0,300)&&rid==A().type+'_'+A().targetId+'_'+B()&&G(A().createdAt);
+allow read,delete:if C()&&K();
+allow create:if C()&&I()&&H(['from','type','targetId','targetUser','postId','reason','text','createdAt'])&&A().from==B()&&A().type in ['post','user','comment','group']&&D(A().targetId,1,80)&&D(A().targetUser,0,40)&&D(A().postId,0,40)&&A().reason in ['spam','abuse','nsfw','fraud','other']&&D(A().text,0,300)&&rid==A().type+'_'+A().targetId+'_'+B()&&G(A().createdAt);
 }
 match /videos/{vid}{
-allow read: if C();
-allow create: if C()&&H()&&A().ownerId==B()&&A().keys().hasOnly(['ownerId','title','description','source','provider','vid','fileId','type','thumb','duration','size','likes','createdAt'])&&D(A().title,1,120)&&D(A().get('description',''),0,2000)&&D(A().get('thumb',''),0,300000)&&A().likes==[]&&G(A().createdAt)&&(A().source=='link'||(A().source=='file'&&get(E('files',A().fileId)).data.ownerId==B()));
-allow update: if C()&&rd().ownerId==B()&&F(['title','description'])&&D(A().title,1,120)&&D(A().get('description',''),0,2000);
-allow update: if C()&&F(['likes'])&&N(rd().likes,A().likes);
-allow delete: if C()&&(rd().ownerId==B()||I());
+allow read:if C();
+allow create:if C()&&I()&&A().ownerId==B()&&H(['ownerId','title','description','source','provider','vid','fileId','type','thumb','duration','size','likes','createdAt'])&&D(A().title,1,120)&&D(A().get('description',''),0,2000)&&D(A().get('thumb',''),0,300000)&&J(A().get('thumb',''))&&(A().source!='link'||(A().provider in ['youtube','rutube','vk','direct']&&D(A().vid,1,500)&&(A().provider!='direct'||A().vid.matches('^https://.*'))))&&A().likes==[]&&G(A().createdAt)&&(A().source=='link'||(A().source=='file'&&get(E('files',A().fileId)).data.ownerId==B()));
+allow update:if C()&&rd().ownerId==B()&&F(['title','description'])&&D(A().title,1,120)&&D(A().get('description',''),0,2000);
+allow update:if C()&&F(['likes'])&&P(rd().likes,A().likes);
+allow delete:if C()&&(rd().ownerId==B()||K());
 }
 match /files/{fid}{
-allow read: if C()&&(rd().ownerId==B()||rd().kind in ['video','music']);
-allow create: if C()&&H()&&A().ownerId==B()&&A().kind in ['disk','video','music']&&A().keys().hasOnly(['ownerId','kind','name','size','type','chunks','status','createdAt'])&&D(A().name,0,200)&&A().size is int&&A().size<=21000000&&A().chunks is int&&A().chunks>=1&&A().chunks<=40&&A().status=='uploading'&&G(A().createdAt);
-allow update: if C()&&rd().ownerId==B()&&F(['status'])&&A().status=='ready';
-allow delete: if C()&&rd().ownerId==B();
+allow read:if C()&&(rd().ownerId==B()||rd().kind in ['video','music']);
+allow create:if C()&&I()&&A().ownerId==B()&&A().kind in ['disk','video','music']&&H(['ownerId','kind','name','size','type','chunks','status','createdAt'])&&D(A().name,0,200)&&A().size is int&&A().size<=21000000&&A().chunks is int&&A().chunks>=1&&A().chunks<=40&&A().status=='uploading'&&G(A().createdAt);
+allow update:if C()&&rd().ownerId==B()&&F(['status'])&&A().status=='ready';
+allow delete:if C()&&rd().ownerId==B();
 match /chunks/{n}{
-allow read: if C()&&(get(E('files',fid)).data.ownerId==B()||get(E('files',fid)).data.kind in ['video','music']);
-allow create: if C()&&get(E('files',fid)).data.ownerId==B()&&A().keys().hasOnly(['i','data'])&&A().i is int&&A().i>=0&&A().i<get(E('files',fid)).data.chunks&&D(A().data,0,700000);
-allow delete: if C()&&get(E('files',fid)).data.ownerId==B();
+allow read:if C()&&(get(E('files',fid)).data.ownerId==B()||get(E('files',fid)).data.kind in ['video','music']);
+allow create:if C()&&get(E('files',fid)).data.ownerId==B()&&H(['i','data'])&&A().i is int&&A().i>=0&&A().i<get(E('files',fid)).data.chunks&&D(A().data,0,700000);
+allow delete:if C()&&get(E('files',fid)).data.ownerId==B();
 }
 }
 match /albums/{aid}{
-allow read: if C();
-allow create: if C()&&H()&&A().ownerId==B()&&A().keys().hasOnly(['ownerId','title','count','cover','coverId','createdAt','updatedAt'])&&D(A().title,1,80)&&A().count==0&&G(A().createdAt);
-allow update: if C()&&rd().ownerId==B()&&F(['title','count','cover','coverId','updatedAt'])&&D(A().title,1,80)&&A().count is int&&D(A().cover,0,80000);
-allow delete: if C()&&rd().ownerId==B();
+allow read:if C();
+allow create:if C()&&I()&&A().ownerId==B()&&H(['ownerId','title','count','cover','coverId','createdAt','updatedAt'])&&D(A().title,1,80)&&A().count==0&&G(A().createdAt);
+allow update:if C()&&rd().ownerId==B()&&F(['title','count','cover','coverId','updatedAt'])&&D(A().title,1,80)&&A().count is int&&D(A().cover,0,80000)&&J(A().cover);
+allow delete:if C()&&rd().ownerId==B();
 }
 match /photos/{pid}{
-allow read: if C();
-allow create: if C()&&A().ownerId==B()&&A().keys().hasOnly(['ownerId','albumId','thumb','createdAt'])&&get(E('albums',A().albumId)).data.ownerId==B()&&D(A().thumb,1,80000)&&G(A().createdAt);
-allow delete: if C()&&rd().ownerId==B();
+allow read:if C();
+allow create:if C()&&A().ownerId==B()&&H(['ownerId','albumId','thumb','createdAt'])&&get(E('albums',A().albumId)).data.ownerId==B()&&D(A().thumb,1,80000)&&J(A().thumb)&&G(A().createdAt);
+allow delete:if C()&&rd().ownerId==B();
 }
 match /photoFull/{pid}{
-allow read: if C();
-allow create: if C()&&A().ownerId==B()&&A().keys().hasOnly(['ownerId','image'])&&D(A().image,1,750000);
-allow delete: if C()&&rd().ownerId==B();
+allow read:if C();
+allow create:if C()&&A().ownerId==B()&&H(['ownerId','image'])&&D(A().image,1,750000)&&J(A().image);
+allow delete:if C()&&rd().ownerId==B();
 }
 }
 }
