@@ -1156,3 +1156,15 @@ body:has(.fp) .toast{bottom:auto;top:calc(64px + env(safe-area-inset-top,0px))}
 .lf-warn{color:#ffc46b;font-weight:600}
 .lyr-shift{flex-wrap:wrap;gap:6px}
 .lyr-shift .small{opacity:.75}
+
+/* 3.6: окно трека — название, исполнитель, обложка */
+.track-form{max-width:460px}
+.tf-body{display:grid;grid-template-columns:120px 1fr;gap:12px 14px;align-items:start}
+.tf-cover{width:120px;height:120px;border-radius:16px;border:2px dashed var(--line);background:var(--accent-soft);color:var(--accent);display:grid;place-items:center;overflow:hidden;cursor:pointer;padding:0}
+.tf-cover img{width:100%;height:100%;object-fit:cover}
+.tf-cover span{display:flex;flex-direction:column;align-items:center;gap:4px;font-size:13px;font-weight:600}
+.tf-cover svg{width:28px;height:28px}
+.tf-fields{display:flex;flex-direction:column;gap:8px;min-width:0}
+.tf-fields .field{display:flex;flex-direction:column;gap:4px;margin:0}
+.tf-fields .field span{font-size:13px;color:var(--muted);font-weight:600}
+@media (max-width:420px){.tf-body{grid-template-columns:1fr}.tf-cover{margin:0 auto}}

@@ -1205,6 +1205,7 @@ function shell() {
 const REPORT_REASONS = { spam: 'Спам', abuse: 'Оскорбления', nsfw: 'Неприемлемый контент', fraud: 'Мошенничество', other: 'Другое' };
 function overlay() {
   if (S.story) return storyOverlay();
+  if (S.trackForm) return trackFormModal();
   if (S.qr) {
     const u = U(S.qr.id);
     return `<div class="ov" data-act="ovx"><div class="ov-in modal qr-modal" data-stop="1">
@@ -1782,7 +1783,7 @@ function fullPlayer() {
   const apStyle = showLyrics && !S.lyrEdit && lyrStyle() !== 'ya' && lyr.lines.length > 0;
   const head = `<div class="fp-top"><button class="icon-btn fp-x" data-act="fpclose" aria-label="Свернуть плеер">${I.down}</button>
       <span class="fp-label">${t.radio ? 'ВС Радио · прямой эфир' : esc(player.label || 'ВС Музыка')}</span>
-      ${own ? `<button class="icon-btn" data-act="fpcover" aria-label="Сменить обложку" title="Сменить обложку">${I.photo}</button>` : '<span style="width:36px"></span>'}</div>`;
+      ${own ? `<button class="icon-btn" data-act="tedit" data-id="cur" aria-label="Изменить трек" title="Название, исполнитель и обложка">✏️</button>` : '<span style="width:36px"></span>'}</div>`;
   const art = cover ? `<img class="fp-cover" src="${esc(cover)}" alt="Обложка">` : `<div class="fp-cover fp-cover-empty" style="${t.radio ? `--rc:${t.c}` : ''}">${t.radio ? '📻' : '🎵'}</div>`;
   const lyricsBox = showLyrics ? (S.lyrEdit ? `<form class="fp-lyrics form" data-form="lyrics">
         ${lyrFindBox(t)}
@@ -1959,18 +1960,92 @@ async function uploadTrack(f) {
   if (f.size > LIMITS.music) { toast(`Трек весит ${fmtSize(f.size)}, а можно до ${fmtSize(LIMITS.music)}`); return; }
   if (S.upload) return;
   const base = f.name.replace(/\.[^.]+$/, '').replace(/_/g, ' ').trim(), m = base.match(/^(.+?)\s+[-–—]\s+(.+)$/);
-  const artist = (m ? m[1] : '').slice(0, 120), title = (m ? m[2] : base).slice(0, 120) || 'Без названия';
-  const duration = await trackDuration(f);
-  const fileId = await putFile(f, 'music', `Загружаем «${title}»`);
-  await addDoc(collection(db, 'tracks'), { ownerId: uid(), title, artist, fileId, type: f.type || 'audio/mpeg', duration, size: f.size, createdAt: serverTimestamp() });
+  const [tags, duration] = await Promise.all([readTags(f), trackDuration(f)]);
+  let cover = '';
+  if (tags.pic) try { cover = await compress(tags.pic, 600, 250000, true); } catch (e) { }
+  // название и исполнитель — из тегов файла, иначе из имени «Исполнитель - Песня»; перед загрузкой их можно поправить
+  S.trackForm = { mode: 'new', file: f, duration, cover, tags: !!(tags.title || tags.artist || cover),
+    title: (tags.title || (m ? m[2] : base)).slice(0, 120), artist: (tags.artist || (m ? m[1] : '')).slice(0, 120) };
+  render(); setTimeout(() => document.getElementById('tfTitle')?.focus(), 50);
+}
+async function saveTrackForm() {
+  const tf = S.trackForm; if (!tf || S.busy) return;
+  const val = id => (document.getElementById(id)?.value || '').trim();
+  const title = val('tfTitle').slice(0, 120), artist = val('tfArtist').slice(0, 120);
+  if (!title) { toast('Напишите название песни'); return; }
+  if (tf.mode === 'edit') {
+    const patch = { title, artist }; if (tf.cover !== undefined) patch.cover = tf.cover;
+    await updateDoc(doc(db, 'tracks', tf.id), patch);
+    for (const x of [curTrack(), ...(cache.tracks || [])]) if (x?.id === tf.id) Object.assign(x, patch);
+    S.trackForm = null; toast('Трек сохранён'); render(); return;
+  }
+  S.trackForm = null; render();
+  const fileId = await putFile(tf.file, 'music', `Загружаем «${title}»`);
+  const ref = await addDoc(collection(db, 'tracks'), { ownerId: uid(), title, artist, fileId, type: tf.file.type || 'audio/mpeg', duration: tf.duration, size: tf.file.size, createdAt: serverTimestamp() });
+  if (tf.cover) await updateDoc(ref, { cover: tf.cover }).catch(console.error);   // обложку правила разрешают ставить правкой трека
   toast('Трек загружен'); if (S.view === 'music') loadMusic();
 }
+/* Теги MP3 (ID3v2.3/2.4 и ID3v1): название, исполнитель, обложка. Русские старые теги часто в cp1251 — так и читаем */
+async function readTags(f) {
+  const out = {};
+  const dec = (bytes, enc) => {
+    const label = enc === 1 ? 'utf-16' : enc === 2 ? 'utf-16be' : enc === 3 ? 'utf-8' : 'windows-1251';
+    try { return new TextDecoder(label).decode(bytes).replace(/\0+$/g, '').replace(/\0/g, ' ').trim(); } catch (e) { return ''; }
+  };
+  try {
+    const h = new Uint8Array(await f.slice(0, 10).arrayBuffer());
+    if (h[0] === 0x49 && h[1] === 0x44 && h[2] === 0x33 && (h[3] === 3 || h[3] === 4)) {
+      const ver = h[3], ss = (b, i) => (b[i] & 127) << 21 | (b[i + 1] & 127) << 14 | (b[i + 2] & 127) << 7 | (b[i + 3] & 127);
+      const be = (b, i) => (b[i] << 24 | b[i + 1] << 16 | b[i + 2] << 8 | b[i + 3]) >>> 0;
+      const size = ss(h, 6), buf = new Uint8Array(await f.slice(10, 10 + Math.min(size, 6e6)).arrayBuffer());
+      let p = h[5] & 0x40 ? (ver === 4 ? ss(buf, 0) : be(buf, 0) + 4) : 0;
+      while (p + 10 <= buf.length) {
+        const id = String.fromCharCode(buf[p], buf[p + 1], buf[p + 2], buf[p + 3]);
+        if (!/^[A-Z0-9]{4}$/.test(id)) break;
+        const sz = ver === 4 ? ss(buf, p + 4) : be(buf, p + 4);
+        if (!sz || p + 10 + sz > buf.length) break;
+        const body = buf.subarray(p + 10, p + 10 + sz);
+        if (id === 'TIT2') out.title = dec(body.subarray(1), body[0]);
+        else if (id === 'TPE1') out.artist = dec(body.subarray(1), body[0]);
+        else if (id === 'APIC' && !out.pic) {
+          const enc = body[0]; let i = 1; while (i < body.length && body[i]) i++;
+          const mime = String.fromCharCode(...body.subarray(1, i)) || 'image/jpeg'; i += 2;   // ноль после типа и байт «вид картинки»
+          if (enc === 1 || enc === 2) { while (i + 1 < body.length && (body[i] || body[i + 1])) i += 2; i += 2; } else { while (i < body.length && body[i]) i++; i++; }
+          if (i < body.length) out.pic = new Blob([body.subarray(i)], { type: mime.includes('/') ? mime : 'image/' + mime.toLowerCase() });
+        }
+        p += 10 + sz;
+      }
+    }
+    if (!out.title && f.size > 128) {
+      const t = new Uint8Array(await f.slice(f.size - 128).arrayBuffer());
+      if (t[0] === 84 && t[1] === 65 && t[2] === 71) { out.title = dec(t.subarray(3, 33)); out.artist = out.artist || dec(t.subarray(33, 63)); }
+    }
+  } catch (e) { console.warn('теги не прочитались', e); }
+  return out;
+}
+function trackFormModal() {
+  const tf = S.trackForm, isNew = tf.mode === 'new', cover = tf.cover === undefined ? tf.coverNow : tf.cover;
+  return `<div class="ov" data-act="ovx"><div class="ov-in modal track-form" data-stop="1">
+    <div class="row"><b class="grow">${isNew ? 'Новый трек' : 'Изменить трек'}</b><button class="icon-btn" data-act="ovx" aria-label="Закрыть">✕</button></div>
+    <form class="tf-body" data-form="trackform">
+      <button type="button" class="tf-cover" data-act="tfcover" aria-label="Выбрать обложку">${safeImg(cover) ? `<img src="${esc(cover)}" alt="Обложка">` : `<span>${I.photo}<small>Обложка</small></span>`}</button>
+      <div class="tf-fields">
+        <label class="field"><span>Название песни</span><input id="tfTitle" class="inp" maxlength="120" required value="${esc(tf.title)}" placeholder="Например: Кукла колдуна"></label>
+        <label class="field"><span>Исполнитель</span><input id="tfArtist" class="inp" maxlength="120" value="${esc(tf.artist)}" placeholder="Например: Король и Шут"></label>
+        ${cover ? `<button type="button" class="linkbtn small" data-act="tfnocover">Убрать обложку</button>` : ''}
+      </div>
+      <p class="hint" style="margin:0;grid-column:1/-1">${isNew && tf.tags ? '✨ Взяли название, исполнителя' + (tf.cover ? ' и обложку' : '') + ' из файла. Проверьте. ' : ''}Пишите как в оригинале — тогда автопоиск найдёт текст с тайм-кодами.</p>
+      <button class="btn" style="grid-column:1/-1" ${S.busy ? 'disabled' : ''}>${isNew ? 'Загрузить' : 'Сохранить'}</button>
+    </form></div></div>`;
+}
+// cover: undefined — обложку не трогали; '' — убрали
+const openTrackEdit = t => { S.trackForm = { mode: 'edit', id: t.id, title: t.title || '', artist: t.artist || '', cover: undefined, coverNow: t.cover || '' }; render(); };
 function viewMusic() {
   const tab = S.musicTab, me = S.me, other = !['my', 'all'].includes(tab) ? U(tab) : null;
   const t2 = (k, l) => `<a class="${tab === k ? 'on' : ''}" href="#music/${k}">${l}</a>`;
   const list = cache.tracks || [], cur = curTrack();
   return `<div class="card"><div class="pad" style="padding-bottom:0"><div class="row" style="flex-wrap:wrap"><div class="grow"><h1 class="h brandh">ВС Музыка</h1>
-      <div class="muted small">mp3, m4a, ogg до ${fmtSize(LIMITS.music)}. Название берётся из имени файла «Исполнитель - Песня».</div></div>
+      <div class="muted small">mp3, m4a, ogg до ${fmtSize(LIMITS.music)}. Название, исполнителя и обложку можно поправить перед загрузкой.</div></div>
       ${banOf(me) ? '' : `<button class="btn" data-act="pickmusic" ${S.upload ? 'disabled' : ''}>${I.upload}<span>Загрузить трек</span></button>`}</div></div>
     <div class="tabs">${t2('my', 'Моя музыка')}${t2('all', 'Новое')}${other ? `<a class="on" href="#music/${esc(tab)}">${esc(other.name)}</a>` : ''}</div></div>
     <div class="card ulist">${S.loading ? '<div class="loading"><div class="spin"></div></div>' : list.length ? list.map((t, i) => {
@@ -1978,6 +2053,7 @@ function viewMusic() {
       return `<div class="uitem track ${cur?.id === t.id ? 'cur' : ''}"><button class="track-play" data-act="tplay" data-i="${i}" aria-label="${playing ? 'Пауза' : 'Играть'}">${playing ? I.pause : I.play}</button>
         <div class="grow" style="min-width:0"><b class="track-title">${esc(t.title)}</b><div class="muted small">${esc(t.artist || 'Неизвестный исполнитель')}${!mine && U(t.ownerId) ? ' · добавил(а) ' + esc(U(t.ownerId).name) : ''}</div></div>
         <span class="muted small tnum">${fmtDur(t.duration)}</span>
+        ${mine ? `<button class="icon-btn" data-act="tedit" data-id="${esc(t.id)}" aria-label="Изменить трек" title="Изменить название и обложку">✏️</button>` : ''}
         ${mine ? `<button class="icon-btn" data-act="tdel" data-id="${esc(t.id)}" aria-label="Удалить трек">${S.confirm === 'track:' + t.id ? 'Удалить?' : '🗑'}</button>`
           : `<button class="icon-btn ${saved ? 'on' : ''}" data-act="tsave" data-id="${esc(t.id)}" aria-label="${saved ? 'Убрать из моей музыки' : 'Добавить в мою музыку'}" title="${saved ? 'Убрать из моей музыки' : 'Добавить в мою музыку'}">${saved ? '✓' : '＋'}</button>`}
         ${isSiteAdmin() && !mine ? `<button class="icon-btn" data-act="tdel" data-id="${esc(t.id)}" aria-label="Удалить трек (админ)">${S.confirm === 'track:' + t.id ? 'Удалить?' : '🗑'}</button>` : ''}</div>`;
@@ -3198,6 +3274,9 @@ document.addEventListener('click', async e => {
       }
       case 'sign': S.sign = b.dataset.s; render(); break;
       // ---- ВС Музыка
+      case 'tfcover': pick('tfcover', 'image/*', false); break;
+      case 'tfnocover': if (S.trackForm) { S.trackForm.cover = ''; render(); } break;
+      case 'tedit': { const t = id === 'cur' ? curTrack() : (cache.tracks || []).find(x => x.id === id); if (t && t.ownerId === uid()) openTrackEdit(t); break; }
       case 'pickmusic': pick('music', 'audio/*', false); break;
       case 'tplay': playList(cache.tracks || [], Number(b.dataset.i), S.musicTab === 'my' ? 'Моя музыка' : S.musicTab === 'all' ? 'Новое в ВС Музыке' : 'Музыка: ' + (U(S.musicTab)?.name || '')); break;
       case 'mplay': if (player.audio.src) player.audio.paused ? player.audio.play() : player.audio.pause(); break;
@@ -3233,7 +3312,6 @@ document.addEventListener('click', async e => {
         const nextNl = ta.value.indexOf('\n', lineStart); const pos = nextNl < 0 ? ta.value.length : nextNl + 1;
         ta.focus(); ta.setSelectionRange(pos, pos); break;
       }
-      case 'fpcover': pick('tcover', 'image/*', false); break;
       case 'fplike': { const t = curTrack(); if (!t || t.radio || t.ownerId === uid()) return;
         const has = (S.me.tracks || []).includes(t.id);
         await updateDoc(doc(db, 'users', uid()), { tracks: has ? arrayRemove(t.id) : arrayUnion(t.id) }); toast(has ? 'Убрано из вашей музыки' : 'Добавлено в вашу музыку'); break; }
@@ -3329,7 +3407,7 @@ document.addEventListener('click', async e => {
         const w = tttWin(t.b); if (w === 'X') t.wins++; else if (w === 'O') t.losses++; else if (w === 'draw') t.draws++;
         render(); break;
       }
-      case 'ovx': S.newRoom = null; S.fwd = null; S.storyDraft = null; S.giftFor = null; S.qr = null; render(); break;
+      case 'ovx': S.trackForm = null; S.newRoom = null; S.fwd = null; S.storyDraft = null; S.giftFor = null; S.qr = null; render(); break;
       case 'qr': {
         const url = pageUrl(id === uid() ? S.me : U(id) || { id });
         S.qr = { id, url, img: '' }; S.profMenu = false; render();
@@ -3621,6 +3699,7 @@ async function openLightbox(i) {
 }
 document.addEventListener('keydown', e => {
   if (S.story) { if (e.key === 'Escape') { clearTimeout(storyTimer); S.story = null; render(); } else if (e.key === 'ArrowRight') storyStep(1); else if (e.key === 'ArrowLeft') storyStep(-1); return; }
+  if (e.key === 'Escape' && S.trackForm) { S.trackForm = null; render(); return; }
   if (e.key === 'Escape' && S.fullPlayer && S.lyrPick) { S.lyrPick = false; render(); return; }
   if (e.key === 'Escape' && S.fullPlayer && !S.lyrEdit) { S.fullPlayer = false; render(); return; }
   if (e.key === 'Escape' && (S.qr || S.giftFor || S.newRoom || S.fwd || S.storyDraft || S.report)) { S.qr = S.giftFor = S.newRoom = S.fwd = S.storyDraft = S.report = null; render(); return; }
@@ -3663,13 +3742,7 @@ document.getElementById('filePick').addEventListener('change', async e => {
       render();
     }
     else if (pickTarget === 'photos') await uploadPhotos(files);
-    else if (pickTarget === 'tcover') {
-      const t = curTrack(); if (!t || t.ownerId !== uid()) return;
-      const cover = await compress(f, 600, 250000, true);
-      await updateDoc(doc(db, 'tracks', t.id), { cover }); t.cover = cover;
-      const c2 = (cache.tracks || []).find(x => x.id === t.id); if (c2) c2.cover = cover;
-      toast('Обложка обновлена'); render();
-    }
+    else if (pickTarget === 'tfcover') { if (S.trackForm) { S.trackForm.cover = await compress(f, 600, 250000, true); render(); } }
     else if (pickTarget === 'evcover') { S.evCover = await compress(f, 1280, 420000); render(); }
     else if (pickTarget === 'lot') { S.lotImage = await compress(f, 1080, 420000); render(); }
     else if (pickTarget === 'music') await uploadTrack(f);
@@ -3806,6 +3879,7 @@ document.addEventListener('submit', async e => {
         await sendMessage(f.dataset.to, text);
         break;
       }
+      case 'trackform': await saveTrackForm(); break;
       case 'lyrics': {
         if (document.activeElement?.id === 'lyrQ') { findLyrics(); return; }   // Enter в строке поиска — искать, а не сохранять
         const t = curTrack(); if (!t || t.ownerId !== uid()) return;
