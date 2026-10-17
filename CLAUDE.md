@@ -14,6 +14,17 @@
   считаются из цвета оформления: `data-accent` → тон `--md-h` и насыщенность `--md-c`, тона через `oklch()` (в старых браузерах — постоянная палитра M3).
   Роли переписываются в переменные классического слоя (`--bg`, `--surface`, `--accent`…) с селектором `:root:not(#vs)` — он сильнее `:root[data-accent]`.
   Шрифт Google Sans, рябь по нажатию — `span.rip`, его ставит обработчик `RIPPLE` в app.js только при `data-skin="material"`.
+- Новый сайт (6.1) — в дизайне Material You своя раскладка: `shell()` при `MD()` отдаёт `mdShell()` — навигационная колонка `.md-rail`
+  (кнопка «Создать» `.md-fab`, Лента/Чаты/Друзья/Сигналы/Музыка/Сервисы, «Меню»), верхняя панель `.md-top` с названием страницы (`mdTitle()`/`MD_TITLES`),
+  поиском и аватаркой; на телефоне (≤840px) — нижняя панель `.md-nav` и плавающая кнопка `.md-fab-float`. Все разделы — боковое меню `mdDrawer()`
+  (`S.drawer`), новая запись — шторка с `composer()` (`S.compose`, в ленте вместо поля записи строка `.md-prompt`). `route()` закрывает меню и шторку.
+  Заголовки-карточки страниц (`h1.brandh`) в этом дизайне спрятаны — название в верхней панели. Тумблеры в настройках — те же `.seg` (CSS по `data-act`).
+  Liquid Glass и Классический собираются старым `shell()` — менять разметку страниц можно, но проверяй все три дизайна.
+- Вход через Google (6.1): в обычной вкладке — всплывающее окно (`signInWithPopup`); с иконки на главном экране (`isStandalone()`) и если окно
+  заблокировано — `googleGo()`: переход на accounts.google.com (OAuth, `response_type=id_token`, клиент `GOOGLE_CLIENT` — Web client проекта)
+  и возврат на свой же адрес с `#id_token`, `googleFinish()` входит через `signInWithCredential`. Старый `signInWithRedirect` через
+  vsmske.firebaseapp.com не используется: из-за разделённого хранилища в браузерах он «выкидывал» из аккаунта.
+  Адрес `https://nlponae269.github.io/vsmske/` добавлен владельцем в Google Cloud → APIs & Services → Credentials → Web client → Authorized redirect URIs.
 - PWA: `manifest.webmanifest`, `sw.js` (сеть в приоритете, кэш только без интернета; Firebase не кэширует), иконки `icon-*.png`, `apple-touch-icon.png`.
 - Firebase JS SDK 10.12.2 подключается из `https://www.gstatic.com/firebasejs/...`.
 - Firebase-проект `vsmske`: Authentication (почта+пароль и Google) и Firestore.

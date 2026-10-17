@@ -5,9 +5,9 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import { getAnalytics, isSupported } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-analytics.js";
 import {
-  getAuth, onAuthStateChanged, GoogleAuthProvider, signInWithPopup, signInWithRedirect,
+  getAuth, onAuthStateChanged, GoogleAuthProvider, signInWithPopup,
   createUserWithEmailAndPassword, signInWithEmailAndPassword, sendPasswordResetEmail, signOut,
-  linkWithPopup, linkWithCredential, EmailAuthProvider, sendEmailVerification
+  linkWithPopup, linkWithCredential, EmailAuthProvider, sendEmailVerification, signInWithCredential, OAuthProvider
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 import {
   getFirestore, doc, collection, query, where, orderBy, limit, limitToLast,
@@ -47,7 +47,7 @@ const MAX_POST_IMG = 700000;   // символов dataURL (~520 КБ), лими
 const MAX_AVATAR = 120000;
 const CHUNK = 700000;                                   // символов base64 в одном куске (кратно 4)
 const LIMITS = { disk: 10 * 1024 * 1024, video: 20 * 1024 * 1024, music: 12 * 1024 * 1024 };
-const VERSION = '6.0';
+const VERSION = '6.1';
 const MAX_MSG_IMG = 380000;    // фото в сообщении
 const ONLINE_MS = 5 * 60 * 1000; // «в сети», если заходил не раньше 5 минут назад
 
@@ -311,6 +311,7 @@ function errBox(e) {
 const ic = (w, body) => `<svg width="${w}" height="${w}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">${body}</svg>`;
 const du = d => `<path d="${d}" fill="currentColor" fill-opacity=".2" stroke="none"/>`;   // заливка-подложка
 const I = {
+  pen: ic(24, '<path d="M4 20h4L19 9a2.8 2.8 0 0 0-4-4L4 16z"/><path d="M13.5 6.5l4 4"/>'),
   video: ic(20, du('M5.5 5h13a3 3 0 0 1 3 3v8a3 3 0 0 1-3 3h-13a3 3 0 0 1-3-3V8a3 3 0 0 1 3-3z') + '<path d="M5.5 5h13a3 3 0 0 1 3 3v8a3 3 0 0 1-3 3h-13a3 3 0 0 1-3-3V8a3 3 0 0 1 3-3z"/><path d="M10.2 9.2v5.6l4.8-2.8z" fill="currentColor"/>'),
   album: ic(20, '<path d="M7 3.5h11a2.5 2.5 0 0 1 2.5 2.5v11"/>' + du('M5 6.5h10a2.5 2.5 0 0 1 2.5 2.5v10a2.5 2.5 0 0 1-2.5 2.5H5A2.5 2.5 0 0 1 2.5 19V9A2.5 2.5 0 0 1 5 6.5z') + '<rect x="2.5" y="6.5" width="15" height="15" rx="2.5"/><path d="M2.8 18l4.2-4 3 3 2.5-2.2 4.8 4.4"/><circle cx="12.5" cy="10.8" r="1.2"/>'),
   disk: ic(20, du('M7 19h10.5a4.5 4.5 0 0 0 .6-9A6.5 6.5 0 0 0 5.6 11.4 3.8 3.8 0 0 0 7 19z') + '<path d="M7 19h10.5a4.5 4.5 0 0 0 .6-9A6.5 6.5 0 0 0 5.6 11.4 3.8 3.8 0 0 0 7 19z"/><path d="M12 16v-5M9.8 13l2.2-2.2 2.2 2.2"/>'),
@@ -462,6 +463,46 @@ const groupAvatar = (g, size = 40, link = true) => {
 };
 
 /* ---------- Вход ---------- */
+/* Вход через Google без всплывающего окна и без перехода через vsmske.firebaseapp.com.
+   С иконки на главном экране всплывающие окна не работают, а старая переадресация через чужой домен ломается
+   из-за защиты браузеров (разделённое хранилище) — человека «выкидывало». Здесь страница сама уходит на Google
+   и возвращается на свой же адрес с токеном в #id_token, которым и входим (signInWithCredential).
+   Адрес возврата должен быть в «Authorized redirect URIs» у Web client в Google Cloud. */
+const GOOGLE_CLIENT = '195735209722-8tjsd33moqquhreivj07f48l5cga0r3d.apps.googleusercontent.com';
+const GOOGLE_BACK = location.origin + location.pathname;
+async function sha256hex(t) {
+  const b = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(t));
+  return [...new Uint8Array(b)].map(x => x.toString(16).padStart(2, '0')).join('');
+}
+async function googleGo() {
+  const raw = crypto.randomUUID(), state = crypto.randomUUID();
+  lsSet('vs_gauth', JSON.stringify({ raw, state }));
+  location.href = 'https://accounts.google.com/o/oauth2/v2/auth?' + new URLSearchParams({
+    client_id: GOOGLE_CLIENT, redirect_uri: GOOGLE_BACK, response_type: 'id_token', scope: 'openid email profile',
+    prompt: 'select_account', nonce: await sha256hex(raw), state,
+  });
+}
+async function googleFinish(p) {
+  let saved = {}; try { saved = JSON.parse(lsGet('vs_gauth') || '{}'); } catch (e) { }
+  try { localStorage.removeItem('vs_gauth'); } catch (e) { }
+  if (p.get('error')) { S.authError = p.get('error') === 'access_denied' ? 'Вход через Google отменён' : 'Google не пустил: ' + p.get('error'); render(); return; }
+  if (!saved.state || saved.state !== p.get('state')) { S.authError = 'Вход через Google не завершился — попробуйте ещё раз'; render(); return; }
+  const idToken = p.get('id_token');
+  S.authBusy = true; render();
+  try { await signInWithCredential(auth, new OAuthProvider('google.com').credential({ idToken, rawNonce: saved.raw })); }
+  catch (e) {
+    try { await signInWithCredential(auth, GoogleAuthProvider.credential(idToken)); }
+    catch (e2) { console.error(e, e2); S.authBusy = false; S.authError = errText(e2); render(); }
+  }
+}
+{
+  const p = new URLSearchParams(location.hash.slice(1));
+  if (p.has('id_token') || (p.has('error') && p.has('state'))) {
+    history.replaceState(null, '', location.pathname + location.search);   // токен не оставляем в адресе
+    setTimeout(() => googleFinish(p));   // после того, как весь модуль загрузится (render ещё не готов)
+  }
+}
+
 onAuthStateChanged(auth, async user => {
   stopAll();
   S.authUser = user; S.me = null; S.fatal = null;
@@ -598,6 +639,7 @@ function startSession() {
 /* ---------- Маршруты (#feed, #id/<uid>, #im/<uid>, #friends, #people, #edit) ---------- */
 function route() {
   if (S.phase !== 'app') return;
+  S.drawer = false; S.compose = false;
   const [v, arg] = (location.hash.slice(1) || 'feed').split('/');
   S.confirm = null;
   if (v[0] === '@') {   // #@ник — адрес страницы
@@ -1273,6 +1315,7 @@ function shell() {
   else if (S.view === 'club') main = viewClub();
   else main = viewFeed();
   const up = S.upload ? `<div class="card pad upbar" role="status"><div class="row"><span class="grow">${esc(S.upload.label)}</span><b class="tnum">${Math.round(S.upload.pct * 100)}%</b></div><div class="bar"><i style="width:${Math.round(S.upload.pct * 100)}%"></i></div><div class="hint">Не закрывайте страницу до конца загрузки</div></div>` : '';
+  if (MD()) return mdShell(me, main, up);
   return `
   <header class="top"><i class="lg" aria-hidden="true"></i><div class="top-in">
     <a class="logo" href="#feed" aria-label="VСмске, лента"><span class="logo-mark">вс</span><span class="logo-word" style="color:var(--fg)">VСмске</span></a>
@@ -1288,6 +1331,79 @@ function shell() {
   ${musicBar()}
   ${S.fullPlayer ? fullPlayer() : ''}
   ${overlay()}`;
+}
+
+/* ---------- Новый сайт (6.1, дизайн Material You) ----------
+   Своя раскладка поверх тех же страниц: на компьютере — навигационная колонка (rail) с кнопкой «Создать»,
+   сверху — панель с названием страницы, поиском и аватаркой; на телефоне — нижняя панель и круглая кнопка «Создать».
+   Все разделы — в боковом меню (S.drawer), новая запись — в шторке снизу (S.compose). Liquid Glass и Классический
+   собираются по-старому (shell()). */
+const MD = () => document.documentElement.dataset.skin === 'material';
+const MD_TITLES = { feed: 'Лента', messages: 'Чаты', friends: 'Друзья', notif: 'Сигналы', people: 'Люди', edit: 'Редактирование',
+  video: 'Видео', watch: 'Видео', albums: 'Альбомы', album: 'Альбом', disk: 'Диск', vid: 'VС ID', settings: 'Настройки', more: 'Меню',
+  post: 'Запись', clubs: 'Клубы', club: 'Клуб', guests: 'Гости', apps: 'Сервисы', market: 'Маркет', lot: 'Объявление', events: 'События',
+  event: 'Событие', rates: 'Курсы', radio: 'Радио', horo: 'Гороскоп', saved: 'Закладки', music: 'Музыка', answers: 'Ответы', question: 'Вопрос',
+  mail: 'Почта', notes: 'Заметки', weather: 'Погода', games: 'Игры', admin: 'Админка' };
+function mdTitle() {
+  if (S.view === 'profile') return S.profileId === S.me.id ? 'Моя страница' : (U(S.profileId)?.name || 'Профиль');
+  if (S.view === 'tag') return '#' + (S.tag || '');
+  return MD_TITLES[S.view] || 'VСмске';
+}
+function mdShell(me, main, up) {
+  const v = S.view, on = (...vs) => vs.includes(v) ? 'on' : '';
+  const n = x => x > 99 ? '99+' : x;
+  const dest = (href, icon, label, cls, badge = 0) => `<a class="md-dest ${cls}" href="#${href}"><span class="md-ind">${icon}${badge ? `<span class="badge">${n(badge)}</span>` : ''}</span><span class="md-lbl">${label}</span></a>`;
+  const unread = cache.chats.filter(isUnread).length, reqs = cache.incoming.length, sig = unseenNotifs();
+  const prim = dest('feed', I.feed, 'Лента', on('feed')) + dest('im', I.msg, 'Чаты', on('messages'), unread)
+    + dest('friends', I.friends, 'Друзья', on('friends', 'people'), reqs) + dest('notif', I.bell, 'Сигналы', on('notif'), sig);
+  const menuBtn = `<button class="md-dest ${S.drawer ? 'on' : ''}" data-act="mddrawer" aria-label="Все разделы"><span class="md-ind">${I.more}</span><span class="md-lbl">Меню</span></button>`;
+  const fabOn = ['feed', 'profile', 'tag', 'saved'].includes(v) && !banOf(me);
+  const ban = banOf(me) ? `<div class="card pad ban-banner" role="alert"><b>⛔ Ваш аккаунт заблокирован ${banText(banOf(me))}</b>
+      ${banOf(me).reason ? `<div class="small">Причина: ${esc(banOf(me).reason)}</div>` : ''}<div class="small">Пока действует блокировка, нельзя писать записи, комментарии и сообщения.</div></div>` : '';
+  return `<div class="md-app">
+  <aside class="md-rail" aria-label="Разделы">
+    ${banOf(me) ? '<span class="md-fab off"></span>' : `<button class="md-fab" data-act="mdcompose" aria-label="Новая запись">${I.pen}</button>`}
+    ${prim}${dest('music', I.music, 'Музыка', on('music'))}${dest('apps', I.apps, 'Сервисы', on(...MD_APPS), unreadMail())}
+    <span class="md-sp"></span>${menuBtn}
+  </aside>
+  <header class="md-top">
+    <a class="md-brand" href="#feed" aria-label="VСмске, лента"><span class="logo-mark">вс</span></a>
+    <h1 class="md-title">${esc(mdTitle())}</h1>
+    <form class="search md-search" data-form="search">${I.search}<input id="q" type="search" placeholder="Поиск людей" autocomplete="off" value="${esc(v === 'people' ? S.query : '')}"></form>
+    <a class="md-icon md-search-btn" href="#people" aria-label="Поиск людей">${I.search}</a>
+    <a class="md-me" href="#id/${esc(me.id)}" aria-label="Моя страница">${avatar(me, 40, false)}</a>
+  </header>
+  <main class="md-main"><div class="md-col">${ban}${up}${main}</div></main>
+  <nav class="md-nav" aria-label="Разделы">${prim}${menuBtn}</nav>
+  ${fabOn ? `<button class="md-fab md-fab-float" data-act="mdcompose" aria-label="Новая запись">${I.pen}</button>` : ''}
+  ${S.drawer ? mdDrawer(me) : ''}
+  ${S.compose ? `<div class="md-scrim" data-act="mdclose"></div><div class="md-sheet" role="dialog" aria-label="Новая запись">
+    <div class="md-handle"></div><div class="row"><b class="grow md-sheet-t">Новая запись</b><button class="icon-btn" data-act="mdclose" aria-label="Закрыть">✕</button></div>
+    ${composer(me.id, 'Что у вас нового?')}</div>` : ''}
+  </div>
+  ${musicBar()}
+  ${S.fullPlayer ? fullPlayer() : ''}
+  ${overlay()}`;
+}
+const MD_APPS = ['apps', 'answers', 'question', 'mail', 'notes', 'weather', 'games', 'market', 'lot', 'events', 'event', 'rates', 'radio', 'horo'];
+function mdDrawer(me) {
+  const v = S.view;
+  const it = (href, icon, label, active, badge = 0) => `<a class="md-item ${active ? 'on' : ''}" href="#${href}">${icon}<span class="grow">${label}</span>${badge ? `<span class="badge">${badge}</span>` : ''}</a>`;
+  return `<div class="md-scrim" data-act="mdclose"></div><aside class="md-drawer" aria-label="Все разделы">
+    <a class="md-drawer-me" href="#id/${esc(me.id)}">${avatar(me, 48, false)}<span class="grow"><b>${esc(me.name)}</b><span class="small muted">@${esc(me.nick || '')}</span></span></a>
+    <div class="md-group">Основное</div>
+    ${it('id/' + me.id, I.home, 'Моя страница', v === 'profile' && S.profileId === me.id)}${it('feed', I.feed, 'Лента', v === 'feed')}
+    ${it('im', I.msg, 'Чаты', v === 'messages', cache.chats.filter(isUnread).length)}${it('friends', I.friends, 'Друзья', v === 'friends', cache.incoming.length)}
+    ${it('notif', I.bell, 'Сигналы', v === 'notif', unseenNotifs())}${it('saved', I.bookmark, 'Закладки', v === 'saved')}${it('people', I.people, 'Люди', v === 'people')}
+    <div class="md-group">Медиа</div>
+    ${it('music', I.music, 'Музыка', v === 'music')}${it('video', I.video, 'Видео', ['video', 'watch'].includes(v))}${it('albums', I.album, 'Альбомы', ['albums', 'album'].includes(v))}
+    ${it('disk', I.disk, 'Диск', v === 'disk')}${it('clubs', I.club, 'Клубы', ['clubs', 'club'].includes(v))}
+    <div class="md-group">Сервисы</div>
+    ${it('apps', I.apps, 'Все сервисы', MD_APPS.includes(v), unreadMail())}
+    <div class="md-group">Аккаунт</div>
+    ${it('vid', I.vid, 'VС ID', v === 'vid')}${isSiteAdmin() ? it('admin', I.shield, 'Админка', v === 'admin', cache.reports.length) : ''}${it('settings', I.gear, 'Настройки', v === 'settings')}
+    <button class="md-item" data-act="logout">${I.out}<span class="grow">Выйти</span></button>
+  </aside>`;
 }
 
 /* ---------- Окна поверх страницы: просмотр фото и файлов ---------- */
@@ -2964,7 +3080,7 @@ function viewFeed() {
   const bdays = fr.map(U).filter(u => u && isBdayToday(u.bday));
   return `${storiesBar()}${bdays.length ? `<div class="card pad bday-card"><b>🎂 Сегодня день рождения</b>
       ${bdays.map(u => `<div class="row">${avatar(u, 36)}<span class="grow">${nameLink(u)}</span><a class="btn sec small" href="#im/${esc(u.id)}">Поздравить</a></div>`).join('')}</div>` : ''}
-  ${composer(S.me.id, 'Что у вас нового?')}
+  ${MD() ? `<button class="md-prompt" data-act="mdcompose">${avatar(S.me, 40, false)}<span>Что у вас нового?</span>${I.photo}</button>` : composer(S.me.id, 'Что у вас нового?')}
   <div class="card"><div class="tabs">${tab('friends', 'Друзья')}${tab('top', '🔥 Популярное')}${tab('all', 'Все записи')}</div></div>
   ${S.loading ? loadingBox() : posts.length ? posts.map(postCard).join('') :
     `<div class="card empty"><b>${S.feedTab === 'friends' ? 'Здесь появятся записи ваши и ваших друзей' : S.feedTab === 'top' ? 'За неделю пока ничего не залайкали' : 'Пока никто ничего не написал'}</b>
@@ -3439,12 +3555,17 @@ document.addEventListener('click', async e => {
   if (!['emoji', 'emojis'].includes(act)) S.emoji = null;
   try {
     switch (act) {
+      case 'mdcompose': S.compose = true; S.drawer = false; render(); setTimeout(() => document.getElementById('postText')?.focus(), 60); break;
+      case 'mddrawer': S.drawer = !S.drawer; render(); break;
+      case 'mdclose': S.compose = false; S.drawer = false; render(); break;
       case 'authtab': S.authTab = b.dataset.tab; S.authError = ''; S.fatal = null; render(); break;
       case 'google': {
-        S.authError = ''; const p = new GoogleAuthProvider(); p.setCustomParameters({ prompt: 'select_account' });
+        S.authError = '';
+        if (isStandalone()) { await googleGo(); break; }   // с иконки на главном экране — без всплывающего окна
+        const p = new GoogleAuthProvider(); p.setCustomParameters({ prompt: 'select_account' });
         try { await signInWithPopup(auth, p); }
         catch (err) {
-          if (err.code === 'auth/popup-blocked' || err.code === 'auth/operation-not-supported-in-this-environment') await signInWithRedirect(auth, p);
+          if (err.code === 'auth/popup-blocked' || err.code === 'auth/operation-not-supported-in-this-environment') await googleGo();
           else if (err.code !== 'auth/popup-closed-by-user' && err.code !== 'auth/cancelled-popup-request') { S.authError = errText(err); render(); }
         }
         break;
@@ -4235,7 +4356,7 @@ document.addEventListener('submit', async e => {
           notifyMentions(text, ref.id, [uid(), wall]);
           d.files.forEach(x => URL.revokeObjectURL(x.url));
           S.draft = { files: [], poll: false, pollN: 2, filter: 'none' }; S.emoji = null;
-          ['postText', 'pollQ', 'pollO0', 'pollO1', 'pollO2', 'pollO3', 'pollO4', 'pollO5'].forEach(clear); toast('Опубликовано');
+          ['postText', 'pollQ', 'pollO0', 'pollO1', 'pollO2', 'pollO3', 'pollO4', 'pollO5'].forEach(clear); S.compose = false; toast('Опубликовано');
         } catch (err) { toast(err.message === 'too-big' ? 'Фото слишком большое даже после сжатия' : errText(err)); }
         finally { S.busy = false; render(); }
         break;
