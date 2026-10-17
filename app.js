@@ -47,7 +47,7 @@ const MAX_POST_IMG = 700000;   // символов dataURL (~520 КБ), лими
 const MAX_AVATAR = 120000;
 const CHUNK = 700000;                                   // символов base64 в одном куске (кратно 4)
 const LIMITS = { disk: 10 * 1024 * 1024, video: 20 * 1024 * 1024, music: 12 * 1024 * 1024 };
-const VERSION = '3.3';
+const VERSION = '3.4';
 const MAX_MSG_IMG = 380000;    // фото в сообщении
 const ONLINE_MS = 5 * 60 * 1000; // «в сети», если заходил не раньше 5 минут назад
 
@@ -1019,6 +1019,7 @@ function render() {
     box.querySelectorAll('img').forEach(im => { if (!im.complete) im.addEventListener('load', () => { box.scrollTop = box.scrollHeight; }, { once: true }); });
   }
   animate();
+  if (S.fullPlayer && S.fpLyrics) { syncLyrics(); if (!lyrRaf) lyrLoop(); }
 }
 const resetIds = new Set();
 
@@ -1711,11 +1712,42 @@ function syncLyrics() {
   const box = document.getElementById('fpLyrics'); if (!box || box.dataset.timed !== '1') return;
   const t = player.audio.currentTime, rows = box.querySelectorAll('[data-t]');
   let idx = -1; rows.forEach((r, k) => { if (Number(r.dataset.t) <= t + 0.15) idx = k; });
-  if (idx === lyricIdx && box.querySelector('.cur')) return;
-  lyricIdx = idx;
+  const fresh = !box.dataset.synced;   // после перерисовки — встать на место сразу, без прокрутки
+  if (box.dataset.style === 'ap') lyrApFill(rows, idx, t);
+  if (idx === lyricIdx && !fresh) return;
+  lyricIdx = idx; box.dataset.synced = '1';
   rows.forEach((r, k) => { r.classList.toggle('cur', k === idx); r.classList.toggle('past', k < idx); });
-  if (idx >= 0 && !box.matches(':hover')) rows[idx].scrollIntoView({ block: 'center', behavior: 'smooth' });
+  if (box.dataset.style === 'ap') return lyrApMove(box, rows, idx, fresh);
+  if (idx >= 0 && !box.matches(':hover')) rows[idx].scrollIntoView({ block: 'center', behavior: fresh ? 'auto' : 'smooth' });
 }
+/* Вид «как в Apple Music»: строка заливается по мере пения, дальние строки размыты, текущая едет к верхней трети */
+function lyrApMove(box, rows, idx, fresh) {
+  const inner = box.firstElementChild, focus = rows[Math.max(idx, 0)];
+  rows.forEach((r, k) => r.style.setProperty('--d', Math.min(Math.abs(k - Math.max(idx, 0)), 5)));
+  if (!inner || !focus) return;
+  const y = Math.max(focus.offsetTop - box.clientHeight * 0.3, 0);
+  if (fresh) { inner.style.transition = 'none'; inner.style.transform = `translateY(${-y}px)`; inner.offsetHeight; inner.style.transition = ''; }
+  else inner.style.transform = `translateY(${-y}px)`;
+}
+function lyrApFill(rows, idx, t) {
+  rows.forEach((r, k) => {
+    if (k !== idx) { r.style.removeProperty('--lp'); return; }
+    const start = Number(r.dataset.t), end = Number(rows[k + 1]?.dataset.t ?? start + 5);
+    r.style.setProperty('--lp', Math.round(Math.min(Math.max((t - start) / Math.max(end - start, 0.5), 0), 1) * 1000) / 10 + '%');
+  });
+}
+// плавная заливка строки: timeupdate приходит лишь 4 раза в секунду, поэтому пока виден Apple-текст — кадр за кадром
+let lyrRaf = 0;
+function lyrLoop() {
+  cancelAnimationFrame(lyrRaf);
+  const step = () => {
+    const box = document.getElementById('fpLyrics');
+    if (!box || box.dataset.style !== 'ap' || box.dataset.timed !== '1' || player.audio.paused) { lyrRaf = 0; return; }
+    syncLyrics(); lyrRaf = requestAnimationFrame(step);
+  };
+  lyrRaf = requestAnimationFrame(step);
+}
+const LYR_STYLES = { ya: 'обычный', ap: 'как в Apple Music' };
 
 /* Полноэкранный плеер */
 const REPEAT_LABEL = { off: 'Повтор выключен', all: 'Повторять весь список', one: 'Повторять трек' };
@@ -1726,6 +1758,7 @@ function fullPlayer() {
   if (owner === undefined && t.ownerId) ensureUsers([t.ownerId]);
   const cover = safeImg(t.cover), lyr = t.radio ? null : parseLyrics(t.lyrics);
   const showLyrics = S.fpLyrics && !t.radio;
+  const apStyle = showLyrics && !S.lyrEdit && lyrStyle() === 'ap' && lyr.lines.length > 0;
   const head = `<div class="fp-top"><button class="icon-btn fp-x" data-act="fpclose" aria-label="Свернуть плеер">${I.down}</button>
       <span class="fp-label">${t.radio ? 'ВС Радио · прямой эфир' : esc(player.label || 'ВС Музыка')}</span>
       ${own ? `<button class="icon-btn" data-act="fpcover" aria-label="Сменить обложку" title="Сменить обложку">${I.photo}</button>` : '<span style="width:36px"></span>'}</div>`;
@@ -1735,11 +1768,13 @@ function fullPlayer() {
         <div class="row"><button type="button" class="btn ghost small" data-act="lyrstamp">⏱ Вставить текущее время</button><span class="grow"></span>
           <button type="button" class="btn ghost small" data-act="lyredit">Отмена</button><button class="btn small">Сохранить</button></div>
         <p class="hint" style="margin:0">Тайм-код ставится в начало строки в формате [минуты:секунды.сотые]. Включите песню и жмите «Вставить текущее время» перед каждой строкой.</p></form>`
+      : lyr.lines.length && apStyle ? apLyrics(lyr, own)
       : lyr.lines.length ? `<div class="fp-lyrics ${lyr.timed ? 'timed' : ''}" id="fpLyrics" data-timed="${lyr.timed ? 1 : 0}">${lyr.lines.map(l => lyr.timed ? `<p data-t="${l.t}" data-act="lyrseek">${esc(l.text) || '♪'}</p>` : `<p>${esc(l.text) || '&nbsp;'}</p>`).join('')}
           ${own ? `<button class="btn ghost small" data-act="lyredit">Изменить текст</button>` : ''}</div>`
       : `<div class="fp-lyrics fp-empty"><b>Текста пока нет</b>${own ? `<span class="small">Добавьте слова, можно с тайм-кодами — тогда они будут идти вместе с музыкой</span><button class="btn small" data-act="lyredit">Добавить текст</button>` : '<span class="small">Добавить текст может только автор трека</span>'}</div>`) : '';
-  return `<div class="fp" role="dialog" aria-label="Плеер"><div class="fp-bg" style="${cover ? `background-image:url('${esc(cover)}')` : ''}"></div><div class="fp-in">
+  return `<div class="fp ${apStyle ? 'ap' : ''}" role="dialog" aria-label="Плеер"><div class="fp-bg" style="${cover ? `background-image:url('${esc(cover)}')` : ''}"></div><div class="fp-in">
     ${head}
+    ${apStyle ? `<div class="ap-head">${cover ? `<img src="${esc(cover)}" alt="">` : `<span class="ap-noart">🎵</span>`}<div class="grow" style="min-width:0"><b>${esc(t.title)}</b><span>${esc(t.artist || 'Неизвестный исполнитель')}</span></div></div>` : ''}
     <div class="fp-main">${showLyrics ? lyricsBox : art}</div>
     <div class="fp-info"><div class="grow" style="min-width:0"><div class="fp-title">${esc(t.title)}</div>
         <div class="fp-artist">${esc(t.artist || (t.radio ? '' : 'Неизвестный исполнитель'))}${owner ? ` · <a href="#music/${esc(owner.id)}" data-act="fpclose">${esc(owner.name)}</a>` : ''}</div></div>
@@ -1755,8 +1790,20 @@ function fullPlayer() {
     <div class="fp-row">
       <button class="fp-chip ${player.repeat !== 'off' ? 'on' : ''}" data-act="fprepeat" aria-label="${REPEAT_LABEL[player.repeat]}" title="${REPEAT_LABEL[player.repeat]}">${I.repeat}${player.repeat === 'one' ? '<sup>1</sup>' : ''}</button>
       <button class="fp-chip ${showLyrics ? 'on' : ''}" data-act="fplyrics" ${t.radio ? 'disabled' : ''} aria-label="Текст песни" title="Текст песни">${I.lyrics}</button>
+      ${showLyrics && !S.lyrEdit ? `<button class="fp-chip fp-style ${lyrStyle() === 'ap' ? 'on' : ''}" data-act="lyrstyle" aria-label="Вид текста: ${LYR_STYLES[lyrStyle()]}" title="Вид текста: ${LYR_STYLES[lyrStyle()]}">Aa</button>` : ''}
       <button class="fp-chip ${player.shuffle ? 'on' : ''}" data-act="fpshuffle" aria-label="Перемешать" title="Перемешать">${I.shuffle}</button></div>
   </div></div>`;
+}
+const lyrStyle = () => lsGet('vs_lyrstyle') === 'ap' ? 'ap' : 'ya';
+function apLyrics(lyr, own) {
+  const lines = lyr.lines.map(l => ({ ...l }));
+  // проигрыш в начале и пустые строки LRC — пульсирующие точки
+  if (lyr.timed && lines[0].t >= 4) lines.unshift({ t: 0, text: '' });
+  const row = l => lyr.timed
+    ? (l.text ? `<p data-t="${l.t}" data-act="lyrseek"><span>${esc(l.text)}</span></p>` : `<p class="ap-dots" data-t="${l.t}" data-act="lyrseek" aria-label="Проигрыш"><i></i><i></i><i></i></p>`)
+    : `<p>${esc(l.text) || '&nbsp;'}</p>`;
+  return `<div class="ap-lyrics ${lyr.timed ? 'timed' : 'plain'}" id="fpLyrics" data-style="ap" data-timed="${lyr.timed ? 1 : 0}"><div class="ap-in">${lines.map(row).join('')}
+    ${own ? `<button class="btn ghost small" data-act="lyredit">Изменить текст</button>` : ''}</div></div>`;
 }
 function musicBar() {
   const t = curTrack(); if (!t) return '';
@@ -3051,6 +3098,10 @@ document.addEventListener('click', async e => {
       case 'fprepeat': player.repeat = { off: 'all', all: 'one', one: 'off' }[player.repeat]; lsSet('vs_repeat', player.repeat); toast(REPEAT_LABEL[player.repeat]); render(); break;
       case 'fpshuffle': player.shuffle = !player.shuffle; lsSet('vs_shuffle', player.shuffle ? '1' : '0'); toast(player.shuffle ? 'Перемешивание включено' : 'Перемешивание выключено'); render(); break;
       case 'fplyrics': S.fpLyrics = !S.fpLyrics; S.lyrEdit = false; lyricIdx = -1; render(); setTimeout(syncLyrics, 50); break;
+      case 'lyrstyle': {
+        const v = lyrStyle() === 'ap' ? 'ya' : 'ap'; lsSet('vs_lyrstyle', v); lyricIdx = -1;
+        toast('Вид текста: ' + LYR_STYLES[v]); render(); break;
+      }
       case 'lyredit': S.lyrEdit = !S.lyrEdit; render(); if (S.lyrEdit) document.getElementById('lyrText')?.focus(); break;
       case 'lyrseek': if (b.dataset.t) { player.audio.currentTime = Number(b.dataset.t); if (player.audio.paused) player.audio.play(); } break;
       case 'lyrstamp': {
