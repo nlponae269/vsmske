@@ -41,7 +41,8 @@
 Поля 3.1: `tracks.lyrics` (текст песни до 20 000 символов, строки LRC `[мм:сс.сс]` дают синхронизацию — `parseLyrics()`, `syncLyrics()`)
 и `tracks.cover` (обложка, dataURL до 300 000). Меняет только автор трека. Полноэкранный плеер — `fullPlayer()` (`S.fullPlayer`, открывается
 по нажатию на мини-панель), повтор (`player.repeat`: off/all/one, localStorage `vs_repeat`) и перемешивание (`vs_shuffle`).
-Вид текста песни (3.4) переключается кнопкой «Aa» в плеере (localStorage `vs_lyrstyle`: `ya` — обычный, `ap` — как в Apple Music: `apLyrics()`,
+Вид текста песни (3.4–3.5): кнопка «Aa» открывает окно выбора `lyrPicker()` из 12 видов `LYRS` (localStorage `vs_lyrstyle`; `ya` — обычный, остальные — `apLyrics()` с классом `ly-<ключ>`,
+слова в `.w` с долей строки `data-f` — для «слово за словом», `LYR_ANCHOR` — где держать текущую строку; `ap` — как в Apple Music:
 строка заливается по мере пения `lyrApFill()` кадр за кадром `lyrLoop()`, дальние строки размыты `--d`, текст едет `lyrApMove()`, проигрыши — точки).
 @упоминания в записях и комментариях дают уведомление `mention` (`notifyMentions()`); цвет оформления — `data-accent` на `<html>` (localStorage `vs_accent`).
 ВС Погода берёт данные из бесплатного Open-Meteo (без ключа), ВС Игры (2048, крестики-нолики) работают без базы, рекорд — в localStorage.
