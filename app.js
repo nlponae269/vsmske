@@ -47,7 +47,7 @@ const MAX_POST_IMG = 700000;   // символов dataURL (~520 КБ), лими
 const MAX_AVATAR = 120000;
 const CHUNK = 700000;                                   // символов base64 в одном куске (кратно 4)
 const LIMITS = { disk: 10 * 1024 * 1024, video: 20 * 1024 * 1024, music: 12 * 1024 * 1024 };
-const VERSION = '5.2';
+const VERSION = '5.3';
 const MAX_MSG_IMG = 380000;    // фото в сообщении
 const ONLINE_MS = 5 * 60 * 1000; // «в сети», если заходил не раньше 5 минут назад
 
@@ -1053,7 +1053,7 @@ function lensMap(w, h, r, scale) {
   x.putImageData(img, 0, 0); return c.toDataURL();
 }
 function syncGlass() {
-  const defs = document.getElementById('lgDefs'); if (!defs) return;
+  const defs = document.getElementById('lgDefs'); if (!defs || isLite()) return;
   let changed = false;
   for (const [sel, id] of GLASS) {
     const el = document.querySelector(sel); if (!el) continue;
@@ -1076,7 +1076,20 @@ function syncGlass() {
   if (changed) GLASS.forEach(([sel]) => { const el = document.querySelector(sel + '>.lg'); if (el) { el.style.backdropFilter = 'none'; el.offsetWidth; el.style.backdropFilter = ''; } });
 }
 // SVG-фильтр внутри backdrop-filter понимает только Chromium (Chrome, Edge, Яндекс, Samsung); userAgentData есть только у него
-if (navigator.userAgentData?.brands?.some(b => /Chromium/.test(b.brand))) document.documentElement.classList.add('lg-on');
+const lgOk = !!navigator.userAgentData?.brands?.some(b => /Chromium/.test(b.brand));
+/* Облегчённая версия (5.3): отключаем glass.css (стекло, шарики, шрифты 5.0) — остаётся классический вид из style.css.
+   Сразу при загрузке это делает скрипт в index.html, чтобы не мигало. */
+const isLite = () => lsGet('vs_lite') === 'on';
+function applyLite() {
+  const lite = isLite(), skin = document.getElementById('skin'), html = document.documentElement;
+  if (skin) skin.disabled = lite;
+  if (lite) html.dataset.lite = 'on'; else delete html.dataset.lite;
+  html.classList.toggle('lg-on', lgOk && !lite);
+  if (!lite) setTimeout(syncGlass, 400);
+}
+applyLite();
+// если glass.css был отключён с самого начала, браузер догружает его только при включении — карту стекла пересчитываем, когда он применится
+document.getElementById('skin')?.addEventListener('load', () => syncGlass());
 window.addEventListener('resize', () => setTimeout(syncGlass, 100));
 
 /* ---------- Анимации ----------
@@ -1505,6 +1518,7 @@ function viewSettings() {
     <div class="card pad set"><h2 class="h" style="font-size:16px">Оформление</h2>
       <div class="set-row"><span class="grow">Тема</span>${seg('theme', th, [['system', 'Как в системе'], ['light', 'Светлая'], ['dark', 'Тёмная']])}</div>
       <div class="set-row"><span class="grow">Цвет</span><div class="accents" role="radiogroup">${ACCENTS.map(([k, l, c]) => `<button role="radio" aria-checked="${(lsGet('vs_accent') || 'blue') === k}" aria-label="${l}" title="${l}" class="${(lsGet('vs_accent') || 'blue') === k ? 'on' : ''}" style="background:${c}" data-act="accent" data-v="${k}"></button>`).join('')}</div></div>
+      <div class="set-row"><span class="grow">Облегчённая версия<br><span class="muted small">Простой вид как в первых версиях: без стекла, шариков и размытия. Быстрее на слабых устройствах</span></span>${seg('lite', isLite() ? 'on' : 'off', [['off', 'Выкл'], ['on', 'Вкл']])}</div>
       <p class="hint" style="margin:0">Сохраняется на этом устройстве.</p></div>
     ${installCard()}
     <div class="card pad set"><h2 class="h" style="font-size:16px">Музыка</h2>
@@ -3511,6 +3525,7 @@ document.addEventListener('click', async e => {
       case 'resetpass': await sendPasswordResetEmail(auth, auth.currentUser.email); toast('Письмо для смены пароля отправлено на ' + auth.currentUser.email); break;
       case 'verify': await sendEmailVerification(auth.currentUser); toast('Письмо отправлено на ' + auth.currentUser.email + '. Откройте ссылку и войдите заново.'); break;
       case 'theme': lsSet('vs_theme', b.dataset.v); applyTheme(b.dataset.v); render(); break;
+      case 'lite': lsSet('vs_lite', b.dataset.v); applyLite(); render(); break;
       case 'anim': lsSet('vs_anim', b.dataset.v); document.documentElement.dataset.anim = b.dataset.v; render(); break;
       case 'listen': lsSet('vs_listen', b.dataset.v === 'off' ? '0' : '1'); if (b.dataset.v === 'off') { lastShared = 'off'; updateDoc(doc(db, 'users', uid()), { listening: null }).catch(console.error); } else lastShared = ''; render(); break;
       case 'accent': lsSet('vs_accent', b.dataset.v); applyAccent(b.dataset.v); render(); break;
