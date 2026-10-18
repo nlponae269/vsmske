@@ -20,6 +20,12 @@
   (`S.drawer`), новая запись — шторка с `composer()` (`S.compose`, в ленте вместо поля записи строка `.md-prompt`). `route()` закрывает меню и шторку.
   Заголовки-карточки страниц (`h1.brandh`) в этом дизайне спрятаны — название в верхней панели. Тумблеры в настройках — те же `.seg` (CSS по `data-act`).
   Liquid Glass и Классический собираются старым `shell()` — менять разметку страниц можно, но проверяй все три дизайна.
+- 6.2: «Итоги» в стиле Spotify Wrapped — `openRecap()` (`S.recap = {i, d}`) читает свои записи (`authorId ==`, индекс есть), подарки и треки,
+  слайды `recapSlides()`/`recapOverlay()` (пустые пропускаются, автопереход 6,5 с `recapTimer()`, стрелки/Esc), числа «набегают» через CSS `@property --n`;
+  «Поделиться на стене» — обычная запись `posts` с тегом #итоги. Карточка в ленте раз в месяц (localStorage `vs_recap_seen` = ГГГГ-ММ).
+  Быстрый поиск — Ctrl/⌘+K или кнопка `.md-pal`: `palOpen()`/`palItems()` (разделы `PAL_SECTIONS` + люди из `cache.users`, без запросов к базе).
+  Цвет «Из аватарки» (`vs_accent = avatar`): `tintFromAvatar()` считает тон OKLCH (`oklchHue()`) по фото или по `users.color` и ставит `--md-h/--md-c`
+  инлайн на `<html>` — влияет на Material You. Стили «Итогов» и поиска — в `style.css` (работают во всех дизайнах).
 - Вход через Google (6.1): в обычной вкладке — всплывающее окно (`signInWithPopup`); с иконки на главном экране (`isStandalone()`) и если окно
   заблокировано — `googleGo()`: переход на accounts.google.com (OAuth, `response_type=id_token`, клиент `GOOGLE_CLIENT` — Web client проекта)
   и возврат на свой же адрес с `#id_token`, `googleFinish()` входит через `signInWithCredential`. Старый `signInWithRedirect` через

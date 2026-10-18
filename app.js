@@ -47,7 +47,7 @@ const MAX_POST_IMG = 700000;   // символов dataURL (~520 КБ), лими
 const MAX_AVATAR = 120000;
 const CHUNK = 700000;                                   // символов base64 в одном куске (кратно 4)
 const LIMITS = { disk: 10 * 1024 * 1024, video: 20 * 1024 * 1024, music: 12 * 1024 * 1024 };
-const VERSION = '6.1';
+const VERSION = '6.2';
 const MAX_MSG_IMG = 380000;    // фото в сообщении
 const ONLINE_MS = 5 * 60 * 1000; // «в сети», если заходил не раньше 5 минут назад
 
@@ -80,8 +80,8 @@ function applyTheme(t) {
   else delete document.documentElement.dataset.theme;
 }
 applyTheme(lsGet('vs_theme'));
-const ACCENTS = [['blue', 'Фирменный', '#7C3AED'], ['violet', 'Фиолетовый', '#6A47C9'], ['green', 'Зелёный', '#1F8A5B'], ['orange', 'Оранжевый', '#D9641E'], ['pink', 'Розовый', '#C2357A']];
-function applyAccent(a) { if (a && a !== 'blue') document.documentElement.dataset.accent = a; else delete document.documentElement.dataset.accent; }
+const ACCENTS = [['avatar', 'Из аватарки (Material You)', 'conic-gradient(#F472B6,#FBBF24,#34D399,#60A5FA,#A78BFA,#F472B6)'], ['blue', 'Фирменный', '#7C3AED'], ['violet', 'Фиолетовый', '#6A47C9'], ['green', 'Зелёный', '#1F8A5B'], ['orange', 'Оранжевый', '#D9641E'], ['pink', 'Розовый', '#C2357A']];
+function applyAccent(a) { if (a && a !== 'blue' && a !== 'avatar') document.documentElement.dataset.accent = a; else delete document.documentElement.dataset.accent; queueMicrotask(() => { try { tintFromAvatar(); } catch (e) { } }); }
 applyAccent(lsGet('vs_accent'));
 if (lsGet('vs_anim') === 'off') document.documentElement.dataset.anim = 'off';
 
@@ -598,7 +598,7 @@ function startSession() {
   globalUnsubs.push(onSnapshot(doc(db, 'users', id), s => {
     if (!s.exists()) return;
     const prevFriends = JSON.stringify([S.me?.friends || [], S.me?.groups || []]);
-    S.me = data(s); cache.users.set(id, S.me); S.phase = 'app';
+    S.me = data(s); cache.users.set(id, S.me); S.phase = 'app'; tintFromAvatar();
     if (isSiteAdmin() && !reportsUnsub) {
       reportsUnsub = onSnapshot(query(collection(db, 'reports'), orderBy('createdAt', 'desc'), limit(100)), r => {
         cache.reports = r.docs.map(data); ensureUsers(cache.reports.flatMap(x => [x.from, x.targetUser])); render();
@@ -1370,7 +1370,7 @@ function mdShell(me, main, up) {
     <a class="md-brand" href="#feed" aria-label="VСмске, лента"><span class="logo-mark">вс</span></a>
     <h1 class="md-title">${esc(mdTitle())}</h1>
     <form class="search md-search" data-form="search">${I.search}<input id="q" type="search" placeholder="Поиск людей" autocomplete="off" value="${esc(v === 'people' ? S.query : '')}"></form>
-    <a class="md-icon md-search-btn" href="#people" aria-label="Поиск людей">${I.search}</a>
+    <button class="md-icon md-pal" data-act="palopen" aria-label="Быстрый поиск" title="Быстрый поиск (Ctrl+K)">${I.search}</button>
     <a class="md-me" href="#id/${esc(me.id)}" aria-label="Моя страница">${avatar(me, 40, false)}</a>
   </header>
   <main class="md-main"><div class="md-col">${ban}${up}${main}</div></main>
@@ -1400,15 +1400,235 @@ function mdDrawer(me) {
     ${it('disk', I.disk, 'Диск', v === 'disk')}${it('clubs', I.club, 'Клубы', ['clubs', 'club'].includes(v))}
     <div class="md-group">Сервисы</div>
     ${it('apps', I.apps, 'Все сервисы', MD_APPS.includes(v), unreadMail())}
+    <button class="md-item" data-act="recap">${I.star}<span class="grow">Мои итоги</span></button>
+    <button class="md-item" data-act="palopen">${I.search}<span class="grow">Быстрый поиск</span><kbd>Ctrl K</kbd></button>
     <div class="md-group">Аккаунт</div>
     ${it('vid', I.vid, 'VС ID', v === 'vid')}${isSiteAdmin() ? it('admin', I.shield, 'Админка', v === 'admin', cache.reports.length) : ''}${it('settings', I.gear, 'Настройки', v === 'settings')}
     <button class="md-item" data-act="logout">${I.out}<span class="grow">Выйти</span></button>
   </aside>`;
 }
 
+/* ---------- 6.2: «Итоги», быстрый поиск, цвет из аватарки ---------- */
+
+/* «Итоги» в стиле Spotify Wrapped: слайды-истории о себе (S.recap = { i, d }). Всё считается из того, что уже можно прочитать
+   (свои записи, подарки, треки), в базу ничего не пишется — кроме записи на стене, если человек сам нажмёт «Поделиться». */
+const recapMonth = () => new Date().toISOString().slice(0, 7);
+async function openRecap() {
+  S.recap = { i: 0, d: null }; S.pal = null; S.drawer = false; render();
+  lsSet('vs_recap_seen', recapMonth());
+  const me = S.me, id = me.id;
+  try {
+    const [ps, gs, ts] = await Promise.all([
+      getDocs(query(collection(db, 'posts'), where('authorId', '==', id), orderBy('createdAt', 'desc'), limit(300))),
+      getDocs(query(collection(db, 'gifts'), where('to', '==', id), limit(200))).catch(() => null),
+      getDocs(query(collection(db, 'tracks'), where('ownerId', '==', id), limit(200))).catch(() => null),
+    ]);
+    const posts = ps.docs.map(data).filter(p => !p.groupId);
+    const month = Date.now() - 30 * 864e5;
+    const likes = posts.reduce((a, p) => a + (p.likes || []).length, 0);
+    const comments = posts.reduce((a, p) => a + (p.commentCount || 0), 0);
+    const reposts = posts.reduce((a, p) => a + (p.reposts || 0), 0);
+    const top = posts.slice().sort((a, b) => ((b.likes || []).length + 2 * (b.commentCount || 0)) - ((a.likes || []).length + 2 * (a.commentCount || 0)))[0];
+    const fans = new Map(); posts.forEach(p => (p.likes || []).forEach(u => { if (u !== id) fans.set(u, (fans.get(u) || 0) + 1); }));
+    const fan = [...fans.entries()].sort((a, b) => b[1] - a[1])[0];
+    const hours = new Array(24).fill(0); posts.forEach(p => hours[new Date(ms(p.createdAt)).getHours()]++);
+    const hour = posts.length ? hours.indexOf(Math.max(...hours)) : -1;
+    const tags = new Map(); posts.forEach(p => (p.tags || []).forEach(t => tags.set(t, (tags.get(t) || 0) + 1)));
+    const tag = [...tags.entries()].sort((a, b) => b[1] - a[1])[0];
+    if (fan) ensureUsers([fan[0]]);
+    const d = {
+      days: me.createdAt ? Math.max(1, Math.round((Date.now() - ms(me.createdAt)) / 864e5)) : 1,
+      posts: posts.length, monthPosts: posts.filter(p => ms(p.createdAt) >= month).length, likes, comments, reposts, top,
+      fan: fan ? { id: fan[0], n: fan[1] } : null, hour, tag: tag ? tag[0] : '',
+      friends: (me.friends || []).length, chats: cache.chats.length, gifts: gs ? gs.size : 0,
+      tracks: ts ? ts.size : 0, saved: (me.tracks || []).length,
+    };
+    if (S.recap) { S.recap.d = d; render(); recapTimer(); }
+  } catch (e) { console.error(e); if (S.recap) { S.recap.err = errText(e); render(); } }
+}
+// какие слайды показывать: пустые (нет записей, нет музыки) пропускаем
+function recapSlides(d) {
+  const out = ['hi', 'days'];
+  if (d.posts) out.push('posts', 'likes');
+  if (d.top && ((d.top.likes || []).length || d.top.commentCount)) out.push('top');
+  if (d.fan) out.push('fan');
+  if (d.hour >= 0) out.push('habit');
+  out.push('social');
+  if (d.tracks || d.saved) out.push('music');
+  out.push('end');
+  return out;
+}
+let recapTick = null;
+function recapTimer() {
+  clearInterval(recapTick);
+  recapTick = setInterval(() => {
+    if (!S.recap?.d) { clearInterval(recapTick); return; }
+    const n = recapSlides(S.recap.d).length;
+    if (S.recap.i < n - 1) { S.recap.i++; render(); } else clearInterval(recapTick);
+  }, 6500);
+}
+function recapGo(dir) {
+  if (!S.recap?.d) return;
+  const n = recapSlides(S.recap.d).length;
+  S.recap.i = Math.max(0, Math.min(n - 1, S.recap.i + dir)); render(); recapTimer();
+}
+const hourWord = h => h < 0 ? '' : h < 5 || h >= 23 ? ['Ночная сова', '🦉', 'Больше всего ты пишешь глубокой ночью'] : h < 11 ? ['Жаворонок', '🐦', 'Твои записи появляются с утра пораньше']
+  : h < 18 ? ['Человек дня', '☀️', 'Ты пишешь, пока светит солнце'] : ['Вечерний житель', '🌆', 'Самое активное время — вечер'];
+const num = n => `<b class="rc-num" style="--to:${Number(n) || 0}" role="img" aria-label="${Number(n) || 0}"></b>`;
+function recapOverlay() {
+  const r = S.recap, me = S.me;
+  if (!r.d) return `<div class="recap rc-s0"><div class="rc-in"><div class="rc-load">${r.err ? `<b>Не получилось собрать итоги</b><span>${esc(r.err)}</span>` : '<span class="spin"></span><span>Собираем твои итоги…</span>'}</div>
+    <button class="rc-x" data-act="recapclose" aria-label="Закрыть">✕</button></div></div>`;
+  const d = r.d, slides = recapSlides(d), k = slides[r.i], hw = hourWord(d.hour);
+  const pl = (n, a, b, c) => plural(Number(n) || 0, a, b, c);
+  const body = {
+    hi: `<div class="rc-kicker">VСмске · ${new Date().toLocaleDateString('ru-RU', { month: 'long', year: 'numeric' })}</div>
+      <div class="rc-av">${avatar(me, 132, false)}</div><h2 class="rc-big">${esc(me.name.split(' ')[0])}, это твои итоги</h2>
+      <p class="rc-sub">Листай вправо — посмотрим, каким было твоё время в VСмске</p>`,
+    days: `<div class="rc-kicker">Ты с нами уже</div><div class="rc-huge">${num(d.days)}</div><h2 class="rc-big">${pl(d.days, 'день', 'дня', 'дней')}</h2>
+      <p class="rc-sub">${me.createdAt ? 'С ' + new Date(ms(me.createdAt)).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', year: 'numeric' }) : ''} — спасибо, что ты здесь 💜</p>`,
+    posts: `<div class="rc-kicker">Твои записи</div><div class="rc-huge">${num(d.posts)}</div><h2 class="rc-big">${pl(d.posts, 'запись', 'записи', 'записей')}</h2>
+      <p class="rc-sub">${d.monthPosts ? `Из них ${d.monthPosts} — за последний месяц` : 'В этом месяце пока тихо — самое время что-нибудь написать'}</p>`,
+    likes: `<div class="rc-kicker">Тебя оценили</div><div class="rc-huge">♥ ${num(d.likes)}</div><h2 class="rc-big">${pl(d.likes, 'лайк', 'лайка', 'лайков')}</h2>
+      <div class="rc-chips"><span>💬 ${d.comments} ${pl(d.comments, 'комментарий', 'комментария', 'комментариев')}</span><span>🔁 ${d.reposts} ${pl(d.reposts, 'репост', 'репоста', 'репостов')}</span></div>`,
+    top: d.top ? `<div class="rc-kicker">Твоя лучшая запись</div><div class="rc-post">${safeImg(d.top.image || (d.top.images || [])[0]) ? `<img src="${esc(d.top.image || d.top.images[0])}" alt="">` : ''}
+      ${d.top.text ? `<p>${esc(d.top.text.slice(0, 220))}${d.top.text.length > 220 ? '…' : ''}</p>` : d.top.poll ? `<p>📊 ${esc(d.top.poll.q)}</p>` : ''}
+      <div class="rc-chips"><span>♥ ${(d.top.likes || []).length}</span><span>💬 ${d.top.commentCount || 0}</span></div></div>
+      <a class="rc-btn" href="#post/${esc(d.top.id)}" data-act="recapclose">Открыть запись</a>` : '',
+    fan: d.fan ? `<div class="rc-kicker">Твой главный фанат</div><div class="rc-av">${avatar(U(d.fan.id) || { name: '…' }, 132, false)}</div>
+      <h2 class="rc-big">${esc(U(d.fan.id)?.name || '…')}</h2><p class="rc-sub">${d.fan.n} ${pl(d.fan.n, 'лайк', 'лайка', 'лайков')} на твоих записях — больше, чем от кого-либо. Напиши что-нибудь приятное в ответ 💌</p>` : '',
+    habit: `<div class="rc-kicker">Твой ритм</div><div class="rc-emoji">${hw[1]}</div><h2 class="rc-big">${hw[0]}</h2><p class="rc-sub">${hw[2]} — чаще всего около ${d.hour}:00</p>
+      ${d.tag ? `<div class="rc-chips"><span>Любимый хэштег: #${esc(d.tag)}</span></div>` : ''}`,
+    social: `<div class="rc-kicker">Твой круг</div><div class="rc-grid"><div>${num(d.friends)}<span>${pl(d.friends, 'друг', 'друга', 'друзей')}</span></div>
+      <div>${num(d.chats)}<span>${pl(d.chats, 'диалог', 'диалога', 'диалогов')}</span></div><div>${num(d.gifts)}<span>${pl(d.gifts, 'подарок', 'подарка', 'подарков')}</span></div></div>
+      <p class="rc-sub">${d.friends ? 'Люди, с которыми тебе хорошо' : 'Найди своих людей — раздел «Люди»'}</p>`,
+    music: `<div class="rc-kicker">Твоя музыка</div><div class="rc-emoji">🎧</div><div class="rc-grid"><div>${num(d.tracks)}<span>${pl(d.tracks, 'трек загружен', 'трека загружено', 'треков загружено')}</span></div>
+      <div>${num(d.saved)}<span>${pl(d.saved, 'чужой трек', 'чужих трека', 'чужих треков')} у тебя</span></div></div><p class="rc-sub">Твой плейлист в ВС Музыке ждёт</p>`,
+    end: `<div class="rc-kicker">Итого</div><h2 class="rc-big">${esc(me.name)}</h2>
+      <div class="rc-sum"><div><b>${d.days}</b><span>${pl(d.days, 'день', 'дня', 'дней')}</span></div><div><b>${d.posts}</b><span>${pl(d.posts, 'запись', 'записи', 'записей')}</span></div>
+        <div><b>${d.likes}</b><span>${pl(d.likes, 'лайк', 'лайка', 'лайков')}</span></div><div><b>${d.friends}</b><span>${pl(d.friends, 'друг', 'друга', 'друзей')}</span></div></div>
+      ${banOf(me) ? '' : `<button class="rc-btn" data-act="recapshare" ${S.busy ? 'disabled' : ''}>✨ Поделиться на стене</button>`}
+      <button class="rc-btn ghost" data-act="recapclose">Закрыть</button>`,
+  }[k];
+  return `<div class="recap rc-s${r.i % 6}" role="dialog" aria-label="Мои итоги">
+    <div class="rc-bars">${slides.map((_, i) => `<i class="${i < r.i ? 'done' : i === r.i ? 'now' : ''}"></i>`).join('')}</div>
+    <button class="rc-x" data-act="recapclose" aria-label="Закрыть">✕</button>
+    <div class="rc-in rc-k-${k}" data-slide="${r.i}">${body}</div>
+    ${k !== 'end' ? `<button class="rc-zone rc-prev" data-act="recapnav" data-d="-1" aria-label="Назад"></button><button class="rc-zone rc-next" data-act="recapnav" data-d="1" aria-label="Дальше"></button>` : ''}
+  </div>`;
+}
+async function recapShare() {
+  const d = S.recap?.d; if (!d || S.busy) return;
+  const pl = (n, a, b, c) => plural(n, a, b, c);
+  const text = `✨ Мои итоги в VСмске: ${d.days} ${pl(d.days, 'день', 'дня', 'дней')} с вами, ${d.posts} ${pl(d.posts, 'запись', 'записи', 'записей')}, ${d.likes} ${pl(d.likes, 'лайк', 'лайка', 'лайков')} и ${d.friends} ${pl(d.friends, 'друг', 'друга', 'друзей')}`
+    + (d.hour >= 0 ? `. Я — ${hourWord(d.hour)[0].toLowerCase()} ${hourWord(d.hour)[1]}` : '') + ' #итоги';
+  S.busy = true; render();
+  try {
+    await addDoc(collection(db, 'posts'), { authorId: uid(), wallId: uid(), text, image: '', likes: [], commentCount: 0, tags: extractTags(text), createdAt: serverTimestamp() });
+    S.recap = null; clearInterval(recapTick); toast('Итоги на вашей стене'); go('id/' + uid());
+  } finally { S.busy = false; render(); }
+}
+
+/* Быстрый поиск (Ctrl/⌘+K или кнопка): разделы, сервисы и люди из уже загруженных — мгновенно, без запросов к базе */
+const PAL_SECTIONS = () => [
+  ['feed', I.feed, 'Лента', 'новости записи'], ['im', I.msg, 'Чаты', 'сообщения диалоги переписка'], ['friends', I.friends, 'Друзья', 'заявки'],
+  ['notif', I.bell, 'Сигналы', 'уведомления'], ['id/' + S.me.id, I.home, 'Моя страница', 'профиль стена'], ['saved', I.bookmark, 'Закладки', 'сохранённое'],
+  ['people', I.people, 'Люди', 'поиск'], ['music', I.music, 'ВС Музыка', 'треки плеер песни'], ['radio', I.radio, 'ВС Радио', 'эфир станции'],
+  ['video', I.video, 'ВС Видео', 'ролики'], ['albums', I.album, 'ВС Альбомы', 'фото фотографии'], ['disk', I.disk, 'ВС Диск', 'файлы'],
+  ['clubs', I.club, 'Клубы', 'сообщества группы'], ['apps', I.apps, 'Все сервисы', ''], ['mail', I.mail, 'ВС Почта', 'письма'],
+  ['answers', I.ask, 'ВС Ответы', 'вопросы'], ['notes', I.note, 'ВС Заметки', 'список'], ['weather', I.sun, 'ВС Погода', 'прогноз'],
+  ['games', I.game, 'ВС Игры', '2048 змейка сапёр'], ['market', I.cart, 'ВС Маркет', 'купить продать объявления'], ['events', I.cal, 'ВС События', 'встречи'],
+  ['rates', I.rate, 'ВС Курсы', 'валюта доллар евро'], ['horo', I.star, 'ВС Гороскоп', 'знак'], ['vid', I.vid, 'VС ID', 'пароль почта аккаунт'],
+  ['settings', I.gear, 'Настройки', 'тема дизайн цвет'], ['edit', I.home, 'Редактировать страницу', 'имя фото статус'],
+  ['@recap', I.star, 'Мои итоги', 'статистика wrapped'],
+];
+const norm = t => String(t || '').toLowerCase().replace(/ё/g, 'е');
+function palItems() {
+  const q = norm(S.pal?.q).trim();
+  const secs = PAL_SECTIONS().filter(([, , t, k]) => !q || norm(t + ' ' + k).includes(q)).slice(0, q ? 8 : 9)
+    .map(([href, icon, t]) => ({ href, icon, t, sub: href === '@recap' ? 'Твоя статистика в стиле Wrapped' : 'Раздел' }));
+  const people = !q ? [] : [...cache.users.values()].filter(u => u && !u.deleted && u.id !== S.me.id && (norm(u.name).includes(q) || norm(u.nick).includes(q.replace(/^@/, ''))))
+    .slice(0, 6).map(u => ({ href: 'id/' + u.id, u, t: u.name, sub: '@' + (u.nick || '') }));
+  const more = q.length >= 2 ? [{ href: 'people', q: S.pal.q.trim(), icon: I.search, t: `Найти людей: «${S.pal.q.trim()}»`, sub: 'Поиск по всем' }] : [];
+  return [...people, ...secs, ...more];
+}
+function palOverlay() {
+  const items = palItems(), sel = Math.min(S.pal.sel, Math.max(0, items.length - 1));
+  return `<div class="pal-ov" data-act="palx"><div class="pal" role="dialog" aria-label="Быстрый поиск" data-stop="1">
+    <div class="pal-q">${I.search}<input id="palQ" placeholder="Раздел, сервис или человек…" autocomplete="off" value="${esc(S.pal.q)}"><kbd>Esc</kbd></div>
+    <div class="pal-list" role="listbox">${items.length ? items.map((x, i) => `<button class="pal-item ${i === sel ? 'on' : ''}" role="option" aria-selected="${i === sel}" data-act="palgo" data-i="${i}">
+      <span class="pal-ico">${x.u ? avatar(x.u, 32, false) : x.icon}</span><span class="grow"><b>${esc(x.t)}</b><span class="small muted">${esc(x.sub)}</span></span></button>`).join('')
+      : '<div class="empty small">Ничего не нашлось</div>'}</div>
+    <div class="pal-foot small muted">↑ ↓ — выбрать · Enter — открыть · Ctrl+K — открыть отовсюду</div>
+  </div></div>`;
+}
+function palGo(i) {
+  const x = palItems()[i]; if (!x) return;
+  S.pal = null;
+  if (x.href === '@recap') { openRecap(); return; }
+  if (x.q !== undefined) S.query = x.q;
+  if (location.hash === '#' + x.href) render(); else go(x.href);
+}
+function palOpen() { S.pal = { q: '', sel: 0 }; S.drawer = false; render(); setTimeout(() => document.getElementById('palQ')?.focus(), 30); }
+document.addEventListener('input', e => { if (e.target.id === 'palQ' && S.pal) { S.pal.q = e.target.value; S.pal.sel = 0; render(); } });
+document.addEventListener('keydown', e => {
+  if (S.phase !== 'app') return;
+  if ((e.ctrlKey || e.metaKey) && (e.key === 'k' || e.key === 'K' || e.code === 'KeyK')) { e.preventDefault(); if (S.pal) { S.pal = null; render(); } else palOpen(); return; }
+  if (S.pal) {
+    const n = palItems().length;
+    if (e.key === 'Escape') { S.pal = null; render(); }
+    else if (e.key === 'ArrowDown') { e.preventDefault(); S.pal.sel = (S.pal.sel + 1) % Math.max(1, n); render(); }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); S.pal.sel = (S.pal.sel - 1 + n) % Math.max(1, n); render(); }
+    else if (e.key === 'Enter') { e.preventDefault(); palGo(Math.min(S.pal.sel, n - 1)); }
+    return;
+  }
+  if (S.recap) {
+    if (e.key === 'Escape') { S.recap = null; clearInterval(recapTick); render(); }
+    else if (e.key === 'ArrowRight' || e.key === ' ') { e.preventDefault(); recapGo(1); }
+    else if (e.key === 'ArrowLeft') recapGo(-1);
+  }
+});
+
+/* «Цвет из аватарки» — как Material You на Android берёт цвета с обоев: тон (OKLCH) из фото или цвета аватарки → --md-h / --md-c */
+function oklchHue(r, g, b) {
+  const lin = c => { c /= 255; return c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4; };
+  const R = lin(r), G = lin(g), B = lin(b);
+  const l = Math.cbrt(0.4122214708 * R + 0.5363325363 * G + 0.0514459929 * B), m = Math.cbrt(0.2119034982 * R + 0.6806995451 * G + 0.1073969566 * B),
+    s = Math.cbrt(0.0883024619 * R + 0.2817188376 * G + 0.6299787005 * B);
+  const A = 1.9779984951 * l - 2.4285922050 * m + 0.4505937099 * s, Bb = 0.0259040371 * l + 0.7827717662 * m - 0.8086757660 * s;
+  return { h: (Math.atan2(Bb, A) * 180 / Math.PI + 360) % 360, c: Math.hypot(A, Bb) };
+}
+let tintKey = '';
+function tintFromAvatar(force = false) {
+  const root = document.documentElement, me = S.me;
+  if (lsGet('vs_accent') !== 'avatar' || !me) { root.style.removeProperty('--md-h'); root.style.removeProperty('--md-c'); tintKey = ''; return; }
+  const src = safePhoto(me.photo), key = src.length + ':' + src.slice(-40) + me.color;
+  if (key === tintKey && !force) return;
+  tintKey = key;
+  const apply = (h, c) => { root.style.setProperty('--md-h', h.toFixed(1)); root.style.setProperty('--md-c', Math.min(0.2, Math.max(0.07, c * 0.9)).toFixed(3)); };
+  const fromHex = () => { const m = /^#([0-9a-f]{6})$/i.exec(me.color || '#6A47C9'); const n = parseInt(m ? m[1] : '6A47C9', 16); const o = oklchHue(n >> 16, (n >> 8) & 255, n & 255); apply(o.h, o.c); };
+  if (!src) { fromHex(); return; }
+  const img = new Image(); if (src.startsWith('https:')) img.crossOrigin = 'anonymous';
+  img.onload = () => {
+    try {
+      const c = document.createElement('canvas'); c.width = c.height = 32; const x = c.getContext('2d'); x.drawImage(img, 0, 0, 32, 32);
+      const p = x.getImageData(0, 0, 32, 32).data; let sx = 0, sy = 0, sw = 0, cw = 0;
+      for (let i = 0; i < p.length; i += 4) {   // средний тон по «сочным» пикселям (серые почти не влияют)
+        const o = oklchHue(p[i], p[i + 1], p[i + 2]), w = o.c * o.c;
+        sx += Math.cos(o.h * Math.PI / 180) * w; sy += Math.sin(o.h * Math.PI / 180) * w; sw += w; cw += o.c;
+      }
+      if (sw < 1e-4) { fromHex(); return; }
+      apply((Math.atan2(sy, sx) * 180 / Math.PI + 360) % 360, (cw / (p.length / 4)) * 1.6);
+    } catch (e) { fromHex(); }
+  };
+  img.onerror = fromHex; img.src = src;
+}
+
 /* ---------- Окна поверх страницы: просмотр фото и файлов ---------- */
 const REPORT_REASONS = { spam: 'Спам', abuse: 'Оскорбления', nsfw: 'Неприемлемый контент', fraud: 'Мошенничество', other: 'Другое' };
 function overlay() {
+  if (S.recap) return recapOverlay();
+  if (S.pal) return palOverlay();
   if (S.story) return storyOverlay();
   if (S.trackForm) return trackFormModal();
   if (S.qr) {
@@ -1689,6 +1909,7 @@ function viewMore() {
       ${item('notif', I.bell, 'Уведомления' + (unseenNotifs() ? ` <span class="badge">${unseenNotifs()}</span>` : ''), 'Лайки, комментарии, записи на стене')}
       ${item('apps', I.apps, 'Сервисы' + (unreadMail() ? ` <span class="badge">${unreadMail()}</span>` : ''), 'Почта, Ответы, Заметки, Погода, Игры')}
       ${item('saved', I.bookmark, 'Закладки', 'Сохранённые записи')}
+      <button class="uitem setlink" data-act="recap"><span class="ficon">${I.star}</span><span class="grow"><b>Мои итоги</b><br><span class="muted small">Твоя статистика в стиле Wrapped</span></span></button>
       ${item('clubs', I.club, 'Сообщества', 'Группы по интересам')}
       ${item('people', I.people, 'Люди', 'Поиск и новые пользователи')}
       ${item('albums', I.album, 'ВС Альбомы', 'Ваши фотографии')}
@@ -3078,7 +3299,10 @@ function viewFeed() {
   const tab = (t, l) => `<button class="${S.feedTab === t ? 'on' : ''}" data-act="feedtab" data-tab="${t}">${l}</button>`;
   const fr = S.me.friends || []; ensureUsers(fr.slice(0, 200));
   const bdays = fr.map(U).filter(u => u && isBdayToday(u.bday));
-  return `${storiesBar()}${bdays.length ? `<div class="card pad bday-card"><b>🎂 Сегодня день рождения</b>
+  const recapCard = lsGet('vs_recap_seen') === recapMonth() ? '' : `<div class="card recap-card"><button class="recap-open" data-act="recap"><span class="recap-ico">✨</span>
+    <span class="grow"><b>Твои итоги в VСмске готовы</b><span class="small">Лайки, лучшая запись, главный фанат — смотри как в Wrapped</span></span><span class="recap-go">Смотреть</span></button>
+    <button class="icon-btn recap-hide" data-act="recaphide" aria-label="Скрыть">✕</button></div>`;
+  return `${storiesBar()}${recapCard}${bdays.length ? `<div class="card pad bday-card"><b>🎂 Сегодня день рождения</b>
       ${bdays.map(u => `<div class="row">${avatar(u, 36)}<span class="grow">${nameLink(u)}</span><a class="btn sec small" href="#im/${esc(u.id)}">Поздравить</a></div>`).join('')}</div>` : ''}
   ${MD() ? `<button class="md-prompt" data-act="mdcompose">${avatar(S.me, 40, false)}<span>Что у вас нового?</span>${I.photo}</button>` : composer(S.me.id, 'Что у вас нового?')}
   <div class="card"><div class="tabs">${tab('friends', 'Друзья')}${tab('top', '🔥 Популярное')}${tab('all', 'Все записи')}</div></div>
@@ -3555,6 +3779,14 @@ document.addEventListener('click', async e => {
   if (!['emoji', 'emojis'].includes(act)) S.emoji = null;
   try {
     switch (act) {
+      case 'recap': openRecap(); break;
+      case 'recapnav': recapGo(Number(b.dataset.d)); break;
+      case 'recapclose': S.recap = null; clearInterval(recapTick); render(); break;
+      case 'recapshare': await recapShare(); break;
+      case 'palopen': palOpen(); break;
+      case 'palgo': palGo(Number(b.dataset.i)); break;
+      case 'palx': S.pal = null; render(); break;
+      case 'recaphide': lsSet('vs_recap_seen', recapMonth()); render(); break;
       case 'mdcompose': S.compose = true; S.drawer = false; render(); setTimeout(() => document.getElementById('postText')?.focus(), 60); break;
       case 'mddrawer': S.drawer = !S.drawer; render(); break;
       case 'mdclose': S.compose = false; S.drawer = false; render(); break;
