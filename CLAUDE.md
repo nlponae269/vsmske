@@ -26,6 +26,15 @@
   Быстрый поиск — Ctrl/⌘+K или кнопка `.md-pal`: `palOpen()`/`palItems()` (разделы `PAL_SECTIONS` + люди из `cache.users`, без запросов к базе).
   Цвет «Из аватарки» (`vs_accent = avatar`): `tintFromAvatar()` считает тон OKLCH (`oklchHue()`) по фото или по `users.color` и ставит `--md-h/--md-c`
   инлайн на `<html>` — влияет на Material You. Стили «Итогов» и поиска — в `style.css` (работают во всех дизайнах).
+- 6.3: ВС Музыка заново (полноэкранный плеер не менялся). `#music` — главная `musicHome()`: баннер «Поток» (все треки платформы подряд,
+  без рекомендаций — `loadStream()` страницами по 50 через `startAfter`, порядок «сначала новые/старые» — localStorage `vs_stream_order`;
+  когда Поток доигрывает загруженное, `extendStream()` дописывает следующую страницу в очередь, `player.stream`), поиск `#musQ` (по загруженному,
+  Поток догружается), плитки плейлистов, «Друзья слушают» (`users.listening` друзей), «Недавно играло» (localStorage `vs_recent`, 20 треков без обложек),
+  «Новое в Потоке». Страницы: `#music/stream`, `#music/liked` (Мои треки = `users.tracks`, новые сверху), `#music/uploads` (Мои загрузки),
+  `#music/pl_<id>` (плейлист), `#music/<uid>` (загрузки человека); старые `#music/my|all` → главная/Поток. Строка трека — `trackRow()`
+  (♡ в «Мои треки», «⋯» → `S.tmenu`: играть следующим, в плейлист, убрать из плейлиста, правка/удаление), все списки — `musicList(key)`/`musicPlay()`,
+  треки кэшируются в `trackCache`. Новая коллекция `playlists` (`ownerId`, `title` 1–60, `tracks[]` до 500 id, `color` `#RRGGBB` или '', `updatedAt`):
+  читают все вошедшие (ссылка «Скопировать»), меняет и удаляет только хозяин; окна `playlistModal()` (`S.plPick` — выбрать плейлист, `S.plForm` — создать/переименовать).
 - Вход через Google (6.1): в обычной вкладке — всплывающее окно (`signInWithPopup`); с иконки на главном экране (`isStandalone()`) и если окно
   заблокировано — `googleGo()`: переход на accounts.google.com (OAuth, `response_type=id_token`, клиент `GOOGLE_CLIENT` — Web client проекта)
   и возврат на свой же адрес с `#id_token`, `googleFinish()` входит через `signInWithCredential`. Старый `signInWithRedirect` через
@@ -81,7 +90,7 @@
 `notes` (ВС Заметки: личные, `ownerId`, `title`, `text`, `color`, `pinned`),
 `tracks` (ВС Музыка: `ownerId`, `title`, `artist`, `fileId` → `files` с `kind: 'music'`, `duration`; `users.tracks` — добавленные себе чужие треки),
 `events` (ВС События: `title`, `text`, `place`, `at`, `cover`, `going[]`),
-`gifts` (подарки: `from`, `to`, `gift` — ключ из `GIFTS`, `text`), `market` (ВС Маркет: `title`, `price`, `category`, `city`, `text`, `image`, `sold`).
+`playlists` (ВС Музыка 6.3: свои плейлисты), `gifts` (подарки: `from`, `to`, `gift` — ключ из `GIFTS`, `text`), `market` (ВС Маркет: `title`, `price`, `category`, `city`, `text`, `image`, `sold`).
 Плеер музыки (`player`) живёт вне `#app` и играет при переходах; панель — `musicBar()`.
 Поля 3.1: `tracks.lyrics` (текст песни до 20 000 символов, строки LRC `[мм:сс.сс]` дают синхронизацию — `parseLyrics()`, `syncLyrics()`)
 и `tracks.cover` (обложка, dataURL до 300 000). Меняет только автор трека. Полноэкранный плеер — `fullPlayer()` (`S.fullPlayer`, открывается
@@ -163,7 +172,7 @@
 Если меняешь структуру данных, обнови этот файл и напомни владельцу вставить его в консоль и нажать Publish.
 
 **В консоль вставляется `firestore.min.rules`**, а не `firestore.rules`: вставка с телефона обрезает текст после 20 000 символов.
-Правь только `firestore.rules`, потом запускай `python3 tools/minify-rules.py` (сокращает имена функций и параметров, склеивает строки) (он пересобирает `firestore.min.rules`
+Правь только `firestore.rules`, потом запускай `python3 tools/minify-rules.py` (сокращает имена функций и параметров, склеивает строки, убирает `signed()` там, где следующая проверка и так требует входа) (он пересобирает `firestore.min.rules`
 и ругается, если вышло больше 19 000 символов) и прогоняй тесты на обоих файлах (`RULES_FILE=firestore.min.rules`).
 Владельцу давай ссылку на raw-файл `firestore.min.rules` или страницу с кнопкой «Скопировать».
 
