@@ -47,7 +47,7 @@ const MAX_POST_IMG = 700000;   // символов dataURL (~520 КБ), лими
 const MAX_AVATAR = 120000;
 const CHUNK = 700000;                                   // символов base64 в одном куске (кратно 4)
 const LIMITS = { disk: 10 * 1024 * 1024, video: 20 * 1024 * 1024, music: 12 * 1024 * 1024 };
-const VERSION = '6.3';
+const VERSION = '6.4';
 const MAX_MSG_IMG = 380000;    // фото в сообщении
 const ONLINE_MS = 5 * 60 * 1000; // «в сети», если заходил не раньше 5 минут назад
 
@@ -2068,12 +2068,122 @@ const player = { audio: new Audio(), queue: [], i: -1, loading: false, repeat: l
   rate: Number(lsGet('vs_rate')) || 1, pitch: lsGet('vs_pitch') !== '0', vol: lsGet('vs_vol') ? Math.min(Math.max(Number(lsGet('vs_vol')) || 0, 0), 1) : 1, sleep: null };
 player.audio.preload = 'auto';
 player.audio.volume = player.vol;
+// обработчики <audio> запоминаем: эквалайзеру иногда нужен свежий элемент (см. eqPrepare)
+const AUDIO_EV = [];
+function audioOn(ev, fn) { AUDIO_EV.push([ev, fn]); player.audio.addEventListener(ev, fn); }
+function freshAudio() {
+  const old = player.audio; AUDIO_EV.forEach(([ev, fn]) => old.removeEventListener(ev, fn));
+  old.pause(); old.removeAttribute('src'); old.load();
+  try { eqSrcNode?.disconnect(); } catch (e) { }
+  eqSrcNode = null; eqSrcEl = null;
+  const a = new Audio(); a.preload = 'auto'; a.volume = player.vol;
+  AUDIO_EV.forEach(([ev, fn]) => a.addEventListener(ev, fn));
+  player.audio = a; applyRate();
+}
 // скорость и «сохранять высоту голоса» (выключено — получается slowed / speed up)
 function applyRate() {
   const a = player.audio; a.defaultPlaybackRate = a.playbackRate = player.rate;
   a.preservesPitch = a.mozPreservesPitch = a.webkitPreservesPitch = player.pitch;
 }
 applyRate();
+/* Эквалайзер и усиление басов (6.4): <audio> → 10 полос → «басы» (lowshelf 90 Гц) → запас громкости → лимитер → выход.
+   Через Web Audio звук идёт, только когда эквалайзер включён и что-то поднято/опущено — иначе <audio> играет напрямую
+   (так надёжнее в фоне на телефоне). Радио с чужих серверов через Web Audio молчит (нет CORS) — для него берём свежий <audio>. */
+const EQ_F = [32, 64, 125, 250, 500, 1000, 2000, 4000, 8000, 16000];
+const EQ_PRESETS = {
+  flat: ['Обычный', [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]], bass: ['Басы', [6, 5, 4, 2, 0, 0, 0, 0, 0, 0]],
+  pop: ['Поп', [-1, 1, 3, 4, 3, 0, -1, -1, 1, 2]], rock: ['Рок', [5, 3, -1, -3, -1, 2, 4, 5, 5, 5]],
+  edm: ['Электроника', [6, 5, 1, 0, -2, 1, 0, 2, 4, 5]], hiphop: ['Хип-хоп', [6, 5, 2, 3, -1, -1, 1, 0, 2, 3]],
+  vocal: ['Вокал', [-2, -3, -2, 1, 4, 4, 3, 1, 0, -1]], jazz: ['Джаз', [3, 2, 1, 2, -1, -1, 0, 1, 2, 3]],
+  classic: ['Классика', [4, 3, 2, 1, -1, -1, 0, 2, 3, 4]], acoustic: ['Акустика', [4, 3, 2, 1, 1, 1, 2, 3, 3, 2]],
+};
+const clampDb = (v, lo = -12, hi = 12) => Math.min(Math.max(Math.round(Number(v) || 0), lo), hi);
+function eqLoad() {
+  try {
+    const e = JSON.parse(lsGet('vs_eq') || 'null');
+    if (e && Array.isArray(e.bands) && e.bands.length === EQ_F.length)
+      return { on: !!e.on, preset: EQ_PRESETS[e.preset] ? e.preset : '', bass: clampDb(e.bass, 0, 12), bands: e.bands.map(v => clampDb(v)) };
+  } catch (e) { }
+  return { on: false, preset: 'flat', bass: 0, bands: EQ_F.map(() => 0) };
+}
+player.eq = eqLoad();
+const eqActive = () => player.eq.on && (player.eq.bass > 0 || player.eq.bands.some(Boolean));
+const dbTxt = v => v > 0 ? '+' + v : v < 0 ? '−' + -v : '0';
+const fLabel = f => f >= 1000 ? f / 1000 + 'к' : String(f);
+function eqTxt() {
+  const e = player.eq; if (!e.on) return 'выключен';
+  const name = e.preset ? EQ_PRESETS[e.preset][0] : 'свои настройки';
+  return name + (e.bass ? `, басы +${e.bass} дБ` : '');
+}
+let eqCtx = null, eqNodes = null, eqSrcEl = null, eqSrcNode = null;
+function eqGraph() {
+  if (eqNodes) return eqNodes;
+  const AC = window.AudioContext || window.webkitAudioContext; if (!AC) return null;
+  try { eqCtx = new AC(); } catch (e) { return null; }
+  const bands = EQ_F.map((f, i) => { const b = eqCtx.createBiquadFilter(); b.type = i === 0 ? 'lowshelf' : i === EQ_F.length - 1 ? 'highshelf' : 'peaking'; b.frequency.value = f; b.Q.value = 1.1; return b; });
+  const bass = eqCtx.createBiquadFilter(); bass.type = 'lowshelf'; bass.frequency.value = 90;
+  const pre = eqCtx.createGain(), lim = eqCtx.createDynamicsCompressor();
+  lim.threshold.value = -1.5; lim.knee.value = 0; lim.ratio.value = 20; lim.attack.value = 0.003; lim.release.value = 0.25;
+  [...bands, bass, pre, lim].reduce((a, b) => (a.connect(b), b)).connect(eqCtx.destination);
+  eqNodes = { bands, bass, pre, input: bands[0] }; eqApply();
+  return eqNodes;
+}
+function eqApply() {
+  if (!eqNodes) return; const e = player.eq;
+  eqNodes.bands.forEach((b, i) => { b.gain.value = e.on ? e.bands[i] : 0; });
+  eqNodes.bass.gain.value = e.on ? e.bass : 0;
+  // запас громкости, чтобы подъём не хрипел (остальное ловит лимитер)
+  const boost = e.on ? Math.max(0, ...e.bands) + e.bass * 0.7 : 0;
+  eqNodes.pre.gain.value = Math.pow(10, -boost * 0.5 / 20);
+}
+function eqHook() {
+  if (eqSrcEl !== player.audio) {
+    const g = eqGraph(); if (!g) return;
+    try { eqSrcNode = eqCtx.createMediaElementSource(player.audio); eqSrcNode.connect(g.input); eqSrcEl = player.audio; } catch (e) { console.warn(e); return; }
+  }
+  if (eqCtx.state !== 'running') eqCtx.resume().catch(() => { });
+}
+// перед новым треком: подключённый к Web Audio <audio> обратно не отцепить, поэтому для радио и выключенного эквалайзера — свежий
+function eqPrepare(t) {
+  const want = eqActive() && !t.radio;
+  if (eqSrcEl && eqSrcEl === player.audio && !want) freshAudio();
+  if (want) eqHook();
+}
+function eqChanged() {
+  lsSet('vs_eq', JSON.stringify(player.eq)); eqApply();
+  const t = curTrack(); if (t && !t.radio && eqActive()) eqHook();
+  eqDom();
+}
+// шторка обновляется на месте, без render() — чтобы ползунки не сбивались и шторка не прыгала наверх
+function eqDom() {
+  const e = player.eq, box = document.querySelector('.eq-wrap'); if (!box) return;
+  box.classList.toggle('off', !e.on);
+  const sw = document.querySelector('[data-act="eqon"]');
+  if (sw) { sw.querySelector('.fs-sw').classList.toggle('on', e.on); sw.querySelector('.grow span').textContent = e.on ? 'включён' : 'выключен'; }
+  const st = document.getElementById('eqState'); if (st) st.textContent = eqTxt();
+  box.querySelectorAll('[data-act="eqpreset"]').forEach(b => b.classList.toggle('on', b.dataset.v === e.preset));
+  box.querySelectorAll('.eq-sl').forEach(sl => { const v = e.bands[+sl.dataset.i]; if (!sl.matches(':active')) sl.value = String(v); sl.parentElement.querySelector('output').textContent = dbTxt(v); });
+  const bs = document.getElementById('eqBass'); if (bs && !bs.matches(':active')) bs.value = String(e.bass);
+  const bv = document.getElementById('eqBassV'); if (bv) bv.textContent = `+${e.bass} дБ`;
+  const c = document.getElementById('eqCurve'); if (c) c.innerHTML = eqCurve();
+}
+// кривая АЧХ: сумма откликов всех фильтров от 20 Гц до 20 кГц
+function eqCurve() {
+  const g = eqGraph(); if (!g) return '';
+  const N = 120, fr = new Float32Array(N), mag = new Float32Array(N), ph = new Float32Array(N), tot = new Float32Array(N);
+  for (let i = 0; i < N; i++) fr[i] = 20 * Math.pow(1000, i / (N - 1));
+  [...g.bands, g.bass].forEach(b => { b.getFrequencyResponse(fr, mag, ph); for (let i = 0; i < N; i++) tot[i] += 20 * Math.log10(mag[i] || 1e-6); });
+  const pts = Array.from(tot, (db, i) => `${(i / (N - 1) * 300).toFixed(1)},${(40 - Math.max(-18, Math.min(18, db)) * 2).toFixed(1)}`).join(' ');
+  return `<svg class="eq-curve" viewBox="0 0 300 80" preserveAspectRatio="none" aria-hidden="true"><line x1="0" y1="40" x2="300" y2="40"/><polyline points="${pts}"/></svg>`;
+}
+document.addEventListener('input', e => {
+  const el = e.target, bass = el.id === 'eqBass'; if (!bass && !el.classList?.contains('eq-sl')) return;
+  const q = player.eq;
+  if (bass) q.bass = clampDb(el.value, 0, 12); else { q.bands[+el.dataset.i] = clampDb(el.value); q.preset = ''; }
+  q.on = true; eqChanged();
+});
+// Safari и Chrome запускают звук Web Audio только после нажатия
+document.addEventListener('pointerdown', () => { if (eqCtx && eqSrcEl && eqCtx.state !== 'running') eqCtx.resume().catch(() => { }); }, { passive: true });
 function setVolume(v) {
   player.vol = Math.min(Math.max(Math.round(v * 100) / 100, 0), 1); lsSet('vs_vol', String(player.vol));
   if (!player.sleep?.at || player.sleep.at - Date.now() > 10000) player.audio.volume = player.vol;
@@ -2098,7 +2208,7 @@ function sleepStop() {
   toast('Спокойной ночи 🌙 Музыка выключена по таймеру'); render();
 }
 const curTrack = () => player.queue[player.i];
-player.audio.addEventListener('timeupdate', () => {
+audioOn('timeupdate', () => {
   const a = player.audio, t = curTrack(), pct = a.duration ? a.currentTime / a.duration * 100 : 0;
   const fill = document.getElementById('mbarFill'), mt = document.getElementById('mbarTime');
   if (fill) fill.style.width = pct + '%';
@@ -2116,8 +2226,9 @@ player.audio.addEventListener('timeupdate', () => {
   }
   syncLyrics();
 });
-['play', 'pause'].forEach(ev => player.audio.addEventListener(ev, () => render()));
-player.audio.addEventListener('ended', () => {
+['play', 'pause'].forEach(ev => audioOn(ev, () => render()));
+audioOn('play', () => { if (eqCtx && eqSrcEl === player.audio && eqCtx.state !== 'running') eqCtx.resume().catch(() => { }); });
+audioOn('ended', () => {
   if (player.sleep?.end) { player.sleep = null; toast('Спокойной ночи 🌙 Трек доиграл — музыка выключена'); render(); return; }
   if (player.repeat === 'one') { player.audio.currentTime = 0; player.audio.play(); return; }
   nextTrack(true);
@@ -2141,7 +2252,7 @@ async function playAt(i) {
   try {
     const url = t.radio ? t.url : await getFileUrl(t.fileId, t.type || 'audio/mpeg');
     if (curTrack() !== t) return;
-    player.audio.src = url; applyRate(); await player.audio.play();
+    eqPrepare(t); player.audio.src = url; applyRate(); await player.audio.play();
     shareListening(t); analyzeTrack(t); coverPalette(t); pushRecent(t);
     if (player.stream && player.i >= player.queue.length - 3) extendStream();
     if ('mediaSession' in navigator) {
@@ -2482,6 +2593,7 @@ function fullPlayer() {
       ${showLyrics && !S.lyrEdit ? `<button class="fp-chip fp-style ${S.lyrPick ? 'on' : ''}" data-act="lyrpick" aria-label="Вид текста: ${LYR_STYLES[lyrStyle()]}" title="Вид текста: ${LYR_STYLES[lyrStyle()]}">Aa</button>` : ''}
       <button class="fp-chip ${view === 'viz' ? 'on' : ''}" data-act="fpmode" data-v="viz" aria-label="Визуализатор" title="Визуализатор">${I.radio}<span>Винил</span></button>
       <button class="fp-chip ${view === 'queue' ? 'on' : ''}" data-act="fpmode" data-v="queue" aria-label="Очередь" title="Очередь">${I.feed}<span>Очередь</span></button>
+      ${t.radio ? '' : `<button class="fp-chip ${eqActive() ? 'on' : ''}" data-act="fpsheet" data-v="eq" aria-label="Эквалайзер" title="Эквалайзер и басы">🎛<span>Эквалайзер</span></button>`}
       <button class="fp-chip ${player.sleep ? 'on' : ''}" data-act="fpsheet" data-v="sleep" aria-label="Таймер сна" title="Таймер сна">🌙<span id="fpSleep">${sleepTxt || 'Таймер'}</span></button></div>
     </div>
   </div>${S.lyrPick && showLyrics ? lyrPicker() : ''}${fpSheet(t, own, showLyrics)}</div>`;
@@ -2507,6 +2619,7 @@ function fpSheet(t, own, showLyrics) {
   let body = '';
   if (v === 'more') body = `<div class="fs-title">${esc(t.title)}<span>${esc(t.artist || '')}</span></div>
       ${t.radio ? '' : row('fpsheet', '⏩', 'Скорость', rateTxt, 'data-v="speed"')}
+      ${t.radio ? '' : row('fpsheet', '🎛', 'Эквалайзер и басы', eqTxt(), 'data-v="eq"')}
       ${row('fpsheet', '🌙', 'Таймер сна', sleepTxt, 'data-v="sleep"')}
       <label class="fs-vol"><span class="fs-ico">🔊</span><input id="fpVol" type="range" min="0" max="100" value="${Math.round(player.vol * 100)}" aria-label="Громкость"></label>
       ${showLyrics ? row('lyrpick', 'Aa', 'Вид текста', LYR_STYLES[lyrStyle()]) : ''}
@@ -2518,6 +2631,18 @@ function fpSheet(t, own, showLyrics) {
       <div class="fs-grid fs-two"><button class="fs-pill ${player.rate === 0.85 && !player.pitch ? 'on' : ''}" data-act="fpfx" data-v="slowed">🐢 Slowed</button>
         <button class="fs-pill ${player.rate === 1.25 && !player.pitch ? 'on' : ''}" data-act="fpfx" data-v="speedup">⚡ Speed up</button></div>
       <button class="fs-row" data-act="fppitch"><span class="fs-ico">🎚</span><span class="grow"><b>Сохранять тон голоса</b><span>${player.pitch ? 'включено — голос не меняется' : 'выключено — как на пластинке'}</span></span><span class="fs-sw ${player.pitch ? 'on' : ''}"></span></button>`;
+  if (v === 'eq') { const e = player.eq;
+    body = `<div class="fs-title">Эквалайзер<span id="eqState">${t.radio ? 'Для радио не работает — только для треков' : eqTxt()}</span></div>
+      <button class="fs-row" data-act="eqon"><span class="fs-ico">🎛</span><span class="grow"><b>Эквалайзер</b><span>${e.on ? 'включён' : 'выключен'}</span></span><span class="fs-sw ${e.on ? 'on' : ''}"></span></button>
+      <div class="eq-wrap ${e.on ? '' : 'off'}">
+        <label class="eq-bass"><span class="fs-ico">🔊</span><span class="grow"><b>Усиление басов <output id="eqBassV">+${e.bass} дБ</output></b>
+          <input id="eqBass" type="range" min="0" max="12" step="1" value="${e.bass}" aria-label="Усиление басов"></span></label>
+        <div class="eq-pre">${Object.entries(EQ_PRESETS).map(([k, [l]]) => `<button class="fs-pill ${e.preset === k ? 'on' : ''}" data-act="eqpreset" data-v="${k}">${l}</button>`).join('')}</div>
+        <div id="eqCurve" class="eq-graph">${eqCurve()}</div>
+        <div class="eq-bands">${EQ_F.map((f, i) => `<label class="eq-band"><output>${dbTxt(e.bands[i])}</output><input type="range" class="eq-sl" data-i="${i}" min="-12" max="12" step="1" value="${e.bands[i]}" aria-label="${fLabel(f)} Гц"><span>${fLabel(f)}</span></label>`).join('')}</div>
+        <button class="fs-pill wide" data-act="eqreset">Сбросить</button>
+      </div>
+      <p class="fs-keys">Если на телефоне музыка с эквалайзером замолкает при выключенном экране — выключи эквалайзер</p>`; }
   if (v === 'sleep') body = `<div class="fs-title">Таймер сна<span>${sleepTxt}</span></div>
       <div class="fs-grid">${[5, 15, 30, 45, 60, 90].map(m => `<button class="fs-pill" data-act="fpsleep" data-v="${m}">${m} мин</button>`).join('')}</div>
       ${t.radio ? '' : `<button class="fs-pill wide" data-act="fpsleep" data-v="end">До конца трека</button>`}
@@ -4230,6 +4355,9 @@ document.addEventListener('click', async e => {
       case 'fpfx': { const slow = b.dataset.v === 'slowed'; const on = player.rate === (slow ? 0.85 : 1.25) && !player.pitch;
         player.rate = on ? 1 : slow ? 0.85 : 1.25; player.pitch = on; lsSet('vs_rate', String(player.rate)); lsSet('vs_pitch', player.pitch ? '1' : '0'); applyRate();
         toast(on ? 'Обычная скорость' : slow ? '🐢 Slowed: медленнее и ниже' : '⚡ Speed up: быстрее и выше'); render(); break; }
+      case 'eqon': player.eq.on = !player.eq.on; eqChanged(); break;
+      case 'eqpreset': { const k = b.dataset.v; player.eq.preset = k; player.eq.bands = EQ_PRESETS[k][1].slice(); player.eq.on = true; eqChanged(); break; }
+      case 'eqreset': player.eq.preset = 'flat'; player.eq.bands = EQ_F.map(() => 0); player.eq.bass = 0; eqChanged(); break;
       case 'fppitch': player.pitch = !player.pitch; lsSet('vs_pitch', player.pitch ? '1' : '0'); applyRate(); render(); break;
       case 'fpsleep': { const v = b.dataset.v;
         player.audio.volume = player.vol;
