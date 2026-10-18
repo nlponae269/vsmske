@@ -376,3 +376,10 @@ main{gap:12px}
 .err{background:var(--md-err-c);color:var(--md-on-err-c);border:0;border-radius:16px}
 @media (max-width:760px){.hero h1{font-size:34px}.login::before{width:340px;height:340px}.login::after{width:260px;height:260px}}
 :root[data-anim="off"] .login::before,:root[data-anim="off"] .login::after{animation:none}
+
+/* 6.2: кнопка быстрого поиска видна всегда, в меню — подсказка клавиш */
+.md-pal{display:grid;border:0;background:none;cursor:pointer}
+.md-item kbd{margin-left:auto}
+.pal{background:var(--md-s-high);border-radius:28px}
+.pal-item{border-radius:20px}
+.pal-item.on,.pal-item:hover{background:var(--md-sc);color:var(--md-on-sc)}
