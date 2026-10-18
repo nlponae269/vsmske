@@ -47,7 +47,7 @@ const MAX_POST_IMG = 700000;   // символов dataURL (~520 КБ), лими
 const MAX_AVATAR = 120000;
 const CHUNK = 700000;                                   // символов base64 в одном куске (кратно 4)
 const LIMITS = { disk: 10 * 1024 * 1024, video: 20 * 1024 * 1024, music: 12 * 1024 * 1024 };
-const VERSION = '6.5';
+const VERSION = '6.6';
 const MAX_MSG_IMG = 380000;    // фото в сообщении
 const ONLINE_MS = 5 * 60 * 1000; // «в сети», если заходил не раньше 5 минут назад
 
@@ -105,7 +105,8 @@ async function notifyMentions(text, postId, skip = []) {
 // Сообщение только из 1–3 смайликов показываем крупно
 const isJumbo = t => { const s = String(t || '').trim(); if (!s || s.length > 24) return false; const em = s.match(/\p{Extended_Pictographic}/gu) || []; return em.length >= 1 && em.length <= 3 && !s.replace(/[\p{Extended_Pictographic}\p{Emoji_Component}\u200d\ufe0f\s]/gu, '').length; };
 const linkify = t => String(t ?? '').split(/(https?:\/\/[^\s<]+[^\s<.,:;!?)\]"'»])/g)
-  .map((part, i) => i % 2 ? `<a href="${esc(part)}" target="_blank" rel="noopener nofollow ugc">${esc(part)}</a>` : tagify(part)).join('');
+  .map((part, i) => !(i % 2) ? tagify(part) : part.startsWith(location.origin + location.pathname + '#')   // ссылка на свой же сайт — открываем здесь
+    ? `<a href="${esc(part.slice(part.indexOf('#')))}">${esc(part)}</a>` : `<a href="${esc(part)}" target="_blank" rel="noopener nofollow ugc">${esc(part)}</a>`).join('');
 const extractTags = t => [...new Set([...String(t || '').matchAll(/#([\p{L}\d_]{2,30})/gu)].map(m => m[1].toLowerCase()))].slice(0, 10);
 const ms = t => t && typeof t.toMillis === 'function' ? t.toMillis() : (typeof t === 'number' ? t : Date.now());
 const data = s => ({ id: s.id, ...s.data({ serverTimestamps: 'estimate' }) });
@@ -219,6 +220,8 @@ async function putFile(file, kind, label) {
 const blobCache = new Map();
 async function getFileUrl(fid, type) {
   if (blobCache.has(fid)) return blobCache.get(fid);
+  const off = typeof offBlobUrl === 'function' ? await offBlobUrl(fid) : null;   // 6.6: трек, сохранённый офлайн, — без интернета
+  if (off) { blobCache.set(fid, off); return off; }
   const s = await getDocs(query(collection(db, 'files', fid, 'chunks'), orderBy('i', 'asc')));
   const url = URL.createObjectURL(new Blob(s.docs.map(d => b64ToBytes(d.data().data)), { type: type || 'application/octet-stream' }));
   blobCache.set(fid, url);
@@ -2326,6 +2329,11 @@ function nextTrack(auto = false) {
   if (player.shuffle && n > 1) { let j; do j = Math.floor(Math.random() * n); while (j === player.i); return playAt(j); }
   if (player.i + 1 < n) return playAt(player.i + 1);
   if (player.repeat === 'all' || !auto) return playAt(0);
+  // 6.6: очередь кончилась — дальше Микс дня (выключается в «Ещё» → «Автопродолжение»)
+  if (auto && autoplayOn() && !curTrack()?.radio) {
+    const have = new Set(player.queue.map(t => t.id)), more = (cache.mus?.mix?.length ? cache.mus.mix : buildMix()).filter(t => !have.has(t.id));
+    if (more.length) { player.queue.push(...more.slice(0, 30)); player.label = 'Микс дня'; toast('✦ Дальше — Микс дня'); return playAt(player.i + 1); }
+  }
   player.audio.pause();
 }
 function prevTrack() {
@@ -2718,6 +2726,8 @@ function fpSheet(t, own, showLyrics) {
       ${t.radio ? '' : row('fpsheet', '⏩', 'Скорость', rateTxt, 'data-v="speed"')}
       ${t.radio ? '' : row('fpsheet', '🎛', 'Эквалайзер и басы', eqTxt(), 'data-v="eq"')}
       ${t.radio ? '' : row('fpsheet', '🌊', 'Плавные переходы', xfadeSec() ? `затухание ${xfadeSec()} с` : 'выключены', 'data-v="xfade"')}
+      ${t.radio ? '' : `<button class="fs-row" data-act="autoplaytoggle"><span class="fs-ico">✦</span><span class="grow"><b>Автопродолжение</b><span>${autoplayOn() ? 'когда очередь кончится, заиграет Микс дня' : 'выключено — музыка остановится'}</span></span><span class="fs-sw ${autoplayOn() ? 'on' : ''}"></span></button>`}
+      ${t.radio ? '' : row('toff', isOff(t) ? '✓' : '📥', isOff(t) ? 'Сохранён офлайн' : 'Сохранить офлайн', isOff(t) ? 'нажмите, чтобы убрать' : 'будет играть без интернета', 'data-id="cur"')}
       ${t.radio ? '' : `<button class="fs-row" data-act="normtoggle"><span class="fs-ico">📏</span><span class="grow"><b>Ровная громкость</b><span>${normOn() ? 'громкие треки звучат тише, все — ровно' : 'выключено'}</span></span><span class="fs-sw ${normOn() ? 'on' : ''}"></span></button>`}
       ${t.radio ? '' : row('tdl', '⬇', 'Скачать трек', 'файл mp3 на устройство', 'data-id="cur"')}
       ${t.radio ? '' : row('tlink', '🔗', 'Ссылка на трек', 'откроется и заиграет у друга', 'data-id="cur"')}
@@ -2922,11 +2932,14 @@ async function loadMusic() {
     }
     if (tab.startsWith('t_')) jobs.push(getDoc(doc(db, 'tracks', tab.slice(2))).then(x => { M.one = x.exists() ? keepTracks([data(x)]) : []; M.oneId = tab.slice(2); }));
     if (tab === 'stats') jobs.push(tracksById(topTracks(50).map(t => t.id)).catch(() => []));
-    if (!['home', 'stream', 'liked', 'uploads', 'stats'].includes(tab) && !/^(pl|a|t)_/.test(tab)) {
+    if (tab === 'mix') jobs.push(loadStream(true), tracksById((S.me.tracks || []).slice().reverse()).then(l => { M.liked = l; }));
+    if (tab === 'friends' || tab === 'home') jobs.push(loadFriendsChart().then(l => { M.fchart = l; }).catch(e => { console.error(e); M.fchart = []; }));
+    if (!['home', 'stream', 'liked', 'uploads', 'stats', 'mix', 'friends', 'offline'].includes(tab) && !/^(pl|a|t)_/.test(tab)) {
       ensureUsers([tab]);
       jobs.push(getDocs(query(collection(db, 'tracks'), where('ownerId', '==', tab), limit(300))).then(x => { M.other = sortNew(keepTracks(x.docs.map(data))); }));
     }
     await Promise.all(jobs);
+    if (tab === 'home' || tab === 'mix') M.mix = buildMix();
     if (S.view !== 'music' || S.musicTab !== tab) return;
     [M.liked, M.uploads, M.other, M.pl?.list || []].forEach(l => ensureUsers(l.map(t => t.ownerId)));
   } catch (e) { console.error(e); S.viewError = e; }
@@ -2943,11 +2956,14 @@ function musicList(key) {
   if (key === 'artist') return sortTracks(M.artist?.list || []);
   if (key === 'one') return M.one || [];
   if (key === 'top') return topTracks(50);
+  if (key === 'mix') return M.mix || [];
+  if (key === 'fchart') return M.fchart || [];
+  if (key === 'offline') return offTracks();
   if (key === 'search') return musicSearch();
   if (key === 'recent') return recentTracks();
   return [];
 }
-const LIST_LABEL = { stream: 'Поток', liked: 'Мои треки', uploads: 'Мои загрузки', search: 'Поиск', recent: 'Недавно играло', top: 'Чаще всего слушаю', one: 'Трек по ссылке' };
+const LIST_LABEL = { mix: 'Микс дня', fchart: 'Популярное у друзей', offline: 'Офлайн', stream: 'Поток', liked: 'Мои треки', uploads: 'Мои загрузки', search: 'Поиск', recent: 'Недавно играло', top: 'Чаще всего слушаю', one: 'Трек по ссылке' };
 const tabArtist = tab => { try { return decodeURIComponent(tab.slice(2)); } catch (e) { return tab.slice(2); } };
 // сортировка списков (кроме Потока): как добавлены, по названию, исполнителю, длине — localStorage vs_msort
 const MSORTS = { added: 'Как добавлены', title: 'По названию', artist: 'По исполнителю', dur: 'По длительности', plays: 'Чаще слушаю' };
@@ -3099,7 +3115,8 @@ function trackRow(t, i, key, num = false) {
       <span class="trow-cv">${trackCover(t)}<span class="trow-pl">${playing ? I.pause : I.play}</span></span>
       <span class="trow-t"><b>${esc(t.title)}</b><span>${esc(t.artist || 'Неизвестный исполнитель')}${!mine && owner && key !== 'other' ? ' · ' + esc(owner.name) : ''}</span></span>
     </button>
-    <span class="trow-d tnum">${key === 'top' && t.plays ? `<span class="trow-plays" title="Прослушиваний">${t.plays} ▶</span>` : t.duration ? fmtDur(t.duration) : ''}</span>
+    ${isOff(t) ? '<span class="trow-off" title="Сохранён офлайн">📥</span>' : ''}
+    <span class="trow-d tnum">${key === 'fchart' && t.fans ? `<span class="trow-plays" title="У скольких друзей">${t.fans} 👥</span>` : key === 'top' && t.plays ? `<span class="trow-plays" title="Прослушиваний">${t.plays} ▶</span>` : t.duration ? fmtDur(t.duration) : ''}</span>
     ${mine ? '' : `<button class="icon-btn trow-like ${saved ? 'on' : ''}" data-act="tsave" data-id="${esc(t.id)}" aria-label="${saved ? 'Убрать из моих треков' : 'В мои треки'}" title="${saved ? 'Убрать из моих треков' : 'В мои треки'}">${saved ? '♥' : '♡'}</button>`}
     <button class="icon-btn trow-more" data-act="tmenu" data-id="${esc(t.id)}" data-list="${key}" data-i="${i}" aria-label="Ещё" aria-expanded="${S.tmenu === mk}">${I.more}</button>
     ${S.tmenu === mk ? `<div class="tmenu" role="menu">
@@ -3109,6 +3126,9 @@ function trackRow(t, i, key, num = false) {
       ${t.artist && key !== 'artist' ? `<a href="#music/a_${encodeURIComponent(t.artist)}">🎤 Исполнитель: ${esc(t.artist)}</a>` : ''}
       ${!mine && owner ? `<a href="#music/${esc(t.ownerId)}">👤 Все загрузки: ${esc(owner.name)}</a>` : ''}
       <button data-act="tlink" data-id="${esc(t.id)}">🔗 Скопировать ссылку</button>
+      <button data-act="tshare" data-id="${esc(t.id)}">📣 Поделиться на стене</button>
+      <button data-act="toff" data-id="${esc(t.id)}">${isOff(t) ? '✕ Убрать из офлайна' : '📥 Сохранить офлайн'}</button>
+      ${inMyPl && msort() === 'added' ? `${i > 0 ? `<button data-act="plmove" data-id="${esc(t.id)}" data-d="-1">⬆ Выше</button>` : ''}${i < musicList('pl').length - 1 ? `<button data-act="plmove" data-id="${esc(t.id)}" data-d="1">⬇ Ниже</button>` : ''}` : ''}
       <button data-act="tdl" data-id="${esc(t.id)}">⬇ Скачать</button>
       ${mine ? `<button data-act="tedit" data-id="${esc(t.id)}">✏️ Название, обложка</button>` : ''}
       ${mine || isSiteAdmin() ? `<button class="danger" data-act="tdel" data-id="${esc(t.id)}">${S.confirm === 'track:' + t.id ? '🗑 Точно удалить?' : '🗑 Удалить трек'}</button>` : ''}
@@ -3126,6 +3146,7 @@ function viewMusic() {
   if (S.loading && !M.stream?.length && tab === 'home') return loadingBox();
   if (tab === 'home') return musicHome();
   if (tab === 'stats') return musicStats();
+  if (tab === 'mix' && S.loading && !M.mix) return loadingBox();
   // страница списка: Поток, Мои треки, Мои загрузки, плейлист, загрузки человека
   let key, title, kicker, icon, color = '', list, sub = '', own = false;
   if (tab === 'stream') { key = 'stream'; title = 'Поток'; kicker = 'Вся музыка VСмске подряд'; icon = '∞'; list = M.stream || []; sub = 'Без рекомендаций — просто все треки по очереди'; }
@@ -3136,6 +3157,9 @@ function viewMusic() {
     if (p.missing) return `<div class="card empty"><b>Плейлист удалён</b><a class="btn sec" href="#music">В музыку</a></div>`;
     key = 'pl'; title = p.title; kicker = 'Плейлист'; icon = I.music; color = p.color; list = p.list; own = p.ownerId === me.id;
     sub = own ? 'Ваш плейлист' : 'Плейлист ' + esc(U(p.ownerId)?.name || '');
+  } else if (tab === 'mix') { key = 'mix'; title = 'Микс дня'; kicker = 'Собран для тебя'; icon = '✦'; color = '#DB2777'; list = M.mix || []; sub = 'Твои треки, любимое и любимые исполнители — новый микс каждый день';
+  } else if (tab === 'friends') { key = 'fchart'; title = 'Популярное у друзей'; kicker = 'Чарт'; icon = '🔥'; color = '#EA580C'; list = M.fchart || []; sub = 'Что чаще всего добавляют себе твои друзья';
+  } else if (tab === 'offline') { key = 'offline'; title = 'Офлайн'; kicker = 'На этом устройстве'; icon = '📥'; color = '#16A34A'; list = offTracks(); sub = 'Играют без интернета';
   } else if (tab.startsWith('a_')) {
     const A = M.artist; if (!A || A.name !== tabArtist(tab)) return loadingBox();
     key = 'artist'; title = A.name; kicker = 'Исполнитель'; icon = '🎤'; color = '#EA580C'; list = A.list; sub = 'Все треки исполнителя на VСмске';
@@ -3156,6 +3180,8 @@ function viewMusic() {
         <button class="btn sec" data-act="mlistplay" data-list="${key}" data-shuffle="1" ${n ? '' : 'disabled'}>${I.shuffle}<span>Перемешать</span></button>
         ${key === 'stream' ? `<button class="btn ghost" data-act="mstreamorder">${streamOrder() === 'desc' ? 'Сначала новые' : 'Сначала старые'} ⇅</button>` : ''}
         ${['liked', 'uploads', 'pl', 'other', 'artist'].includes(key) && n > 1 ? `<select id="mSort" class="inp mus-sort" aria-label="Сортировка">${Object.entries(MSORTS).map(([k, l]) => `<option value="${k}" ${msort() === k ? 'selected' : ''}>${l}</option>`).join('')}</select>` : ''}
+        ${n && !['offline', 'stream'].includes(key) ? `<button class="btn ghost" data-act="offall" data-list="${key}" ${OFF.busy ? 'disabled' : ''}>${OFF.busy ? `📥 ${OFF.busy.done}/${OFF.busy.n}` : list.every(isOff) ? '✓ Офлайн' : '📥 Скачать офлайн'}</button>` : ''}
+        ${key === 'pl' && !own && M.pl ? `<button class="btn ghost" data-act="plcopy" data-id="${esc(M.pl.id)}">＋ Сохранить себе</button>` : ''}
         ${key === 'one' && list[0].artist ? `<a class="btn ghost" href="#music/a_${encodeURIComponent(list[0].artist)}">🎤 ${esc(list[0].artist)}</a>` : ''}
         ${key === 'uploads' && !banOf(me) ? `<button class="btn ghost" data-act="pickmusic" ${S.upload ? 'disabled' : ''}>${I.upload}<span>Загрузить</span></button>` : ''}
         ${key === 'pl' ? `<button class="icon-btn" data-act="plshare" data-id="${esc(M.pl.id)}" aria-label="Скопировать ссылку" title="Скопировать ссылку">${I.link}</button>` : ''}
@@ -3163,10 +3189,107 @@ function viewMusic() {
           <button class="icon-btn" data-act="pldel" data-id="${esc(M.pl.id)}" aria-label="Удалить плейлист">${S.confirm === 'pl:' + M.pl.id ? 'Удалить?' : '🗑'}</button>` : ''}
       </div></div></section>
     <div class="card mus-list">${S.loading ? '<div class="loading"><div class="spin"></div></div>' : n ? list.map((t, i) => trackRow(t, i, key, true)).join('')
-      : `<div class="empty"><b>${key === 'liked' ? 'Пока пусто' : key === 'uploads' ? 'Вы ещё ничего не загрузили' : key === 'pl' ? 'В плейлисте пока нет треков' : 'Треков пока нет'}</b>
-        <span>${key === 'liked' ? 'Нажмите ♡ у любого трека в Потоке' : key === 'pl' ? 'Добавляйте треки через «⋯» → «Добавить в плейлист»' : ''}</span></div>`}
+      : `<div class="empty"><b>${key === 'offline' ? 'Офлайн пока пусто' : key === 'fchart' ? 'Друзья пока ничего не добавили' : key === 'liked' ? 'Пока пусто' : key === 'uploads' ? 'Вы ещё ничего не загрузили' : key === 'pl' ? 'В плейлисте пока нет треков' : 'Треков пока нет'}</b>
+        <span>${key === 'offline' ? 'Нажмите «⋯» → «Сохранить офлайн» или «Скачать офлайн» у плейлиста' : key === 'liked' ? 'Нажмите ♡ у любого трека в Потоке' : key === 'pl' ? 'Добавляйте треки через «⋯» → «Добавить в плейлист»' : ''}</span></div>`}
       ${key === 'stream' && !M.streamDone && n ? `<button class="btn sec mus-more" data-act="mstreammore" ${M.streamBusy ? 'disabled' : ''}>Показать ещё</button>` : ''}</div>`;
 }
+/* ---------- 6.6 «Музыка 2.0»: офлайн, Микс дня, популярное у друзей, треки в записях, пакетная загрузка ---------- */
+// Офлайн: файлы треков целиком в IndexedDB этого устройства — store blobs {id: fileId, blob} и meta {id: fileId, track, at}
+const OFF = { db: null, meta: new Map(), busy: null };
+function offDb() {
+  return OFF.db ||= new Promise((res, rej) => {
+    const r = indexedDB.open('vs-offline', 1);
+    r.onupgradeneeded = () => { r.result.createObjectStore('blobs', { keyPath: 'id' }); r.result.createObjectStore('meta', { keyPath: 'id' }); };
+    r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error);
+  });
+}
+async function offReq(store, mode, fn) {
+  const d = await offDb();
+  return new Promise((res, rej) => { const tx = d.transaction(store, mode), q = fn(tx.objectStore(store)); tx.oncomplete = () => res(q?.result); tx.onerror = () => rej(tx.error); tx.onabort = () => rej(tx.error); });
+}
+try { offReq('meta', 'readonly', s => s.getAll()).then(l => { (l || []).forEach(x => OFF.meta.set(x.id, x)); if (S.view === 'music') render(); }).catch(() => { }); } catch (e) { }
+const isOff = t => !!t && !t.radio && OFF.meta.has(t.fileId);
+async function offBlobUrl(fid) {
+  if (!OFF.meta.has(fid)) return null;
+  try { const r = await offReq('blobs', 'readonly', s => s.get(fid)); return r?.blob ? URL.createObjectURL(r.blob) : null; } catch (e) { return null; }
+}
+async function offSave(t) {
+  if (!t || t.radio || isOff(t)) return;
+  const blob = await (await fetch(await getFileUrl(t.fileId, t.type || 'audio/mpeg'))).blob();
+  const track = { id: t.id, title: t.title, artist: t.artist || '', fileId: t.fileId, type: t.type || '', duration: t.duration || 0, ownerId: t.ownerId, cover: safeImg(t.cover) ? t.cover : '' };
+  await offReq('blobs', 'readwrite', s => s.put({ id: t.fileId, blob }));
+  await offReq('meta', 'readwrite', s => s.put({ id: t.fileId, track, at: Date.now() }));
+  OFF.meta.set(t.fileId, { id: t.fileId, track, at: Date.now() });
+  try { navigator.storage?.persist?.(); } catch (e) { }
+}
+async function offDel(t) {
+  if (!t) return;
+  await offReq('blobs', 'readwrite', s => s.delete(t.fileId)); await offReq('meta', 'readwrite', s => s.delete(t.fileId));
+  OFF.meta.delete(t.fileId);
+}
+const offTracks = () => [...OFF.meta.values()].sort((a, b) => b.at - a.at).map(x => trackCache.get(x.track.id) || x.track);
+async function offSaveAll(list) {
+  const todo = list.filter(t => !isOff(t)); if (!todo.length) { toast('Всё уже сохранено офлайн'); return; }
+  if (OFF.busy) return; OFF.busy = { done: 0, n: todo.length }; render();
+  let ok = 0;
+  for (const t of todo) { try { await offSave(t); ok++; } catch (e) { console.error(e); } OFF.busy.done++; render(); }
+  OFF.busy = null; toast(`📥 Сохранено офлайн: ${ok} ${plural(ok, 'трек', 'трека', 'треков')}`); render();
+}
+// Микс дня: твои треки, любимое и всё твоих любимых исполнителей — перемешано одинаково весь день (без чужих алгоритмов)
+function seededRng(str) { let h = 1779033703 ^ str.length; for (let i = 0; i < str.length; i++) { h = Math.imul(h ^ str.charCodeAt(i), 3432918353); h = h << 13 | h >>> 19; } return () => { h = Math.imul(h ^ h >>> 16, 2246822507); h = Math.imul(h ^ h >>> 13, 3266489909); return ((h ^= h >>> 16) >>> 0) / 4294967296; }; }
+function buildMix() {
+  const M = cache.mus || {}, seen = new Set(), pool = [];
+  const add = l => l.forEach(t => { if (t && t.fileId && !seen.has(t.id)) { seen.add(t.id); pool.push(trackCache.get(t.id) || t); } });
+  const arts = new Set(topArtists(8).map(a => a.name.toLowerCase()));
+  add(M.liked || []); add(topTracks(30));
+  add((M.stream || []).filter(t => arts.has((t.artist || '').toLowerCase())));
+  add((S.me.friends || []).map(U).flatMap(u => (u?.tracks || []).slice(-10)).map(id => trackCache.get(id)).filter(Boolean));
+  if (pool.length < 20) add((M.stream || []).slice(0, 60));
+  const r = seededRng(new Date().toDateString() + uid());
+  for (let k = pool.length - 1; k > 0; k--) { const j = Math.floor(r() * (k + 1)); [pool[k], pool[j]] = [pool[j], pool[k]]; }
+  return pool.slice(0, 40);
+}
+// Популярное у друзей: какие треки чаще всего добавлены в «Мои треки» у друзей (данные профилей уже в кэше)
+async function loadFriendsChart() {
+  const fr = S.me.friends || [];
+  await Promise.all(fr.filter(i => !cache.users.has(i)).slice(0, 300).map(i => getDoc(doc(db, 'users', i)).then(x => { if (x.exists()) cache.users.set(i, data(x)); }).catch(() => { })));
+  const cnt = new Map();
+  fr.map(U).forEach(u => (u?.tracks || []).forEach(id => cnt.set(id, (cnt.get(id) || 0) + 1)));
+  const ids = [...cnt.entries()].sort((a, b) => b[1] - a[1]).slice(0, 40).map(x => x[0]);
+  const list = await tracksById(ids);
+  return keepTracks(list).map(t => ({ ...t, fans: cnt.get(t.id) || 0 }));
+}
+// Трек в записи или сообщении: ссылка …#music/t_<id> превращается в карточку с кнопкой «играть»
+const embedAsked = new Set();
+function trackEmbed(text) {
+  const m = /#music\/t_([A-Za-z0-9]{1,40})/.exec(String(text || '')); if (!m) return '';
+  const id = m[1], t = trackCache.get(id);
+  if (t === undefined) { if (!embedAsked.has(id)) { embedAsked.add(id); tracksById([id]).then(() => render()); } return `<div class="tembed"><span class="spin sm"></span></div>`; }
+  if (!t) return '';
+  const on = curTrack()?.id === t.id && !player.audio.paused;
+  return `<div class="tembed ${on ? 'on' : ''}"><button class="tembed-play" data-act="tplayid" data-id="${esc(t.id)}" aria-label="${on ? 'Пауза' : 'Играть'}: ${esc(t.title)}">${trackCover(t)}<span class="tembed-ic">${on ? I.pause : I.play}</span></button>
+    <a class="tembed-t" href="#music/t_${esc(t.id)}"><b>${esc(t.title)}</b><span>${esc(t.artist || 'Неизвестный исполнитель')}${t.duration ? ' · ' + fmtDur(t.duration) : ''}</span></a>
+    ${t.ownerId !== uid() ? `<button class="icon-btn trow-like ${(S.me.tracks || []).includes(t.id) ? 'on' : ''}" data-act="tsave" data-id="${esc(t.id)}" aria-label="В мои треки">${(S.me.tracks || []).includes(t.id) ? '♥' : '♡'}</button>` : ''}</div>`;
+}
+// Несколько треков сразу: без окна правки — название, исполнитель и обложка из тегов или имени файла
+async function uploadTracksBatch(files) {
+  const ok = files.filter(f => ((f.type || '').startsWith('audio/') || /\.(mp3|m4a|aac|ogg|wav|flac|opus)$/i.test(f.name)) && f.size <= LIMITS.music);
+  if (ok.length < files.length) toast(`Пропущено ${files.length - ok.length}: не аудио или больше ${fmtSize(LIMITS.music)}`);
+  let done = 0;
+  for (const [k, f] of ok.entries()) {
+    try {
+      const base = f.name.replace(/\.[^.]+$/, '').replace(/_/g, ' ').trim(), m = base.match(/^(.+?)\s+[-–—]\s+(.+)$/);
+      const [tags, duration] = await Promise.all([readTags(f), trackDuration(f)]);
+      const title = (tags.title || (m ? m[2] : base)).slice(0, 120) || 'Без названия', artist = (tags.artist || (m ? m[1] : '')).slice(0, 120);
+      const fileId = await putFile(f, 'music', `Загружаем ${k + 1} из ${ok.length}: «${title}»`);
+      const ref = await addDoc(collection(db, 'tracks'), { ownerId: uid(), title, artist, fileId, type: f.type || 'audio/mpeg', duration, size: f.size, createdAt: serverTimestamp() });
+      if (tags.pic) try { await updateDoc(ref, { cover: await compress(tags.pic, 600, 250000, true) }); } catch (e) { }
+      done++;
+    } catch (e) { console.error(e); }
+  }
+  toast(`🎵 Загружено ${done} ${plural(done, 'трек', 'трека', 'треков')}`); if (S.view === 'music') loadMusic();
+}
+const autoplayOn = () => lsGet('vs_autoplay') !== '0';
 // «Моя статистика» — по этому устройству: сколько слушал, любимые треки и исполнители
 function musicStats() {
   const top = topTracks(50), arts = topArtists(10), total = (Number(lsGet('vs_listen_total')) || 0) + statSec, plays = Object.values(playStats()).reduce((a, x) => a + (x.n || 0), 0);
@@ -3188,6 +3311,15 @@ function musicStats() {
     <h2 class="mus-h">Чаще всего слушаю</h2>
     <div class="card mus-list">${top.length ? top.map((t, i) => trackRow(t, i, 'top', true)).join('') : '<div class="empty"><b>Пока пусто</b><span>Прослушивание засчитывается после 30 секунд</span></div>'}</div>`;
 }
+// в поиске: исполнители (страница исполнителя) и свои плейлисты
+function musicSearchExtra() {
+  const q = norm(S.musicQ).trim(), M = cache.mus || {}, arts = new Map();
+  [...(M.stream || []), ...(M.uploads || []), ...(M.liked || [])].forEach(t => { const a = (t.artist || '').trim(); if (a && norm(a).includes(q)) arts.set(a, (arts.get(a) || 0) + 1); });
+  const pls = (M.pls || []).filter(p => norm(p.title).includes(q));
+  const A = [...arts.entries()].sort((a, b) => b[1] - a[1]).slice(0, 8);
+  return (A.length ? `<div class="card mus-list"><div class="mus-sec-t">Исполнители</div><div class="mus-chips">${A.map(([a, n]) => `<a class="mus-chip" href="#music/a_${encodeURIComponent(a)}">🎤 ${esc(a)} <span class="muted small">${n}</span></a>`).join('')}</div></div>` : '')
+    + (pls.length ? `<div class="card mus-list"><div class="mus-sec-t">Плейлисты</div><div class="mus-chips">${pls.map(p => `<a class="mus-chip" href="#music/pl_${esc(p.id)}">♫ ${esc(p.title)}</a>`).join('')}</div></div>` : '');
+}
 function musicHome() {
   const me = S.me, M = cache.mus || {}, q = S.musicQ || '';
   const streamOn = player.stream && curTrack() && !player.audio.paused;
@@ -3205,8 +3337,14 @@ function musicHome() {
       ${streamOn ? `<div class="mus-now">${trackCover(curTrack())}<span><b>${esc(curTrack().title)}</b><span>${esc(curTrack().artist || '')}</span></span>${eqBars}</div>` : ''}
     </section>
     <div class="card mus-search">${I.search}<input id="musQ" type="search" placeholder="Найти трек или исполнителя" autocomplete="off" value="${esc(q)}"></div>
-    ${q.trim().length >= 2 ? `<div class="card mus-list"><div class="mus-sec-t">Поиск${!M.streamDone ? ' <span class="spin sm"></span>' : ''}</div>
+    ${q.trim().length >= 2 ? `${musicSearchExtra()}<div class="card mus-list"><div class="mus-sec-t">Треки${!M.streamDone ? ' <span class="spin sm"></span>' : ''}</div>
       ${musicSearch().map((t, i) => trackRow(t, i, 'search')).join('') || '<div class="empty small">Ничего не нашлось</div>'}</div>` : `
+    <div class="mus-quick">
+      <a class="mus-q q-mix" href="#music/mix"><span class="mus-q-ic">✦</span><b>Микс дня</b><span>${(M.mix || []).length ? (M.mix || []).length + ' ' + plural((M.mix || []).length, 'трек', 'трека', 'треков') : 'собирается…'}</span></a>
+      <a class="mus-q q-fr" href="#music/friends"><span class="mus-q-ic">🔥</span><b>Популярное у друзей</b><span>${(M.fchart || []).length ? 'топ ' + Math.min(40, (M.fchart || []).length) : 'чарт друзей'}</span></a>
+      <a class="mus-q q-off" href="#music/offline"><span class="mus-q-ic">📥</span><b>Офлайн</b><span>${OFF.meta.size} ${plural(OFF.meta.size, 'трек', 'трека', 'треков')}</span></a>
+      <a class="mus-q q-st" href="#music/stats"><span class="mus-q-ic">📊</span><b>Статистика</b><span>${Object.values(playStats()).reduce((a, x) => a + (x.n || 0), 0)} прослушиваний</span></a>
+    </div>
     <h2 class="mus-h">Плейлисты</h2>
     <div class="mus-grid">
       ${tile('music/liked', listArt(M.liked || [], '♥', '#DB2777'), 'Мои треки', `${(me.tracks || []).length} ${plural((me.tracks || []).length, 'трек', 'трека', 'треков')}`)}
@@ -3218,7 +3356,7 @@ function musicHome() {
     ${friends.length ? `<h2 class="mus-h">Друзья слушают</h2><div class="mus-friends">${friends.map(u => `<a class="mus-friend" href="#id/${esc(u.id)}">${avatar(u, 48, false)}
       <span><b>${esc(u.name.split(' ')[0])}</b><span class="small">🎵 ${esc(listeningOf(u).title)}${listeningOf(u).artist ? ' — ' + esc(listeningOf(u).artist) : ''}</span></span></a>`).join('')}</div>` : ''}
     ${topTracks(1).length ? `<h2 class="mus-h">Чаще всего слушаю <a class="small" href="#music/stats">Статистика →</a></h2><div class="card mus-list">${topTracks(5).map((t, i) => trackRow(t, i, 'top', true)).join('')}</div>`
-      : `<a class="card mus-stat-cta" href="#music/stats">📊 <span class="grow"><b>Моя статистика</b><span class="small muted">Сколько слушаешь, любимые треки и исполнители</span></span>›</a>`}
+      : ''}
     ${recent.length ? `<h2 class="mus-h">Недавно играло</h2><div class="card mus-list">${recent.map((t, i) => trackRow(trackCache.get(t.id) || t, i, 'recent')).join('')}</div>` : ''}
     <h2 class="mus-h">Новое в Потоке <a class="small" href="#music/stream">Все →</a></h2>
     <div class="card mus-list">${fresh.length ? fresh.map((t, i) => trackRow(t, i, 'stream')).join('') : '<div class="empty small">Пока никто ничего не загрузил — будьте первым</div>'}</div>`}`;
@@ -4204,7 +4342,7 @@ function postCard(p, pinned = false) {
     ${editing ? `<form class="form" data-form="editpost" data-id="${esc(p.id)}">
         <textarea id="ep_${esc(p.id)}" rows="3" maxlength="4000">${esc(p.text)}</textarea>
         <div class="row"><button class="btn" type="submit">Сохранить</button><button type="button" class="btn ghost" data-act="editpost" data-id="">Отмена</button></div></form>`
-      : p.text ? `<div class="post-text">${linkify(p.text)}</div>` : ''}
+      : p.text ? `<div class="post-text">${linkify(p.text)}</div>${trackEmbed(p.text)}` : ''}
     ${postImages(p)}
     ${pollHtml(p)}
     ${p.repostOf ? repostHtml(p.repostOf) : ''}
@@ -4453,7 +4591,7 @@ function msgHtml(m, id, peerRead, room = false) {
   const who = room && !mine ? `<a class="msg-from" href="#id/${esc(m.from)}">${esc(U(m.from)?.name || '…')}</a>` : '';
   const fwd = fw ? `<div class="fwd"><div class="small">↪ Переслано${fw.name ? ` от <b>${esc(fw.name)}</b>` : ''}</div>${fw.text ? `<span>${linkify(fw.text)}</span>` : ''}</div>` : '';
   const jumbo = !img && !m.audio && !fw && !rp && isJumbo(m.text);
-  return `<div class="msg ${mine ? 'me' : ''} ${img ? 'has-img' : ''} ${sel ? 'sel' : ''} ${jumbo ? 'jumbo' : ''}" data-act="selmsg" data-id="${esc(m.id)}">${who}${quote}${fwd}${img ? `<img class="msg-img" src="${esc(img)}" alt="Фото" data-act="viewimg" data-kind="msg" data-id="${esc(m.id)}">` : ''}${typeof m.audio === 'string' && m.audio.startsWith('data:audio/') ? voiceHtml(m) : ''}${m.text ? `<span>${linkify(m.text)}</span>` : ''}${reactsHtml(m, id)}<time>${m.edited ? 'изменено · ' : ''}${hm(new Date(ms(m.createdAt)))}${ticks}</time>${sel ? `<div class="react-pick">${REACTS.map(e => `<button data-act="react" data-id="${esc(m.id)}" data-e="${e}" aria-label="Реакция ${e}">${e}</button>`).join('')}</div><div class="msg-acts"><button data-act="replymsg" data-id="${esc(m.id)}">${I.reply}Ответить</button><button data-act="fwdmsg" data-id="${esc(m.id)}">↪ Переслать</button>${mine && m.text && !fw ? `<button data-act="editmsg" data-id="${esc(m.id)}">✏️ Изменить</button>` : ''}${mine ? `<button data-act="delmsg" data-id="${esc(m.id)}">${S.confirm === 'msg:' + m.id ? 'Удалить у всех?' : 'Удалить'}</button>` : ''}</div>` : ''}</div>`;
+  return `<div class="msg ${mine ? 'me' : ''} ${img ? 'has-img' : ''} ${sel ? 'sel' : ''} ${jumbo ? 'jumbo' : ''}" data-act="selmsg" data-id="${esc(m.id)}">${who}${quote}${fwd}${img ? `<img class="msg-img" src="${esc(img)}" alt="Фото" data-act="viewimg" data-kind="msg" data-id="${esc(m.id)}">` : ''}${typeof m.audio === 'string' && m.audio.startsWith('data:audio/') ? voiceHtml(m) : ''}${m.text ? `<span>${linkify(m.text)}</span>${trackEmbed(m.text)}` : ''}${reactsHtml(m, id)}<time>${m.edited ? 'изменено · ' : ''}${hm(new Date(ms(m.createdAt)))}${ticks}</time>${sel ? `<div class="react-pick">${REACTS.map(e => `<button data-act="react" data-id="${esc(m.id)}" data-e="${e}" aria-label="Реакция ${e}">${e}</button>`).join('')}</div><div class="msg-acts"><button data-act="replymsg" data-id="${esc(m.id)}">${I.reply}Ответить</button><button data-act="fwdmsg" data-id="${esc(m.id)}">↪ Переслать</button>${mine && m.text && !fw ? `<button data-act="editmsg" data-id="${esc(m.id)}">✏️ Изменить</button>` : ''}${mine ? `<button data-act="delmsg" data-id="${esc(m.id)}">${S.confirm === 'msg:' + m.id ? 'Удалить у всех?' : 'Удалить'}</button>` : ''}</div>` : ''}</div>`;
 }
 const searchBar = () => `<div class="msg-search">${I.search}<input id="mq" type="search" placeholder="Поиск в этом диалоге" autocomplete="off" value="${esc(S.mq || '')}"><button class="icon-btn" data-act="mqtoggle" aria-label="Закрыть поиск">✕</button></div>`;
 const roomAvatar = (c, size) => `<span class="av room-av" style="width:${size}px;height:${size}px;font-size:${Math.round(size * .38)}px">${esc(initials(c?.name || 'Б'))}</span>`;
@@ -4794,7 +4932,7 @@ document.addEventListener('click', async e => {
       case 'tfcover': pick('tfcover', 'image/*', false); break;
       case 'tfnocover': if (S.trackForm) { S.trackForm.cover = ''; render(); } break;
       case 'tedit': { S.tmenu = null; const t = id === 'cur' ? curTrack() : trackCache.get(id) || (cache.tracks || []).find(x => x.id === id); if (t && t.ownerId === uid()) openTrackEdit(t); break; }
-      case 'pickmusic': pick('music', 'audio/*', false); break;
+      case 'pickmusic': pick('music', 'audio/*', true); break;
       case 'mplay2': musicPlay(b.dataset.list, Number(b.dataset.i)); break;
       case 'mlistplay': {
         const key = b.dataset.list, list = musicList(key);
@@ -4816,6 +4954,25 @@ document.addEventListener('click', async e => {
       case 'tlink': { S.tmenu = null; const t = findTrack(id); if (!t) break;
         try { await navigator.clipboard.writeText(location.origin + location.pathname + '#music/t_' + t.id); toast('🔗 Ссылка на трек скопирована'); } catch (e) { toast('Не получилось скопировать'); }
         render(); break; }
+      case 'tplayid': { const t = trackCache.get(id); if (t) playList([t], 0, 'Трек из записи'); break; }
+      case 'toff': { S.tmenu = null; const t = findTrack(id); if (!t) break;
+        try { if (isOff(t)) { await offDel(t); toast('Убрано из офлайна'); } else { toast('📥 Сохраняем…'); await offSave(t); toast('📥 Сохранено — играет без интернета'); } }
+        catch (e) { console.error(e); toast('Не получилось: возможно, мало места на устройстве'); }
+        render(); break; }
+      case 'offall': await offSaveAll(musicList(b.dataset.list)); break;
+      case 'tshare': { S.tmenu = null; const t = findTrack(id); if (!t) break;
+        lsSet('vs_draft', `🎵 ${t.title}${t.artist ? ' — ' + t.artist : ''}\n${location.origin + location.pathname}#music/t_${t.id}`);
+        S.fullPlayer = false; S.fpSheet = null; go('id/' + uid());
+        setTimeout(() => { if (!document.getElementById('postText') && MD()) { S.compose = true; render(); } const el = document.getElementById('postText'); if (el) { el.value = lsGet('vs_draft') || ''; el.scrollIntoView({ block: 'center' }); el.focus(); } }, 300);
+        toast('Допишите пару слов и опубликуйте'); break; }
+      case 'plcopy': { const p = cache.mus?.pl; if (!p || S.busy) break; S.busy = true;
+        try { const nid = await savePlaylist(null, { title: p.title.slice(0, 60), tracks: (p.tracks || []).slice(0, 500), color: p.color || '' }); toast('Плейлист сохранён себе'); go('music/pl_' + nid); }
+        catch (e) { toast(errText(e)); } finally { S.busy = false; } break; }
+      case 'plmove': { S.tmenu = null; const p = cache.mus?.pl; if (!p || p.ownerId !== uid()) break;
+        const tr = (p.tracks || []).slice(), i = tr.indexOf(id), j = i + Number(b.dataset.d); if (i < 0 || j < 0 || j >= tr.length) break;
+        [tr[i], tr[j]] = [tr[j], tr[i]]; p.tracks = tr; p.list = tr.map(x => trackCache.get(x)).filter(Boolean); render();
+        await savePlaylist(p.id, { tracks: tr }).catch(e => toast(errText(e))); const pp = (cache.mus.pls || []).find(x => x.id === p.id); if (pp) pp.tracks = tr; break; }
+      case 'autoplaytoggle': lsSet('vs_autoplay', autoplayOn() ? '0' : '1'); render(); break;
       case 'normtoggle': lsSet('vs_norm', normOn() ? '0' : '1'); normApply(); render(); break;
       case 'xfadeset': lsSet('vs_xfade', b.dataset.v); S.fpSheet = null; toast(Number(b.dataset.v) ? `🌊 Плавные переходы: ${b.dataset.v} с` : 'Плавные переходы выключены'); render(); break;
       case 'statclear': if (!twoStep('stats')) return; lsSet('vs_plays', '{}'); lsSet('vs_listen_total', '0'); statSec = 0; toast('Статистика стёрта'); render(); break;
@@ -5337,7 +5494,7 @@ document.getElementById('filePick').addEventListener('change', async e => {
     else if (pickTarget === 'tfcover') { if (S.trackForm) { S.trackForm.cover = await compress(f, 600, 250000, true); render(); } }
     else if (pickTarget === 'evcover') { S.evCover = await compress(f, 1280, 420000); render(); }
     else if (pickTarget === 'lot') { S.lotImage = await compress(f, 1080, 420000); render(); }
-    else if (pickTarget === 'music') await uploadTrack(f);
+    else if (pickTarget === 'music') { if (files.length > 1) await uploadTracksBatch(files.slice(0, 30)); else await uploadTrack(f); }
     else if (pickTarget === 'story') { S.storyDraft = { image: await compress(f, 1080, 420000) }; render(); document.getElementById('stText')?.focus(); }
     else if (pickTarget === 'gphoto') { S.editGroupPhoto = await compress(f, 256, MAX_AVATAR, true); render(); }
     else if (pickTarget === 'msgphoto') {

@@ -49,6 +49,13 @@
   Новые сервисы без базы: `#timer` ВС Таймер (`TM`, секундомер/таймер/помодоро, тикает без render), `#calc` ВС Калькулятор (`calcEval()` — свой разбор, без eval; история `vs_calc`),
   `#dice` ВС Жребий, игра `#games/sudoku` (`sdkNew()` — единственное решение, рекорды `vs_sudoku_<уровень>`). Окно горячих клавиш — «?» (`S.keys`, `keysOverlay()`),
   черновик новой записи — localStorage `vs_draft`.
+- 6.6 «Музыка 2.0» (правила не менялись): офлайн — файлы треков в IndexedDB `vs-offline` (stores `blobs`/`meta`, ключ — fileId; `OFF`, `offSave()`/`offDel()`,
+  `getFileUrl()` сначала смотрит туда), страница `#music/offline`, «Скачать офлайн» у списков (`offSaveAll`); «Микс дня» `#music/mix` (`buildMix()`: Мои треки, любимое
+  из статистики, треки любимых исполнителей и друзей; перемешано `seededRng(дата + uid)`); «Популярное у друзей» `#music/friends` (`loadFriendsChart()` по `users.tracks` друзей);
+  карточки-ссылки на главной `.mus-quick`; в поиске — исполнители и плейлисты (`musicSearchExtra()`); трек в записи/сообщении — ссылка `…#music/t_<id>` в тексте
+  превращается в карточку `trackEmbed()` («Поделиться на стене» = черновик `vs_draft` со ссылкой); `linkify()` открывает ссылки на свой сайт в той же вкладке;
+  пакетная загрузка `uploadTracksBatch()` (до 30 файлов, без окна правки); порядок треков в своём плейлисте (`plmove`), «Сохранить себе» чужой плейлист (`plcopy`);
+  «Автопродолжение» (`vs_autoplay`, по умолчанию вкл.): когда очередь кончилась, `nextTrack()` дописывает Микс дня.
 - Вход через Google (6.1): в обычной вкладке — всплывающее окно (`signInWithPopup`); с иконки на главном экране (`isStandalone()`) и если окно
   заблокировано — `googleGo()`: переход на accounts.google.com (OAuth, `response_type=id_token`, клиент `GOOGLE_CLIENT` — Web client проекта)
   и возврат на свой же адрес с `#id_token`, `googleFinish()` входит через `signInWithCredential`. Старый `signInWithRedirect` через
@@ -69,7 +76,7 @@
   `#guests` (гости страницы), `#tag/<тег>` (записи с хэштегом), `#im/g_<id>` (беседа),
   `#apps` (все сервисы), `#answers[/<раздел>|/mine]`, `#q/<id>`, `#mail[/in|/sent|/new|/<id>]`, `#notes`, `#weather`, `#games[/2048|/ttt]`,
   `#music[/my|/all|/<uid>]`, `#market[/<раздел>|/mine]`, `#lot/<id>`, `#@<ник>` (страница по нику — так выглядит адрес профиля: `prettyUrl()` заменяет `#id/<uid>` на `#@ник`; старый `#u/<ник>` перекидывает сюда), `#saved` (закладки),
-  `#events`, `#event/<id>`, `#rates`, `#radio`, `#horo`, `#games/snake|mines|memory|sudoku`, `#timer`, `#calc`, `#dice`, `#music/stats|a_<исполнитель>|t_<трек>`. `#im/<свой uid>` — «Избранное» (чат с самим собой, id `uid_uid`).
+  `#events`, `#event/<id>`, `#rates`, `#radio`, `#horo`, `#games/snake|mines|memory|sudoku`, `#timer`, `#calc`, `#dice`, `#music/stats|mix|friends|offline|a_<исполнитель>|t_<трек>`. `#im/<свой uid>` — «Избранное» (чат с самим собой, id `uid_uid`).
 - Рендер: функция `render()` целиком перерисовывает `#app` через innerHTML, а значения полей ввода сохраняются между перерисовками.
   Исключение — страница видео: там обновляются только части страницы, чтобы плеер не перезапускался (см. `playerKey`).
 
