@@ -42,18 +42,24 @@ const COLORS = ['#2F44D0','#D0462F','#1F8A5B','#B4398F','#C98A12','#2B8BB5','#6A
 const NICK_RE = /^[a-z0-9._]{4,30}$/, NICK_ANY = /^[a-z0-9._]{1,30}$/;   // 1–3 символа — только админам и коллекционные
 const NICK_MSG = 'Короткое имя: от 4 до 30 символов, латиница, цифры, точка и _. Имена короче — коллекционные, их выдаёт администрация.';
 const nickUid = new Map();   // @ник → uid, чтобы адрес #@ник открывался без лишних запросов
-const pageUrl = u => location.origin + location.pathname + (u?.nick ? '#@' + u.nick : '#id/' + u?.id);
+/* ---------- 6.9: адреса без решётки: /video, /music/stats, /@ник вместо /#video ----------
+   BASE — папка сайта (на GitHub Pages «/vsmske/»). GitHub Pages про глубокие адреса ничего не знает, поэтому 404.html
+   перекидывает /vsmske/video на /vsmske/?/video, а скрипт в index.html возвращает красивый адрес. Старые ссылки с «#» тоже работают. */
+const BASE = new URL('.', import.meta.url).pathname;
+const curRoute = () => { let p = location.pathname; p = p.startsWith(BASE) ? p.slice(BASE.length) : p.replace(/^\/+/, ''); p = p.replace(/\/+$/, ''); return p === 'index.html' ? '' : p; };
+const siteUrl = r => location.origin + BASE + r;
+const pageUrl = u => siteUrl(u?.nick ? '@' + u.nick : 'id/' + u?.id);
 const MAX_POST_IMG = 700000;   // символов dataURL (~520 КБ), лимит документа Firestore — 1 МБ
 const MAX_AVATAR = 120000;
 const CHUNK = 700000;                                   // символов base64 в одном куске (кратно 4)
 const LIMITS = { disk: 10 * 1024 * 1024, video: 20 * 1024 * 1024, music: 12 * 1024 * 1024 };
-const VERSION = '6.8';
+const VERSION = '6.9';
 const MAX_MSG_IMG = 380000;    // фото в сообщении
 const ONLINE_MS = 5 * 60 * 1000; // «в сети», если заходил не раньше 5 минут назад
 
 /* ---------- Приложение на главном экране (PWA) ---------- */
 let installPrompt = null;
-if ('serviceWorker' in navigator && location.protocol === 'https:') navigator.serviceWorker.register('sw.js').catch(console.error);
+if ('serviceWorker' in navigator && location.protocol === 'https:') navigator.serviceWorker.register(new URL('sw.js', import.meta.url).href).catch(console.error);
 window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); installPrompt = e; if (typeof render === 'function' && S.phase === 'app') render(); });
 window.addEventListener('appinstalled', () => { installPrompt = null; toast('VСмске установлено на главный экран'); });
 const isStandalone = () => matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
@@ -105,8 +111,8 @@ async function notifyMentions(text, postId, skip = []) {
 // Сообщение только из 1–3 смайликов показываем крупно
 const isJumbo = t => { const s = String(t || '').trim(); if (!s || s.length > 24) return false; const em = s.match(/\p{Extended_Pictographic}/gu) || []; return em.length >= 1 && em.length <= 3 && !s.replace(/[\p{Extended_Pictographic}\p{Emoji_Component}\u200d\ufe0f\s]/gu, '').length; };
 const linkify = t => String(t ?? '').split(/(https?:\/\/[^\s<]+[^\s<.,:;!?)\]"'»])/g)
-  .map((part, i) => !(i % 2) ? tagify(part) : part.startsWith(location.origin + location.pathname + '#')   // ссылка на свой же сайт — открываем здесь
-    ? `<a href="${esc(part.slice(part.indexOf('#')))}">${esc(part)}</a>` : `<a href="${esc(part)}" target="_blank" rel="noopener nofollow ugc">${esc(part)}</a>`).join('');
+  .map((part, i) => !(i % 2) ? tagify(part) : part.startsWith(siteUrl(''))   // ссылка на свой же сайт — открываем здесь; старую с решёткой (…/#video) превращаем в /video
+    ? `<a href="${esc(part.charAt(siteUrl('').length) === '#' ? siteUrl(part.slice(siteUrl('').length + 1)) : part)}">${esc(part)}</a>` : `<a href="${esc(part)}" target="_blank" rel="noopener nofollow ugc">${esc(part)}</a>`).join('');
 const extractTags = t => [...new Set([...String(t || '').matchAll(/#([\p{L}\d_]{2,30})/gu)].map(m => m[1].toLowerCase()))].slice(0, 10);
 const ms = t => t && typeof t.toMillis === 'function' ? t.toMillis() : (typeof t === 'number' ? t : Date.now());
 const data = s => ({ id: s.id, ...s.data({ serverTimestamps: 'estimate' }) });
@@ -473,7 +479,7 @@ const groupAvatar = (g, size = 40, link = true) => {
    и возвращается на свой же адрес с токеном в #id_token, которым и входим (signInWithCredential).
    Адрес возврата должен быть в «Authorized redirect URIs» у Web client в Google Cloud. */
 const GOOGLE_CLIENT = '195735209722-8tjsd33moqquhreivj07f48l5cga0r3d.apps.googleusercontent.com';
-const GOOGLE_BACK = location.origin + location.pathname;
+const GOOGLE_BACK = location.origin + BASE;
 async function sha256hex(t) {
   const b = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(t));
   return [...new Uint8Array(b)].map(x => x.toString(16).padStart(2, '0')).join('');
@@ -502,7 +508,7 @@ async function googleFinish(p) {
 {
   const p = new URLSearchParams(location.hash.slice(1));
   if (p.has('id_token') || (p.has('error') && p.has('state'))) {
-    history.replaceState(null, '', location.pathname + location.search);   // токен не оставляем в адресе
+    history.replaceState(null, '', BASE);   // токен не оставляем в адресе
     setTimeout(() => googleFinish(p));   // после того, как весь модуль загрузится (render ещё не готов)
   }
 }
@@ -644,13 +650,13 @@ function startSession() {
 function route() {
   if (S.phase !== 'app') return;
   S.drawer = false; S.compose = false;
-  const [v, arg] = (location.hash.slice(1) || 'feed').split('/');
+  const [v, arg] = (curRoute() || 'feed').split('/');
   S.confirm = null;
   if (v[0] === '@') {   // #@ник — адрес страницы
     let nick = v.slice(1); try { nick = decodeURIComponent(nick); } catch (e) { }
     nick = nick.toLowerCase();
     if (!nickUid.has(nick)) {
-      nickToUid(nick).then(id => { if (id) route(); else { toast('Нет пользователя @' + nick); location.replace('#feed'); } }).catch(() => location.replace('#feed'));
+      nickToUid(nick).then(id => { if (id) route(); else { toast('Нет пользователя @' + nick); goReplace('feed'); } }).catch(() => goReplace('feed'));
       S.view = 'profile'; S.profileId = null; render(); return;
     }
     S.view = 'profile'; S.profileId = nickUid.get(nick);
@@ -670,7 +676,7 @@ function route() {
   else if (v === 'market') { S.view = 'market'; S.mktCat = arg || 'all'; }
   else if (v === 'lot' && arg) { S.view = 'lot'; S.lotId = arg; }
   else if (v === 'music') { S.view = 'music'; S.musicTab = { my: 'home', all: 'stream' }[arg] || arg || 'home'; S.tmenu = null; }
-  else if (v === 'u' && arg) { location.replace('#@' + arg); return; }   // старые ссылки #u/ник
+  else if (v === 'u' && arg) { goReplace('@' + arg); return; }   // старые ссылки u/ник
   else if (v === 'answers') { S.view = 'answers'; S.ansCat = arg || 'all'; }
   else if (v === 'mail') { S.view = 'mail'; S.mailBox = arg === 'sent' ? 'sent' : arg === 'new' ? 'new' : 'in'; S.mailId = arg && !['sent', 'new', 'in'].includes(arg) ? arg : null; }
   else if (v === 'games') { S.view = 'games'; S.game = arg || null; }
@@ -692,14 +698,39 @@ function route() {
   attachView();
   window.scrollTo(0, 0);
 }
-window.addEventListener('hashchange', route);
+window.addEventListener('popstate', route);
+// старые ссылки с решёткой (/#video, #music/stats) превращаем в обычные адреса; решётку Google (#id_token) не трогаем
+function legacyHash() {
+  const h = location.hash; if (h.length < 2 || /^#(id_token|access_token|error|state)=/.test(h)) return false;
+  history.replaceState(null, '', BASE + h.slice(1)); return true;
+}
+window.addEventListener('hashchange', () => { if (legacyHash()) route(); });
+const goReplace = r => { history.replaceState(null, '', BASE + r); route(); };
+legacyHash();
+// ссылки, написанные как href="#video", превращаются в настоящие адреса (/video); переход по ним — без перезагрузки страницы
+function fixLinks(root) {
+  const fix = a => { const h = a.getAttribute('href'); if (h && h.length > 1 && !h.startsWith('#id_token')) a.setAttribute('href', BASE + h.slice(1)); };
+  if (root.matches?.('a[href^="#"]')) fix(root);
+  root.querySelectorAll?.('a[href^="#"]').forEach(fix);
+}
+new MutationObserver(list => list.forEach(m => m.addedNodes.forEach(n => n.nodeType === 1 && fixLinks(n)))).observe(document.documentElement, { childList: true, subtree: true });
+fixLinks(document.documentElement);
+document.addEventListener('click', e => {
+  if (e.defaultPrevented || e.button || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+  const a = e.target.closest?.('a[href]'); if (!a || (a.target && a.target !== '_self') || a.hasAttribute('download')) return;
+  let u; try { u = new URL(a.getAttribute('href'), location.href); } catch (x) { return; }
+  if (u.origin !== location.origin || !u.pathname.startsWith(BASE) || /\.(apk|png|jpe?g|gif|webp|svg|ico|mp3|mp4|webm|pdf|zip|json|webmanifest|js|css|html|txt)$/i.test(u.pathname)) return;   // чужие ссылки и файлы — как обычно (ник вида @alina.sm — это не файл)
+  if (/^#(id_token|access_token)=/.test(u.hash)) return;
+  e.preventDefault();
+  go(u.hash.length > 1 && u.pathname === BASE ? u.hash.slice(1) : u.pathname.slice(BASE.length).replace(/\/+$/, ''));   // /#video → video
+});
 // #id/<uid> в адресной строке заменяем на #@ник — такую ссылку понятно, кому отправить
 function prettyUrl(pid) {
   const u = pid === uid() ? S.me : U(pid);
-  if (!u?.nick || u.deleted || location.hash !== '#id/' + pid) return;
-  nickUid.set(u.nick, pid); history.replaceState(null, '', '#@' + u.nick);
+  if (!u?.nick || u.deleted || curRoute() !== 'id/' + pid) return;
+  nickUid.set(u.nick, pid); history.replaceState(null, '', BASE + '@' + u.nick);
 }
-const go = h => { if (location.hash === '#' + h) route(); else location.hash = h; };
+const go = h => { if (curRoute() === h) route(); else { history.pushState(null, '', BASE + h); route(); } };
 
 function onViewErr(e) { console.error(e); S.viewError = e; S.loading = false; render(); }
 
@@ -1183,7 +1214,7 @@ const animOff = () => document.documentElement.dataset.anim === 'off' || matchMe
 function animate() {
   if (animOff()) return;
   const now = performance.now();
-  const page = S.phase + '|' + (S.phase === 'app' ? location.hash : S.authTab || '');
+  const page = S.phase + '|' + (S.phase === 'app' ? curRoute() : S.authTab || '');
   if (page !== animPage) { animPage = page; animStart = now; animSeen.clear(); }
   const fresh = now - animStart < 1500;   // первые полторы секунды на странице — появление «лесенкой»
   const run = (el, key, cls, delay) => {
@@ -1590,7 +1621,7 @@ function palGo(i) {
   if (x.href === '@recap') { openRecap(); return; }
   if (x.href === '@keys') { S.keys = true; render(); return; }
   if (x.q !== undefined) S.query = x.q;
-  if (location.hash === '#' + x.href) render(); else go(x.href);
+  if (curRoute() === x.href) render(); else go(x.href);
 }
 function palOpen() { S.pal = { q: '', sel: 0 }; S.drawer = false; render(); setTimeout(() => document.getElementById('palQ')?.focus(), 30); }
 document.addEventListener('input', async e => {
@@ -2913,10 +2944,11 @@ const streamOrder = () => lsGet('vs_stream_order') === 'old' ? 'asc' : 'desc';
 // Поток — все треки платформы подряд, страницами по 50 (без рекомендаций: только по дате)
 async function loadStream(reset) {
   const M = cache.mus;
+  // идёт загрузка: если просят «с начала» — дожидаемся её и начинаем заново, иначе просто ждём (раньше вызов тихо уходил и список оставался пустым)
+  while (M.streamBusy) { const was = M.streamBusy; await was.catch(() => { }); if (!reset) return; if (M.streamBusy === was) M.streamBusy = null; }
   if (reset) { M.stream = []; M.streamLast = null; M.streamDone = false; }
-  if (M.streamDone || M.streamBusy) return;
-  M.streamBusy = true;
-  try {
+  if (M.streamDone) return;
+  const job = M.streamBusy = (async () => {
     const parts = [orderBy('createdAt', streamOrder()), limit(STREAM_PAGE)];
     if (M.streamLast) parts.splice(1, 0, startAfter(M.streamLast));
     const snap = await getDocs(query(collection(db, 'tracks'), ...parts));
@@ -2924,7 +2956,8 @@ async function loadStream(reset) {
     M.stream = M.stream.concat(keepTracks(snap.docs.map(data)).filter(t => !M.stream.some(x => x.id === t.id)));
     if (snap.size < STREAM_PAGE) M.streamDone = true;
     ensureUsers(M.stream.map(t => t.ownerId));
-  } finally { M.streamBusy = false; }
+  })();
+  try { await job; } finally { if (M.streamBusy === job) M.streamBusy = null; }
 }
 // когда Поток доигрывает загруженное — подгружаем следующую страницу прямо в очередь
 async function extendStream() {
@@ -2956,7 +2989,7 @@ async function loadMusic() {
     if (tab.startsWith('t_')) jobs.push(getDoc(doc(db, 'tracks', tab.slice(2))).then(x => { M.one = x.exists() ? keepTracks([data(x)]) : []; M.oneId = tab.slice(2); }));
     if (tab === 'stats') jobs.push(tracksById(topTracks(50).map(t => t.id)).catch(() => []));
     if (tab === 'mix') jobs.push(loadStream(true), tracksById((S.me.tracks || []).slice().reverse()).then(l => { M.liked = l; }));
-    if (tab === 'friends' || tab === 'home') jobs.push(loadFriendsChart().then(l => { M.fchart = l; }).catch(e => { console.error(e); M.fchart = []; }));
+    if (tab === 'friends' || tab === 'home' || tab === 'mix') jobs.push(loadFriendsChart().then(l => { M.fchart = l; }).catch(e => { console.error(e); M.fchart = []; }));
     if (!['home', 'stream', 'liked', 'uploads', 'stats', 'mix', 'friends', 'offline'].includes(tab) && !/^(pl|a|t)_/.test(tab)) {
       ensureUsers([tab]);
       jobs.push(getDocs(query(collection(db, 'tracks'), where('ownerId', '==', tab), limit(300))).then(x => { M.other = sortNew(keepTracks(x.docs.map(data))); }));
@@ -3285,7 +3318,7 @@ async function loadFriendsChart() {
 // Трек в записи или сообщении: ссылка …#music/t_<id> превращается в карточку с кнопкой «играть»
 const embedAsked = new Set();
 function trackEmbed(text) {
-  const m = /#music\/t_([A-Za-z0-9]{1,40})/.exec(String(text || '')); if (!m) return '';
+  const m = /(?:#|\/)music\/t_([A-Za-z0-9]{1,40})/.exec(String(text || '')); if (!m) return '';
   const id = m[1], t = trackCache.get(id);
   if (t === undefined) { if (!embedAsked.has(id)) { embedAsked.add(id); tracksById([id]).then(() => render()); } return `<div class="tembed"><span class="spin sm"></span></div>`; }
   if (!t) return '';
@@ -4719,7 +4752,7 @@ function postCard(p, pinned = false) {
       <button class="pill" data-act="togglec" data-id="${esc(p.id)}" aria-label="Комментарии">${I.comment}${n || ''}</button>
       <button class="pill" data-act="repost" data-id="${esc(p.id)}" aria-label="Поделиться у себя на стене" title="Поделиться у себя на стене">${I.repost}${p.reposts || ''}</button>
       <span class="grow"></span>
-      <button class="pill" data-act="copy" data-text="${esc(location.origin + location.pathname + '#post/' + p.id)}" aria-label="Скопировать ссылку на запись">${I.link}</button>
+      <button class="pill" data-act="copy" data-text="${esc(siteUrl('post/' + p.id))}" aria-label="Скопировать ссылку на запись">${I.link}</button>
     </div>
     ${open ? `<div class="comments">
       ${!comments ? '<div class="muted small">Загружаем…</div>' : comments.map(c => {
@@ -5107,7 +5140,7 @@ document.addEventListener('click', async e => {
         if (!email) { S.authError = 'Введите почту, на неё придёт ссылка для сброса пароля.'; render(); return; }
         await sendPasswordResetEmail(auth, email); S.authError = ''; render(); toast('Письмо для сброса пароля отправлено на ' + email); break;
       }
-      case 'logout': await signOut(auth); location.hash = ''; break;
+      case 'logout': await signOut(auth); history.replaceState(null, '', BASE); break;
       case 'feedtab': S.feedTab = b.dataset.tab; attachView(); break;
       case 'like': {
         const p = findPost(id); if (!p) return;
@@ -5146,7 +5179,7 @@ document.addEventListener('click', async e => {
       case 'canceldraft': S.videoDraft = null; render(); break;
       case 'linkform': S.linkForm = !S.linkForm; render(); if (S.linkForm) document.getElementById('vlUrl')?.focus(); break;
       case 'copy': await copyText(b.dataset.text); break;
-      case 'copylink': await copyText(location.origin + location.pathname + '#video/' + id, 'Ссылка на видео скопирована'); break;
+      case 'copylink': await copyText(siteUrl('video/' + id), 'Ссылка на видео скопирована'); break;
       case 'likevideo': {
         const v = cache.video; if (!v) return;
         await updateDoc(doc(db, 'videos', id), { likes: (v.likes || []).includes(uid()) ? arrayRemove(uid()) : arrayUnion(uid()) });
@@ -5341,7 +5374,7 @@ document.addEventListener('click', async e => {
           document.body.append(a); a.click(); a.remove(); } catch (e) { console.error(e); toast('Не получилось скачать'); }
         break; }
       case 'tlink': { S.tmenu = null; const t = findTrack(id); if (!t) break;
-        try { await navigator.clipboard.writeText(location.origin + location.pathname + '#music/t_' + t.id); toast('🔗 Ссылка на трек скопирована'); } catch (e) { toast('Не получилось скопировать'); }
+        try { await navigator.clipboard.writeText(siteUrl('music/t_' + t.id)); toast('🔗 Ссылка на трек скопирована'); } catch (e) { toast('Не получилось скопировать'); }
         render(); break; }
       case 'tplayid': { const t = trackCache.get(id); if (t) playList([t], 0, 'Трек из записи'); break; }
       case 'toff': { S.tmenu = null; const t = findTrack(id); if (!t) break;
@@ -5350,7 +5383,7 @@ document.addEventListener('click', async e => {
         render(); break; }
       case 'offall': await offSaveAll(musicList(b.dataset.list)); break;
       case 'tshare': { S.tmenu = null; const t = findTrack(id); if (!t) break;
-        lsSet('vs_draft', `🎵 ${t.title}${t.artist ? ' — ' + t.artist : ''}\n${location.origin + location.pathname}#music/t_${t.id}`);
+        lsSet('vs_draft', `🎵 ${t.title}${t.artist ? ' — ' + t.artist : ''}\n${siteUrl('music/t_' + t.id)}`);
         S.fullPlayer = false; S.fpSheet = null; go('id/' + uid());
         setTimeout(() => { if (!document.getElementById('postText') && MD()) { S.compose = true; render(); } const el = document.getElementById('postText'); if (el) { el.value = lsGet('vs_draft') || ''; el.scrollIntoView({ block: 'center' }); el.focus(); } }, 300);
         toast('Допишите пару слов и опубликуйте'); break; }
@@ -5387,7 +5420,7 @@ document.addEventListener('click', async e => {
       case 'plclose': S.plPick = null; S.plForm = null; render(); break;
       case 'pldel': if (!twoStep('pl:' + id)) return; await deleteDoc(doc(db, 'playlists', id)); cache.mus.pls = (cache.mus.pls || []).filter(p => p.id !== id); toast('Плейлист удалён'); go('music'); break;
       case 'plrm': S.tmenu = null; await plToggleTrack(cache.mus.pl.id, id); break;
-      case 'plshare': try { await navigator.clipboard.writeText(location.origin + location.pathname + '#music/pl_' + id); toast('Ссылка на плейлист скопирована'); } catch (e) { toast('Не получилось скопировать'); } break;
+      case 'plshare': try { await navigator.clipboard.writeText(siteUrl('music/pl_' + id)); toast('Ссылка на плейлист скопирована'); } catch (e) { toast('Не получилось скопировать'); } break;
       case 'mplay': if (player.audio.src) player.audio.paused ? player.audio.play() : player.audio.pause(); break;
       case 'mnext': nextTrack(); break;
       case 'mprev': prevTrack(); break;

@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<title>VСмске</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#140A24">
+<style>html,body{height:100%;margin:0;background:#140A24;color:#fff;font:16px system-ui,sans-serif;display:grid;place-items:center}</style>
+<script>
+/* GitHub Pages отдаёт эту страницу на любой адрес, которого нет в папке (например /vsmske/video или /vsmske/live/abc).
+   Перекидываем на главную страницу, а адрес прячем после «?/» — index.html вернёт его обратно, и сайт откроет нужный раздел. */
+(function (l) {
+  var keep = l.pathname.indexOf('/vsmske/') === 0 ? 1 : 0;   // «/vsmske/» — одна папка в адресе; на своём домене в корне — ноль
+  var path = l.pathname.split('/');
+  l.replace(l.protocol + '//' + l.host + path.slice(0, 1 + keep).join('/') + '/?/' +
+    path.slice(1 + keep).join('/').replace(/&/g, '~and~') + (l.search ? '&' + l.search.slice(1).replace(/&/g, '~and~') : '') + l.hash);
+})(window.location);
+</script>
+</head>
+<body>VСмске…</body>
+</html>
