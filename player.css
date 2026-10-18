@@ -145,3 +145,13 @@
 .eq-band span{font-size:10.5px;opacity:.6}
 .eq-sl{writing-mode:vertical-lr;direction:rtl;width:26px;height:150px;margin:0;accent-color:#A78BFA;cursor:pointer}
 @media (max-width:380px){.eq-sl{height:120px}.eq-band span{font-size:9.5px}}
+/* 6.5: очередь — убрать трек, перемешать, очистить; ссылки в шторке */
+.fq-row{display:flex;align-items:center;gap:4px}
+.fq-row .fq-item{flex:1;min-width:0}
+.fq-rm{flex:none;width:36px;height:36px;border-radius:50%;color:#fff;opacity:.5;background:none}
+.fq-rm:hover{opacity:1;background:rgba(255,255,255,.1)}
+.fq-h{display:flex;align-items:center;gap:8px}
+.fq-act{margin-left:auto;border:0;background:rgba(255,255,255,.1);color:#fff;border-radius:99px;padding:5px 11px;font:700 11px var(--f-body,system-ui);letter-spacing:.04em;text-transform:none;cursor:pointer}
+.fq-act+.fq-act{margin-left:0}
+.fq-act:hover{background:rgba(255,255,255,.2)}
+a.fs-row{text-decoration:none}
