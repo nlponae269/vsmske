@@ -3,7 +3,7 @@
   "short_name": "VСмске",
   "description": "Социальная сеть: стена, друзья, сообщения, сообщества, видео и фото.",
   "lang": "ru",
-  "start_url": "./#feed",
+  "start_url": "./",
   "scope": "./",
   "display": "standalone",
   "background_color": "#6C4DFF",
