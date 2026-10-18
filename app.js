@@ -47,7 +47,7 @@ const MAX_POST_IMG = 700000;   // символов dataURL (~520 КБ), лими
 const MAX_AVATAR = 120000;
 const CHUNK = 700000;                                   // символов base64 в одном куске (кратно 4)
 const LIMITS = { disk: 10 * 1024 * 1024, video: 20 * 1024 * 1024, music: 12 * 1024 * 1024 };
-const VERSION = '6.7';
+const VERSION = '6.8';
 const MAX_MSG_IMG = 380000;    // фото в сообщении
 const ONLINE_MS = 5 * 60 * 1000; // «в сети», если заходил не раньше 5 минут назад
 
@@ -399,6 +399,7 @@ const app = document.getElementById('app');
 
 function stopAll() {
   if (typeof player !== 'undefined') { player.audio.pause(); player.queue = []; player.i = -1; }
+  if (typeof LIVE !== 'undefined' && LIVE) liveStop(true);
   globalUnsubs.forEach(u => u()); globalUnsubs = [];
   clearView(); routedOnce = false;
   Object.assign(cache, { users: new Map(), feed: new Map(), wall: [], comments: new Map(), chats: [], messages: [], incoming: [], outgoing: [], people: [],
@@ -673,15 +674,16 @@ function route() {
   else if (v === 'answers') { S.view = 'answers'; S.ansCat = arg || 'all'; }
   else if (v === 'mail') { S.view = 'mail'; S.mailBox = arg === 'sent' ? 'sent' : arg === 'new' ? 'new' : 'in'; S.mailId = arg && !['sent', 'new', 'in'].includes(arg) ? arg : null; }
   else if (v === 'games') { S.view = 'games'; S.game = arg || null; }
+  else if (v === 'live') { S.view = 'live'; S.liveId = arg || null; }
   else if (v === 'tag' && arg) { S.view = 'tag'; try { S.tag = decodeURIComponent(arg).toLowerCase(); } catch (e) { S.tag = arg; } }
-  else if (['feed', 'friends', 'people', 'edit', 'disk', 'vid', 'settings', 'more', 'notif', 'clubs', 'admin', 'guests', 'apps', 'notes', 'weather', 'events', 'rates', 'radio', 'horo', 'timer', 'calc', 'dice'].includes(v)) S.view = v;
+  else if (['feed', 'friends', 'people', 'edit', 'disk', 'vid', 'settings', 'more', 'notif', 'clubs', 'admin', 'guests', 'apps', 'notes', 'weather', 'events', 'rates', 'radio', 'horo', 'timer', 'calc', 'dice', 'live'].includes(v)) S.view = v;
   else S.view = 'feed';
   if (S.view !== 'edit') { S.editColor = null; S.editCover = null; S.editPhoto = undefined; S.editEmoji = undefined; }
   if (S.view !== 'watch') { S.videoSrc = null; S.videoErr = null; }
   S.lightbox = null; S.lightboxImg = null; S.preview = null; S.linkForm = false; S.newAlbum = false;
   S.viewImg = null; S.postMenu = null; S.emoji = null; S.msgSel = null; S.profMenu = false; S.modOpen = false; S.report = null;
   if (S.view !== 'games' || S.game !== 'snake') { clearInterval(snakeTimer); snakeTimer = null; if (snake && !snake.over) snake = null; }
-  S.newQ = false; S.noteEdit = null; S.giftFor = null; S.newLot = false; S.newEvent = false; if (S.view !== 'mail') S.mailDraft = null;
+  S.liveForm = null; S.newQ = false; S.noteEdit = null; S.giftFor = null; S.newLot = false; S.newEvent = false; if (S.view !== 'mail') S.mailDraft = null;
   S.newRoom = null; S.fwd = null; S.roomInfo = false; S.story = null; S.storyDraft = null; clearTimeout(storyTimer); S.clubEdit = false; S.editGroupPhoto = undefined; S.editGroupCover = null;
   if (S.view !== 'messages') S.replyTo = null;
   S.editMsg = null; S.mqOpen = false; S.mq = '';
@@ -706,7 +708,7 @@ function attachView() {
   const id = uid();
   S.loading = true;
   if (S.view === 'feed') {
-    cache.feed = new Map();
+    cache.feed = new Map(); loadLiveNow();
     const listen = (q, key) => viewUnsubs.push(onSnapshot(q, s => {
       const posts = s.docs.map(data); cache.feed.set(key, posts); S.loading = false;
       ensurePostPeople(posts); render();
@@ -820,6 +822,14 @@ function attachView() {
   } else if (S.view === 'event') {
     cache.event = null;
     viewUnsubs.push(onSnapshot(doc(db, 'events', S.eventId), s => { cache.event = s.exists() ? data(s) : { id: S.eventId, missing: true }; if (s.exists()) ensureUsers([cache.event.ownerId]); S.loading = false; render(); }, onViewErr));
+  } else if (S.view === 'live') {
+    if (S.liveId) {
+      cache.stream = null;
+      viewUnsubs.push(onSnapshot(doc(db, 'streams', S.liveId), s => { cache.stream = s.exists() ? data(s) : { id: S.liveId, missing: true }; if (s.exists()) ensureUsers([cache.stream.ownerId]); S.loading = false; liveOnStream(); render(); liveAttach(); }, onViewErr));
+    } else {
+      cache.streams = [];
+      viewUnsubs.push(onSnapshot(query(collection(db, 'streams'), where('live', '==', true), limit(30)), s => { cache.streams = s.docs.map(data); ensureUsers(cache.streams.map(x => x.ownerId)); liveCleanStale(); S.loading = false; render(); }, onViewErr));
+    }
   } else if (S.view === 'rates') {
     S.loading = false; if (!S.rates?.v) loadRates();
   } else if (S.view === 'saved') {
@@ -1052,6 +1062,8 @@ function render() {
       return;
     }
   }
+  // видео эфира не пересоздаём: вынимаем и возвращаем на место, чтобы картинка не мигала
+  const keepVid = document.getElementById('liveVid'); if (keepVid?.parentNode) keepVid.parentNode.removeChild(keepVid);
   // сохраняем то, что пользователь печатает, между перерисовками
   const active = document.activeElement, focusId = active?.id, sel = active?.selectionStart;
   const kept = {};
@@ -1072,6 +1084,7 @@ function render() {
     box.scrollTop = box.scrollHeight;
     box.querySelectorAll('img').forEach(im => { if (!im.complete) im.addEventListener('load', () => { box.scrollTop = box.scrollHeight; }, { once: true }); });
   }
+  { const ph = document.getElementById('liveVid'); if (ph && keepVid && LIVE && S.liveId === LIVE.sid) ph.replaceWith(keepVid); if (document.getElementById('liveVid')) liveAttach(); const bx = document.getElementById('liveMsgs'); if (bx) bx.scrollTop = bx.scrollHeight; }
   animate();
   syncGlass();
   if (S.fullPlayer && S.fpLyrics) { syncLyrics(); if (!lyrRaf) lyrLoop(); }
@@ -1248,10 +1261,10 @@ function viewOnboarding() {
 
 function navHtml() {
   const me = S.me, unread = cache.chats.filter(isUnread).length, reqs = cache.incoming.length;
-  const groups = { video: ['video', 'watch'], albums: ['albums', 'album'], clubs: ['clubs', 'club'], apps: ['apps', 'answers', 'question', 'mail', 'notes', 'weather', 'games', 'market', 'lot', 'events', 'event', 'rates', 'radio', 'horo', 'timer', 'calc', 'dice'], music: ['music'] };
+  const groups = { video: ['video', 'watch'], albums: ['albums', 'album'], clubs: ['clubs', 'club'], apps: ['apps', 'answers', 'question', 'mail', 'notes', 'weather', 'games', 'market', 'lot', 'events', 'event', 'rates', 'radio', 'horo', 'timer', 'calc', 'dice', 'live'], music: ['music'] };
   const on = v => (groups[v] ? groups[v].includes(S.view) : S.view === v) && (v !== 'profile' || S.profileId === me.id) ? 'on' : '';
   const nav = (v, href, icon, label, badge = 0, cls = '') => `<a class="navlink ${on(v)} ${cls}" href="#${href}">${icon}<span>${label}</span>${badge ? `<span class="badge">${badge}</span>` : ''}</a>`;
-  const moreOn = ['more', 'profile', 'people', 'albums', 'album', 'disk', 'vid', 'settings', 'edit', 'notif', 'post', 'clubs', 'club', 'admin', 'guests', 'tag', 'apps', 'answers', 'question', 'mail', 'notes', 'weather', 'games', 'market', 'lot', 'saved', 'video', 'watch', 'events', 'event', 'rates', 'radio', 'horo', 'timer', 'calc', 'dice'].includes(S.view) ? 'on' : '';
+  const moreOn = ['more', 'profile', 'people', 'albums', 'album', 'disk', 'vid', 'settings', 'edit', 'notif', 'post', 'clubs', 'club', 'admin', 'guests', 'tag', 'apps', 'answers', 'question', 'mail', 'notes', 'weather', 'games', 'market', 'lot', 'saved', 'video', 'watch', 'events', 'event', 'rates', 'radio', 'horo', 'timer', 'calc', 'dice', 'live'].includes(S.view) ? 'on' : '';
   return `<nav class="nav"><i class="lg" aria-hidden="true"></i>
       ${nav('profile', 'id/' + me.id, I.home, 'Профиль', 0, 'm-hide')}
       ${nav('feed', 'feed', I.feed, 'Лента')}
@@ -1306,6 +1319,7 @@ function shell() {
   else if (S.view === 'timer') main = viewTimer();
   else if (S.view === 'calc') main = viewCalc();
   else if (S.view === 'dice') main = viewDice();
+  else if (S.view === 'live') main = viewLive();
   else if (S.view === 'saved') main = `<div class="card pad"><h1 class="h brandh">Закладки</h1><div class="muted small">Записи, которые вы сохранили. Видите только вы.</div></div>
     ${S.loading ? loadingBox() : cache.savedPosts?.length ? cache.savedPosts.map(p => postCard(p)).join('') : '<div class="card empty"><b>Закладок пока нет</b><span>Нажмите «⋯» у записи → «В закладки».</span></div>'}`;
   else if (S.view === 'lot') main = viewLot();
@@ -1334,7 +1348,7 @@ function shell() {
     <main>${banOf(me) ? `<div class="card pad ban-banner" role="alert"><b>⛔ Ваш аккаунт заблокирован ${banText(banOf(me))}</b>
       ${banOf(me).reason ? `<div class="small">Причина: ${esc(banOf(me).reason)}</div>` : ''}<div class="small">Пока действует блокировка, нельзя писать записи, комментарии и сообщения.</div></div>` : ''}${up}${main}</main>
   </div>
-  ${musicBar()}
+  ${liveBar()}${musicBar()}
   ${S.fullPlayer ? fullPlayer() : ''}
   ${overlay()}`;
 }
@@ -1349,7 +1363,7 @@ const MD_TITLES = { feed: 'Лента', messages: 'Чаты', friends: 'Друз
   video: 'Видео', watch: 'Видео', albums: 'Альбомы', album: 'Альбом', disk: 'Диск', vid: 'VС ID', settings: 'Настройки', more: 'Меню',
   post: 'Запись', clubs: 'Клубы', club: 'Клуб', guests: 'Гости', apps: 'Сервисы', market: 'Маркет', lot: 'Объявление', events: 'События',
   event: 'Событие', rates: 'Курсы', radio: 'Радио', horo: 'Гороскоп', saved: 'Закладки', music: 'Музыка', answers: 'Ответы', question: 'Вопрос',
-  mail: 'Почта', notes: 'Заметки', weather: 'Погода', games: 'Игры', admin: 'Админка', timer: 'Таймер', calc: 'Калькулятор', dice: 'Жребий' };
+  mail: 'Почта', notes: 'Заметки', weather: 'Погода', games: 'Игры', admin: 'Админка', timer: 'Таймер', calc: 'Калькулятор', dice: 'Жребий', live: 'Эфир' };
 function mdTitle() {
   if (S.view === 'profile') return S.profileId === S.me.id ? 'Моя страница' : (U(S.profileId)?.name || 'Профиль');
   if (S.view === 'tag') return '#' + (S.tag || '');
@@ -1387,11 +1401,11 @@ function mdShell(me, main, up) {
     <div class="md-handle"></div><div class="row"><b class="grow md-sheet-t">Новая запись</b><button class="icon-btn" data-act="mdclose" aria-label="Закрыть">✕</button></div>
     ${composer(me.id, 'Что у вас нового?')}</div>` : ''}
   </div>
-  ${musicBar()}
+  ${liveBar()}${musicBar()}
   ${S.fullPlayer ? fullPlayer() : ''}
   ${overlay()}`;
 }
-const MD_APPS = ['apps', 'answers', 'question', 'mail', 'notes', 'weather', 'games', 'market', 'lot', 'events', 'event', 'rates', 'radio', 'horo', 'timer', 'calc', 'dice'];
+const MD_APPS = ['apps', 'answers', 'question', 'mail', 'notes', 'weather', 'games', 'market', 'lot', 'events', 'event', 'rates', 'radio', 'horo', 'timer', 'calc', 'dice', 'live'];
 function mdDrawer(me) {
   const v = S.view;
   const it = (href, icon, label, active, badge = 0) => `<a class="md-item ${active ? 'on' : ''}" href="#${href}">${icon}<span class="grow">${label}</span>${badge ? `<span class="badge">${badge}</span>` : ''}</a>`;
@@ -1548,7 +1562,7 @@ const PAL_SECTIONS = () => [
   ['settings', I.gear, 'Настройки', 'тема дизайн цвет'], ['edit', I.home, 'Редактировать страницу', 'имя фото статус'],
   ['@recap', I.star, 'Мои итоги', 'статистика wrapped'], ['music/stats', I.music, 'Моя статистика музыки', 'прослушивания любимые треки исполнители'],
   ['timer', '⏱', 'ВС Таймер', 'секундомер таймер помодоро'], ['calc', '🧮', 'ВС Калькулятор', 'посчитать'], ['dice', '🎲', 'ВС Жребий', 'монетка кубик случайное число'],
-  ['games/sudoku', '🔢', 'Судоку', 'игра головоломка'], ['@keys', '⌨', 'Горячие клавиши', 'сочетания клавиатура'],
+  ['games/sudoku', '🔢', 'Судоку', 'игра головоломка'], ['live', '🔴', 'ВС Эфир', 'стрим трансляция прямой эфир'], ['@keys', '⌨', 'Горячие клавиши', 'сочетания клавиатура'],
 ];
 const norm = t => String(t || '').toLowerCase().replace(/ё/g, 'е');
 function palItems() {
@@ -1646,6 +1660,8 @@ const REPORT_REASONS = { spam: 'Спам', abuse: 'Оскорбления', nsfw
 function overlay() {
   if (S.recap) return recapOverlay();
   if (S.keys) return keysOverlay();
+  if (S.liveForm) return liveFormModal();
+  if (S.liveRec) return liveRecModal();
   if (S.plPick || S.plForm) return playlistModal();
   if (S.pal) return palOverlay();
   if (S.story) return storyOverlay();
@@ -2060,6 +2076,7 @@ function viewApps() {
       ${tile('events', I.cal, 'ВС События', 'Встречи и вечеринки', 'c-event')}
       ${tile('rates', I.rate, 'ВС Курсы', 'Курсы валют и конвертер', 'c-rate')}
       ${tile('horo', I.star, 'ВС Гороскоп', 'Прогноз на сегодня', 'c-horo')}
+      ${tile('live', '🔴', 'ВС Эфир', 'Прямые эфиры с камеры и экрана', 'c-live')}
       ${tile('timer', '⏱', 'ВС Таймер', 'Секундомер, таймер, помодоро', 'c-timer')}
       ${tile('calc', '🧮', 'ВС Калькулятор', 'Со скобками и историей', 'c-calc')}
       ${tile('dice', '🎲', 'ВС Жребий', 'Монетка, кубики, случайное число', 'c-dice')}
@@ -3778,6 +3795,335 @@ document.addEventListener('keydown', e => {
 // черновик записи: текст из поля новой записи сохраняется на устройстве и возвращается, если уйти со страницы
 document.addEventListener('input', e => { if (e.target.id === 'postText') lsSet('vs_draft', e.target.value.slice(0, 4000)); });
 
+/* ---------- 6.8: ВС Эфир — прямые эфиры из браузера, без сторонних платформ ----------
+   Видео идёт между устройствами (WebRTC): стример → зрители, а зрители сами передают его дальше по цепочке (каждый — ещё двоим).
+   В базе только «знакомство»: заявка зрителя (peers), список тех, кто может передавать дальше (nodes), сам эфир (streams).
+   Чат и счётчик зрителей идут по тем же прямым каналам, в базу не пишутся. Всё служебное стирается, когда эфир заканчивается. */
+const ICE = {
+  iceServers: [{ urls: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302'] },
+    // бесплатный открытый ретранслятор (нужен тем, у кого прямое соединение не пробивается); можно заменить своим — см. README
+    { urls: ['turn:openrelay.metered.ca:80', 'turn:openrelay.metered.ca:443', 'turns:openrelay.metered.ca:443?transport=tcp'], username: 'openrelayproject', credential: 'openrelayproject' }],
+};
+const LIVE_ROOT = 3, LIVE_RELAY = 2, LIVE_DEPTH = 4, LIVE_STALE = 150000;
+let LIVE = null;   // {sid, host, title, mode, stream, kids: Map, cap, depth, up, chat[], count, status, ...}
+const rid = () => Math.random().toString(36).slice(2, 10);
+const liveFresh = s => !!s && s.live && Date.now() - ms(s.beat) < LIVE_STALE;
+const liveCanScreen = () => !!navigator.mediaDevices?.getDisplayMedia && !/Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+const liveCanCam = () => !!navigator.mediaDevices?.getUserMedia && typeof RTCPeerConnection !== 'undefined';
+const iceDone = (pc, to = 2500) => new Promise(res => {
+  if (pc.iceGatheringState === 'complete') return res();
+  const ch = () => { if (pc.iceGatheringState === 'complete') done(); };
+  const t = setTimeout(done, to);
+  function done() { clearTimeout(t); pc.removeEventListener('icegatheringstatechange', ch); res(); }
+  pc.addEventListener('icegatheringstatechange', ch);
+});
+function limitBitrate(pc, bps) {
+  pc.getSenders().forEach(s => { if (s.track?.kind !== 'video') return; try { const p = s.getParameters(); p.encodings = p.encodings?.length ? p.encodings : [{}]; p.encodings[0].maxBitrate = bps; s.setParameters(p).catch(() => { }); } catch (e) { } });
+}
+// экран не гаснет, пока идёт эфир
+let wakeLock = null;
+async function liveWake(on) { try { if (on) wakeLock = await navigator.wakeLock?.request('screen'); else { await wakeLock?.release(); wakeLock = null; } } catch (e) { } }
+document.addEventListener('visibilitychange', () => { if (LIVE && document.visibilityState === 'visible') liveWake(true); });
+
+/* ---- общая часть: передаём видео тем, кто к нам подключается (стример и зрители-«ретрансляторы») ---- */
+function liveListen(L) {
+  L.unsubs.push(onSnapshot(query(collection(db, 'streams', L.sid, 'peers'), where('to', '==', uid())),
+    s => s.docChanges().forEach(ch => { if (ch.type === 'added') liveAccept(L, ch.doc); }), e => console.error(e)));
+}
+async function liveAccept(L, snap) {
+  const p = snap.data(); if (!p || p.answer || p.rej || L.seen.has(snap.id)) return; L.seen.add(snap.id);
+  if (L.dead || !L.stream || L.kids.size >= L.cap || p.uid === uid()) { updateDoc(snap.ref, { rej: true }).catch(() => { }); return; }
+  const pc = new RTCPeerConnection(ICE), kid = { pc, uid: p.uid, dc: null, pres: [], presAt: 0 };
+  L.kids.set(snap.id, kid); nodeSoon(L);
+  pc.ondatachannel = e => liveKidChannel(L, kid, e.channel);
+  pc.onconnectionstatechange = () => {
+    const st = pc.connectionState;
+    if (st === 'failed' || st === 'closed') liveKidDrop(L, snap.id);
+    else if (st === 'disconnected') setTimeout(() => { if (pc.connectionState !== 'connected') liveKidDrop(L, snap.id); }, 7000);
+  };
+  try {
+    await pc.setRemoteDescription({ type: 'offer', sdp: p.offer });
+    L.stream.getTracks().forEach(t => pc.addTrack(t, L.stream));
+    limitBitrate(pc, L.host ? (L.mode === 'screen' ? 2500000 : 1500000) : 1300000);
+    await pc.setLocalDescription(await pc.createAnswer()); await iceDone(pc);
+    await updateDoc(snap.ref, { answer: pc.localDescription.sdp });
+    setTimeout(() => { if (pc.connectionState !== 'connected' && L.kids.get(snap.id) === kid) liveKidDrop(L, snap.id); }, 20000);
+  } catch (e) { console.error(e); liveKidDrop(L, snap.id); }
+}
+function liveKidDrop(L, id) {
+  const k = L.kids.get(id); if (!k) return; L.kids.delete(id);
+  try { k.pc.close(); } catch (e) { }
+  nodeSoon(L);
+}
+let nodeTimer = 0;
+function nodeSoon(L) { clearTimeout(nodeTimer); nodeTimer = setTimeout(() => nodePut(L), 1200); }
+function nodePut(L) {
+  if (L.dead || !L.stream || (!L.host && (L.status !== 'live' || L.cap === 0))) return;
+  setDoc(doc(db, 'streams', L.sid, 'nodes', uid()), { uid: uid(), depth: L.depth, free: Math.max(0, Math.min(8, L.cap - L.kids.size)), up: L.up?.uid || '', at: serverTimestamp() }).catch(() => { });
+}
+const nodeDel = L => deleteDoc(doc(db, 'streams', L.sid, 'nodes', uid())).catch(() => { });
+
+/* ---- чат по прямым каналам: сообщение идёт вверх к стримеру, стример рассылает вниз всем ---- */
+function liveKidChannel(L, kid, dc) {
+  kid.dc = dc;
+  dc.onopen = () => { try { dc.send(JSON.stringify({ t: 'h', list: L.chat.slice(-30) })); dc.send(JSON.stringify({ t: 'c', n: L.count })); } catch (e) { } };
+  dc.onmessage = e => {
+    let m; try { m = JSON.parse(e.data); } catch (x) { return; }
+    if (m.t === 'p') { kid.pres = Array.isArray(m.u) ? m.u.slice(0, 400).map(String) : []; kid.presAt = Date.now(); }
+    else if (m.t === 'm') {
+      const msg = { id: String(m.id || rid()).slice(0, 16), u: String(m.u || kid.uid).slice(0, 40), x: String(m.x || '').trim().slice(0, 200), ts: Date.now() };
+      if (msg.x) liveRoute(L, msg);
+    }
+  };
+}
+function liveRoute(L, msg) {   // сообщение пришло снизу: стример принимает, остальные пересылают выше
+  if (L.host) {
+    if (L.muted.has(msg.u) || Date.now() - (L.last.get(msg.u) || 0) < 1200) return;
+    L.last.set(msg.u, Date.now()); liveBroadcast(L, msg);
+  } else if (L.up?.dc?.readyState === 'open') L.up.dc.send(JSON.stringify({ t: 'm', id: msg.id, u: msg.u, x: msg.x }));
+}
+function liveBroadcast(L, msg) {
+  liveShow(L, msg);
+  L.kids.forEach(k => { if (k.dc?.readyState === 'open') try { k.dc.send(JSON.stringify({ t: 'b', ...msg })); } catch (e) { } });
+}
+function liveShow(L, msg) {
+  if (L.seenMsg.has(msg.id)) return; L.seenMsg.add(msg.id); if (L.seenMsg.size > 400) L.seenMsg.delete(L.seenMsg.values().next().value);
+  L.chat.push(msg); if (L.chat.length > 100) L.chat.shift();
+  ensureUsers([msg.u]);
+  const box = document.getElementById('liveMsgs');
+  if (box && S.view === 'live' && S.liveId === L.sid) {
+    const near = box.scrollHeight - box.scrollTop - box.clientHeight < 90;
+    box.insertAdjacentHTML('beforeend', liveMsgHtml(msg)); while (box.children.length > 100) box.firstChild.remove();
+    if (near) box.scrollTop = box.scrollHeight;
+  }
+}
+function liveSay(text) {
+  const L = LIVE, x = String(text || '').trim().slice(0, 200); if (!L || !x) return false;
+  if (Date.now() - (L.mine || 0) < 1200) { toast('Не так быстро — подождите секунду'); return false; }
+  L.mine = Date.now();
+  const msg = { id: rid(), u: uid(), x, ts: Date.now() };
+  if (L.host) { L.last.set(uid(), 0); liveBroadcast(L, msg); } else { liveShow(L, msg); liveRoute(L, msg); }
+  return true;
+}
+const liveMsgHtml = m => { const u = U(m.u); return `<div class="lv-m" data-u="${esc(m.u)}"><a href="#id/${esc(m.u)}" class="lv-n">${esc(u?.name || 'Гость')}</a> <span>${linkify(m.x)}</span>${LIVE?.host && m.u !== uid() ? `<button class="lv-mute" data-act="livemute" data-u="${esc(m.u)}" title="Заглушить" aria-label="Заглушить">🔇</button>` : ''}</div>`; };
+// сколько людей смотрит: каждый узел раз в 4 секунды присылает вверх список «кто в моей ветке», стример считает и рассылает число
+function liveTick(L) {
+  const set = new Set([uid()]); const now = Date.now();
+  L.kids.forEach(k => { if (now - k.presAt < 12000) k.pres.forEach(u => set.add(u)); });
+  if (L.host) {
+    L.count = set.size - 1; liveDom();
+    const m = JSON.stringify({ t: 'c', n: L.count }); L.kids.forEach(k => { if (k.dc?.readyState === 'open') try { k.dc.send(m); } catch (e) { } });
+  } else if (L.up?.dc?.readyState === 'open') try { L.up.dc.send(JSON.stringify({ t: 'p', u: [...set].slice(0, 400) })); } catch (e) { }
+}
+
+/* ---- стример ---- */
+function mixAudio(streams) {
+  const tr = streams.filter(Boolean).flatMap(s => s.getAudioTracks()); if (!tr.length) return null; if (tr.length === 1) return tr[0];
+  try { const ac = new (window.AudioContext || window.webkitAudioContext)(), dest = ac.createMediaStreamDestination(); tr.forEach(t => ac.createMediaStreamSource(new MediaStream([t])).connect(dest)); return dest.stream.getAudioTracks()[0]; } catch (e) { return tr[0]; }
+}
+async function liveStart(f) {
+  if (LIVE) { toast('Вы уже в эфире'); return; }
+  if (!liveCanCam()) { toast('Этот браузер не умеет эфиры — попробуйте Chrome или Safari'); return; }
+  let stream;
+  try {
+    if (f.mode === 'screen') {
+      const disp = await navigator.mediaDevices.getDisplayMedia({ video: { frameRate: 30 }, audio: true });
+      let mic = null; try { mic = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } }); } catch (e) { }
+      const a = mixAudio([disp, mic]);
+      stream = new MediaStream([...disp.getVideoTracks(), ...(a ? [a] : [])]);
+      disp.getVideoTracks()[0].addEventListener('ended', () => liveStop());
+    } else {
+      stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: f.facing || 'user', width: { ideal: 1280 }, height: { ideal: 720 }, frameRate: { ideal: 30 } }, audio: { echoCancellation: true, noiseSuppression: true } });
+    }
+  } catch (e) { console.error(e); toast(e?.name === 'NotAllowedError' ? 'Нет доступа к камере или экрану — разрешите его в браузере' : 'Не получилось включить ' + (f.mode === 'screen' ? 'экран' : 'камеру')); return; }
+  let ref;
+  try { ref = await addDoc(collection(db, 'streams'), { ownerId: uid(), title: f.title, mode: f.mode, live: true, beat: serverTimestamp(), createdAt: serverTimestamp(), endedAt: null }); }
+  catch (e) { stream.getTracks().forEach(t => t.stop()); toast(errText(e)); return; }
+  const L = LIVE = { sid: ref.id, host: true, title: f.title, mode: f.mode, stream, kids: new Map(), cap: LIVE_ROOT, depth: 0, up: null, chat: [], seenMsg: new Set(), seen: new Set(), muted: new Set(), last: new Map(), count: 0, status: 'live', unsubs: [], timers: [], dead: false, facing: f.facing || 'user', t0: Date.now() };
+  if (f.rec && typeof MediaRecorder !== 'undefined') {
+    const mime = ['video/webm;codecs=vp9,opus', 'video/webm;codecs=vp8,opus', 'video/webm', 'video/mp4'].find(m => MediaRecorder.isTypeSupported?.(m));
+    try { L.recChunks = []; L.rec = new MediaRecorder(stream, { ...(mime ? { mimeType: mime } : {}), videoBitsPerSecond: 900000, audioBitsPerSecond: 64000 }); L.rec.ondataavailable = e => { if (e.data?.size) L.recChunks.push(e.data); }; L.rec.start(2000); } catch (e) { console.warn(e); L.rec = null; }
+  }
+  liveListen(L); nodePut(L);
+  L.timers.push(setInterval(() => { updateDoc(doc(db, 'streams', L.sid), { beat: serverTimestamp() }).catch(() => { }); nodePut(L); }, 60000), setInterval(() => liveTick(L), 4000));
+  liveWake(true); S.liveForm = null; go('live/' + L.sid);
+}
+async function liveStop(silent) {
+  const L = LIVE; if (!L) return; LIVE = null; L.dead = true;
+  L.timers.forEach(clearInterval); clearTimeout(nodeTimer); L.unsubs.forEach(u => { try { u(); } catch (e) { } });
+  let rec = null;
+  if (L.rec && L.rec.state !== 'inactive') rec = await new Promise(res => { L.rec.onstop = () => res(new Blob(L.recChunks, { type: L.rec.mimeType || 'video/webm' })); try { L.rec.stop(); } catch (e) { res(null); } });
+  L.kids.forEach(k => { try { k.pc.close(); } catch (e) { } }); L.kids.clear();
+  try { L.up?.pc.close(); } catch (e) { }
+  if (L.host) L.stream?.getTracks().forEach(t => t.stop());
+  liveWake(false);
+  try {
+    if (L.host) {
+      await updateDoc(doc(db, 'streams', L.sid), { live: false, endedAt: serverTimestamp() });
+      for (const sub of ['peers', 'nodes']) { const s = await getDocs(collection(db, 'streams', L.sid, sub)); if (s.size) { const b = writeBatch(db); s.docs.slice(0, 450).forEach(d => b.delete(d.ref)); await b.commit(); } }
+    } else await nodeDel(L);
+  } catch (e) { console.error(e); }
+  if (rec && rec.size > 0) { S.liveRec = { blob: rec, url: URL.createObjectURL(rec), title: L.title, secs: Math.round((Date.now() - L.t0) / 1000) }; }
+  if (!silent) render();
+}
+
+/* ---- зритель ---- */
+async function liveJoin(sid) {
+  if (!liveCanCam()) { toast('Этот браузер не умеет смотреть эфиры'); return; }
+  if (LIVE?.sid === sid) return;
+  if (LIVE) await liveStop(true);
+  const L = LIVE = { sid, host: false, title: cache.stream?.title || '', mode: cache.stream?.mode || 'camera', stream: null, kids: new Map(), cap: 0, depth: 9, up: null, chat: [], seenMsg: new Set(), seen: new Set(), muted: new Set(), last: new Map(), count: 0, status: 'connecting', unsubs: [], timers: [], tried: new Set(), dead: false, t0: Date.now() };
+  L.timers.push(setInterval(() => liveTick(L), 4000), setInterval(() => nodePut(L), 60000));
+  liveWake(true); liveListen(L); render(); liveConnect(L, 0);
+}
+async function liveConnect(L, tries) {
+  if (L.dead) return;
+  L.status = 'connecting'; liveDom();
+  let nodes = []; try { nodes = (await getDocs(collection(db, 'streams', L.sid, 'nodes'))).docs.map(data); } catch (e) { }
+  const byUid = new Map(nodes.map(n => [n.uid, n])), under = n => { for (let i = 0, x = n; x && i < 12; i++, x = byUid.get(x.up)) if (x.up === uid()) return true; return false; };   // не цепляться к своим же потомкам
+  const cands = nodes.filter(n => n.uid !== uid() && n.free > 0 && Date.now() - ms(n.at) < LIVE_STALE && !L.tried.has(n.uid) && !under(n))
+    .sort((a, b) => a.depth - b.depth || Math.random() - 0.5).slice(0, 6);
+  for (const n of cands) { L.tried.add(n.uid); if (await liveTry(L, n)) return; if (L.dead) return; }
+  L.tried.clear();
+  if (tries >= 5) { L.status = 'failed'; liveDom(); return; }
+  setTimeout(() => liveConnect(L, tries + 1), 2500 + tries * 1500);
+}
+async function liveTry(L, n) {
+  const pc = new RTCPeerConnection(ICE), dc = pc.createDataChannel('chat'), stream = new MediaStream();
+  pc.addTransceiver('video', { direction: 'recvonly' }); pc.addTransceiver('audio', { direction: 'recvonly' });
+  pc.ontrack = e => { stream.addTrack(e.track); L.stream = stream; liveAttach(); };
+  let ref;
+  try {
+    await pc.setLocalDescription(await pc.createOffer()); await iceDone(pc);
+    ref = await addDoc(collection(db, 'streams', L.sid, 'peers'), { uid: uid(), to: n.uid, offer: pc.localDescription.sdp, createdAt: serverTimestamp() });
+  } catch (e) { console.error(e); try { pc.close(); } catch (x) { } return false; }
+  const ok = await new Promise(res => {
+    let done = false, unsub = () => { };
+    const fin = v => { if (done) return; done = true; unsub(); clearTimeout(tm); res(v); };
+    const tm = setTimeout(() => fin(false), 14000);
+    unsub = onSnapshot(ref, s => { const p = s.data(); if (!p) return; if (p.rej) fin(false); else if (p.answer && !pc.remoteDescription) pc.setRemoteDescription({ type: 'answer', sdp: p.answer }).catch(() => fin(false)); }, () => fin(false));
+    pc.onconnectionstatechange = () => { if (pc.connectionState === 'connected') fin(true); else if (pc.connectionState === 'failed') fin(false); };
+  });
+  deleteDoc(ref).catch(() => { });
+  if (!ok || L.dead) { try { pc.close(); } catch (e) { } if (!ok) L.stream = null; return false; }
+  const up = L.up = { pc, dc, uid: n.uid };
+  L.depth = n.depth + 1; L.cap = L.depth < LIVE_DEPTH ? LIVE_RELAY : 0; L.status = 'live'; L.stream = stream;
+  dc.onmessage = e => {
+    let m; try { m = JSON.parse(e.data); } catch (x) { return; }
+    if (m.t === 'b') { const msg = { id: String(m.id).slice(0, 16), u: String(m.u).slice(0, 40), x: String(m.x).slice(0, 200), ts: m.ts || Date.now() }; liveShow(L, msg); L.kids.forEach(k => { if (k.dc?.readyState === 'open') try { k.dc.send(e.data); } catch (x) { } }); }
+    else if (m.t === 'h') (m.list || []).forEach(x => liveShow(L, { id: String(x.id).slice(0, 16), u: String(x.u).slice(0, 40), x: String(x.x).slice(0, 200), ts: x.ts || Date.now() }));
+    else if (m.t === 'c') { L.count = Number(m.n) || 0; liveDom(); L.kids.forEach(k => { if (k.dc?.readyState === 'open') try { k.dc.send(e.data); } catch (x) { } }); }
+  };
+  const lost = () => { if (L.dead || L.up !== up) return; liveUpLost(L); };
+  pc.onconnectionstatechange = () => { const s = pc.connectionState; if (s === 'failed' || s === 'closed') lost(); else if (s === 'disconnected') setTimeout(() => { if (pc.connectionState !== 'connected') lost(); }, 6000); };
+  liveAttach(); liveDom(); nodePut(L); return true;
+}
+function liveUpLost(L) {
+  // потеряли того, от кого брали видео: отключаем тех, кто смотрит через нас (они переподключатся сами), и ищем нового
+  try { L.up?.pc.close(); } catch (e) { } L.up = null; L.stream = null; L.status = 'connecting'; L.depth = 9; L.cap = 0; L.tried.clear();
+  L.kids.forEach(k => { try { k.pc.close(); } catch (e) { } }); L.kids.clear(); nodeDel(L); liveDom(); liveConnect(L, 0);
+}
+function liveOnStream() {   // изменился документ эфира
+  const s = cache.stream, L = LIVE;
+  if (L && !L.host && s && s.id === L.sid && !s.missing && !s.live) { liveStop(true).then(() => { render(); }); }
+}
+
+/* ---- экран ---- */
+function liveAttach() {
+  const v = document.getElementById('liveVid'), L = LIVE; if (!v || !L?.stream || S.liveId !== L.sid) return;
+  if (v.srcObject !== L.stream) { v.srcObject = L.stream; v.muted = !!L.host; }
+  v.play().catch(() => { v.muted = true; v.play().catch(() => { }); const h = document.getElementById('liveSound'); if (h) h.hidden = false; });
+}
+function liveDom() {   // мелкие обновления без перерисовки страницы
+  const L = LIVE;
+  const c = document.getElementById('liveCount'); if (c) c.textContent = '👁 ' + (L ? L.count : 0);
+  const o = document.getElementById('liveOver'); if (o && L) { const t = L.status === 'connecting' ? 'Подключаемся…' : L.status === 'failed' ? 'Не получилось подключиться' : ''; o.hidden = !t; if (t) o.querySelector('span').textContent = t; const r = o.querySelector('button'); if (r) r.hidden = L.status !== 'failed'; }
+  const m = document.getElementById('liveMiniCount'); if (m && L) m.textContent = '👁 ' + L.count;
+}
+function liveBar() {
+  const L = LIVE; if (!L || (S.view === 'live' && S.liveId === L.sid)) return '';
+  return `<div class="live-mini" role="status"><span class="live-dot"></span><a class="grow" href="#live/${esc(L.sid)}"><b>${L.host ? 'Вы в эфире' : 'Вы смотрите эфир'}</b> · ${esc(L.title || 'эфир')}</a><span class="small" id="liveMiniCount">👁 ${L.count}</span>
+    <button class="btn small ${L.host ? 'danger' : 'sec'}" data-act="livestop">${L.host ? 'Завершить' : 'Выйти'}</button></div>`;
+}
+function viewLive() {
+  if (!S.liveId) return viewLiveList();
+  const s = cache.stream, L = LIVE && LIVE.sid === S.liveId ? LIVE : null;
+  if (!s) return loadingBox();
+  if (s.missing) return `<div class="card empty"><b>Эфир удалён</b><a class="btn sec" href="#live">Все эфиры</a></div>`;
+  const host = U(s.ownerId), mine = s.ownerId === S.me.id, live = L ? true : liveFresh(s);
+  if (!live && !L) return `<div class="card pad live-end"><div class="row">${host ? avatar(host, 44) : ''}<div class="grow"><h1 class="h">${esc(s.title)}</h1><div class="muted small">${host ? esc(host.name) + ' · ' : ''}эфир закончился</div></div></div>
+      ${mine && s.live ? `<p class="muted small">Эфир прервался (закрыта вкладка). <button class="btn small" data-act="liveclose" data-id="${esc(s.id)}">Завершить</button></p>` : ''}
+      <a class="btn sec" href="#live">Все эфиры</a></div>`;
+  const status = L ? (L.status === 'connecting' ? 'Подключаемся…' : L.status === 'failed' ? 'Не получилось подключиться' : '') : '';
+  return `<section class="live-room"><div class="live-stage" id="liveStage">
+      <video id="liveVid" playsinline autoplay ${L?.host ? 'muted' : ''}></video>
+      <span class="live-badge"><span class="live-dot"></span>В ЭФИРЕ</span><span class="live-count" id="liveCount">👁 ${L ? L.count : 0}</span>
+      ${L ? `<div class="live-over" id="liveOver" ${status ? '' : 'hidden'}><span>${status}</span><button class="btn small" data-act="livetry" ${L.status === 'failed' ? '' : 'hidden'}>Повторить</button></div>`
+        : `<div class="live-over" id="liveOver"><button class="live-go" data-act="livejoin" data-id="${esc(s.id)}" aria-label="Смотреть эфир">${I.play}<span>Смотреть</span></button></div>`}
+      <button class="live-sound" id="liveSound" data-act="livesound" hidden>🔇 Включить звук</button>
+      <button class="live-fs" data-act="livefs" aria-label="На весь экран">⛶</button></div>
+    <div class="card pad live-info"><div class="row">${host ? avatar(host, 44) : ''}<div class="grow" style="min-width:0"><h1 class="h live-title">${esc(s.title)}</h1><div class="muted small">${host ? `<a href="#id/${esc(host.id)}">${esc(host.name)}</a> · ` : ''}${s.mode === 'screen' ? 'показ экрана' : 'камера'}</div></div></div>
+      ${L ? `<div class="row live-ctl">${L.host ? `<button class="btn sec" data-act="livemic">${L.micOff ? '🎙 Включить микрофон' : '🎤 Выключить микрофон'}</button>${s.mode === 'camera' && L.stream?.getVideoTracks().length ? `<button class="btn sec" data-act="liveflip">🔄 Камера</button>` : ''}` : ''}
+        <span class="grow"></span><button class="btn ${L.host ? 'danger' : 'ghost'}" data-act="livestop">${L.host ? (S.confirm === 'livestop' ? 'Точно завершить?' : 'Завершить эфир') : 'Выйти'}</button></div>` : ''}</div>
+    <div class="card live-chat"><div class="live-msgs" id="liveMsgs">${(L?.chat || []).map(liveMsgHtml).join('') || ''}</div>
+      ${L && !banOf(S.me) ? `<form class="live-form" data-form="livechat"><input id="liveIn" maxlength="200" autocomplete="off" placeholder="Написать в чат"><button class="btn" type="submit" aria-label="Отправить">➤</button></form>` : `<div class="live-form muted small" style="padding:12px 14px">${L ? '' : 'Нажмите «Смотреть», чтобы войти в чат'}</div>`}</div></section>`;
+}
+function viewLiveList() {
+  const list = (cache.streams || []).filter(liveFresh).sort((a, b) => ms(b.createdAt) - ms(a.createdAt));
+  const can = liveCanCam() && !banOf(S.me);
+  return `<div class="card pad"><div class="row" style="flex-wrap:wrap"><div class="grow"><h1 class="h brandh">ВС Эфир</h1><div class="muted small">Прямые эфиры прямо из браузера — с камеры или с экрана</div></div>
+      ${can ? `<button class="btn" data-act="liveform">🔴 Начать эфир</button>` : ''}</div>
+      ${LIVE ? `<div class="small" style="margin-top:10px"><a href="#live/${esc(LIVE.sid)}">${LIVE.host ? 'Ваш эфир идёт — вернуться' : 'Вы смотрите эфир — вернуться'}</a></div>` : ''}</div>
+    ${S.loading ? loadingBox() : list.length ? `<div class="live-grid">${list.map(s => { const h = U(s.ownerId);
+      return `<a class="card live-card" href="#live/${esc(s.id)}"><span class="live-card-ic">${s.mode === 'screen' ? '🖥' : '📹'}</span><span class="live-badge sm"><span class="live-dot"></span>LIVE</span>
+        <b>${esc(s.title)}</b><span class="muted small">${h ? esc(h.name) : ''}${s.ownerId === S.me.id ? ' · это вы' : ''}</span></a>`; }).join('')}</div>`
+      : `<div class="card empty"><b>Сейчас никто не в эфире</b><span>${can ? 'Начните первым — нажмите «Начать эфир»' : ''}</span></div>`}`;
+}
+function liveFormModal() {
+  const f = S.liveForm, scr = liveCanScreen();
+  return `<div class="ov" data-act="liveformx"><div class="ov-in modal live-modal" data-stop="1"><div class="row"><b class="grow h">Начать эфир</b><button class="icon-btn" data-act="liveformx" aria-label="Закрыть">✕</button></div>
+    <form class="form" data-form="livestart">
+      <div class="field"><label for="lvTitle">Название</label><input id="lvTitle" required minlength="2" maxlength="100" placeholder="Например, «Играем в Майнкрафт»" value="${esc(f.title || '')}"></div>
+      <div class="field"><label>Что показываем</label><div class="seg" role="radiogroup">
+        <button type="button" role="radio" aria-checked="${f.mode === 'camera'}" class="${f.mode === 'camera' ? 'on' : ''}" data-act="livemode" data-v="camera">📹 Камера</button>
+        <button type="button" role="radio" aria-checked="${f.mode === 'screen'}" class="${f.mode === 'screen' ? 'on' : ''}" data-act="livemode" data-v="screen" ${scr ? '' : 'disabled'}>🖥 Экран</button></div>
+        ${scr ? '' : '<div class="hint">Показ экрана работает только на компьютере. С телефона — камера.</div>'}</div>
+      ${f.mode === 'camera' ? `<div class="field"><label>Камера</label><div class="seg"><button type="button" class="${f.facing === 'user' ? 'on' : ''}" data-act="livefacing" data-v="user">Фронтальная</button><button type="button" class="${f.facing === 'environment' ? 'on' : ''}" data-act="livefacing" data-v="environment">Основная</button></div></div>` : ''}
+      <button type="button" class="fs-row live-rec" data-act="liverec"><span class="grow"><b>Записывать эфир</b><span class="small muted">Запись сохранится у вас на устройстве, а до 20 МБ (около 3 минут) можно выложить в ВС Видео</span></span><span class="fs-sw ${f.rec ? 'on' : ''}"></span></button>
+      <p class="hint" style="margin:0">Эфир идёт напрямую между устройствами — вкладку нужно держать открытой. Зрителей передаёт друг другу цепочкой: чем больше смотрят, тем легче вам.</p>
+      <div class="row"><button class="btn" type="submit">🔴 В эфир</button><button type="button" class="btn ghost" data-act="liveformx">Отмена</button></div></form></div></div>`;
+}
+function liveRecModal() {
+  const r = S.liveRec, mb = r.blob.size / 1048576, fits = r.blob.size <= LIMITS.video;
+  return `<div class="ov" data-act="liverecx"><div class="ov-in modal live-modal" data-stop="1"><div class="row"><b class="grow h">Запись эфира готова</b><button class="icon-btn" data-act="liverecx" aria-label="Закрыть">✕</button></div>
+    <video class="live-recv" src="${esc(r.url)}" controls playsinline></video>
+    <p class="muted small" style="margin:0">«${esc(r.title)}» · ${fmtDur(r.secs)} · ${mb.toFixed(1)} МБ</p>
+    <div class="row" style="flex-wrap:wrap"><button class="btn" data-act="livesave">⬇ Сохранить на устройство</button>
+      ${fits ? `<button class="btn sec" data-act="livepub" ${S.busy ? 'disabled' : ''}>Выложить в ВС Видео</button>` : `<span class="hint" style="margin:0">В ВС Видео не влезает (больше ${fmtSize(LIMITS.video)}) — сохраните на устройство</span>`}</div></div></div>`;
+}
+async function livePublish() {
+  const r = S.liveRec; if (!r || S.busy) return; S.busy = true; render();
+  try {
+    const ext = /mp4/.test(r.blob.type) ? 'mp4' : 'webm', file = new File([r.blob], `эфир.${ext}`, { type: r.blob.type || 'video/webm' });
+    const fileId = await putFile(file, 'video', 'Загружаем запись эфира');
+    await addDoc(collection(db, 'videos'), { ownerId: uid(), title: ('Эфир: ' + r.title).slice(0, 120), description: 'Запись прямого эфира', source: 'file', fileId, type: file.type, thumb: '', duration: r.secs, size: file.size, likes: [], createdAt: serverTimestamp() });
+    URL.revokeObjectURL(r.url); S.liveRec = null; toast('Запись выложена в ВС Видео'); go('video');
+  } catch (e) { toast(errText(e)); } finally { S.busy = false; render(); }
+}
+// плашка «в эфире сейчас» в ленте
+async function loadLiveNow() {
+  try { const s = await getDocs(query(collection(db, 'streams'), where('live', '==', true), limit(10))); cache.liveNow = s.docs.map(data).filter(liveFresh); ensureUsers(cache.liveNow.map(x => x.ownerId)); if (S.view === 'feed') render(); } catch (e) { }
+}
+function liveNowCard() {
+  const l = cache.liveNow || []; if (!l.length) return '';
+  return `<div class="card live-now"><span class="live-badge sm"><span class="live-dot"></span>В ЭФИРЕ</span>${l.slice(0, 3).map(s => { const h = U(s.ownerId); return `<a href="#live/${esc(s.id)}"><b>${esc(s.title)}</b><span class="muted small">${h ? esc(h.name) : ''}</span></a>`; }).join('')}${l.length > 3 ? '<a href="#live"><b>Ещё…</b></a>' : ''}</div>`;
+}
+// если вкладка с эфиром была закрыта и эфир «завис», хозяин закрывает его при следующем заходе
+async function liveCleanStale() {
+  for (const s of cache.streams || []) if (s.ownerId === uid() && s.live && !liveFresh(s) && LIVE?.sid !== s.id) updateDoc(doc(db, 'streams', s.id), { live: false, endedAt: serverTimestamp() }).catch(() => { });
+}
+window.addEventListener('pagehide', () => { const L = LIVE; if (!L) return; nodeDel(L); if (L.host) updateDoc(doc(db, 'streams', L.sid), { live: false, endedAt: serverTimestamp() }).catch(() => { }); });
+
 /* ---------- ВС Радио ---------- */
 const RADIO = [
   { id: 'record', title: 'Радио Record', artist: 'Танцевальная музыка', url: 'https://radiorecord.hostingradio.ru/rr_main96.aacp', c: '#F2994A' },
@@ -4255,7 +4601,7 @@ function viewFeed() {
   const recapCard = lsGet('vs_recap_seen') === recapMonth() ? '' : `<div class="card recap-card"><button class="recap-open" data-act="recap"><span class="recap-ico">✨</span>
     <span class="grow"><b>Твои итоги в VСмске готовы</b><span class="small">Лайки, лучшая запись, главный фанат — смотри как в Wrapped</span></span><span class="recap-go">Смотреть</span></button>
     <button class="icon-btn recap-hide" data-act="recaphide" aria-label="Скрыть">✕</button></div>`;
-  return `${storiesBar()}${recapCard}${bdays.length ? `<div class="card pad bday-card"><b>🎂 Сегодня день рождения</b>
+  return `${storiesBar()}${liveNowCard()}${recapCard}${bdays.length ? `<div class="card pad bday-card"><b>🎂 Сегодня день рождения</b>
       ${bdays.map(u => `<div class="row">${avatar(u, 36)}<span class="grow">${nameLink(u)}</span><a class="btn sec small" href="#im/${esc(u.id)}">Поздравить</a></div>`).join('')}</div>` : ''}
   ${MD() ? `<button class="md-prompt" data-act="mdcompose">${avatar(S.me, 40, false)}<span>Что у вас нового?</span>${I.photo}</button>` : composer(S.me.id, 'Что у вас нового?')}
   <div class="card"><div class="tabs">${tab('friends', 'Друзья')}${tab('top', '🔥 Популярное')}${tab('all', 'Все записи')}</div></div>
@@ -4725,7 +5071,7 @@ document.addEventListener('click', async e => {
   const stop = e.target.closest('[data-stop]'); if (stop && !stop.contains(b)) return;
   const { act, id } = b.dataset;
   const twoStep = key => { if (S.confirm === key) { S.confirm = null; return true; } S.confirm = key; render(); return false; };
-  if (!['statclear', 'pldel', 'nickdel', 'delpost', 'unfriend', 'delvideo', 'delalbum', 'delfile', 'delphoto', 'delmsg', 'postmenu', 'block', 'rpost', 'profmenu', 'roomdel', 'roominfo', 'storydel', 'qdel', 'maildel', 'notedel', 'lotdel', 'tdel', 'evdel'].includes(act)) S.confirm = null;
+  if (!['livestop', 'statclear', 'pldel', 'nickdel', 'delpost', 'unfriend', 'delvideo', 'delalbum', 'delfile', 'delphoto', 'delmsg', 'postmenu', 'block', 'rpost', 'profmenu', 'roomdel', 'roominfo', 'storydel', 'qdel', 'maildel', 'notedel', 'lotdel', 'tdel', 'evdel'].includes(act)) S.confirm = null;
   if (!['selmsg', 'delmsg', 'replymsg', 'playvoice', 'fwdmsg', 'editmsg'].includes(act)) S.msgSel = null;
   if (!['profmenu', 'block', 'modopen', 'ban', 'unban', 'report', 'qr'].includes(act)) S.profMenu = false;
   if (!['postmenu', 'delpost', 'pinpost'].includes(act)) S.postMenu = null;
@@ -4942,6 +5288,27 @@ document.addEventListener('click', async e => {
         player.queue = [{ ...st, radio: true }]; playAt(0); break;
       }
       case 'sign': S.sign = b.dataset.s; render(); break;
+      case 'liveform': S.liveForm = { mode: liveCanScreen() ? 'screen' : 'camera', facing: 'user', rec: false, title: '' }; render(); setTimeout(() => document.getElementById('lvTitle')?.focus(), 60); break;
+      case 'liveformx': S.liveForm = null; render(); break;
+      case 'livemode': case 'livefacing': case 'liverec': { const f = S.liveForm; if (!f) break; f.title = document.getElementById('lvTitle')?.value ?? f.title;
+        if (act === 'livemode') f.mode = b.dataset.v; else if (act === 'livefacing') f.facing = b.dataset.v; else f.rec = !f.rec; render(); break; }
+      case 'livejoin': await liveJoin(id); break;
+      case 'livetry': if (LIVE) { LIVE.tried?.clear(); liveConnect(LIVE, 0); } break;
+      case 'livestop': { const host = LIVE?.host; if (host && !twoStep('livestop')) return; await liveStop(); if (S.view !== 'live' || !S.liveId) render(); break; }
+      case 'liveclose': await updateDoc(doc(db, 'streams', id), { live: false, endedAt: serverTimestamp() }).catch(e => toast(errText(e))); break;
+      case 'livemic': { const L = LIVE; if (!L?.stream) break; L.micOff = !L.micOff; L.stream.getAudioTracks().forEach(t => { t.enabled = !L.micOff; }); render(); break; }
+      case 'liveflip': { const L = LIVE; if (!L?.host || L.mode !== 'camera') break; const next = L.facing === 'user' ? 'environment' : 'user';
+        try { const ns = await navigator.mediaDevices.getUserMedia({ video: { facingMode: next, width: { ideal: 1280 }, height: { ideal: 720 } } }), nt = ns.getVideoTracks()[0], old = L.stream.getVideoTracks()[0];
+          L.stream.addTrack(nt); L.stream.removeTrack(old); old.stop(); L.facing = next;
+          L.kids.forEach(k => k.pc.getSenders().forEach(sn => { if (sn.track?.kind === 'video') sn.replaceTrack(nt).catch(() => { }); }));
+          const v = document.getElementById('liveVid'); if (v) v.srcObject = L.stream; }
+        catch (e) { toast('Не получилось переключить камеру'); } break; }
+      case 'livefs': { const st = document.getElementById('liveStage'), v = document.getElementById('liveVid'); (st?.requestFullscreen || st?.webkitRequestFullscreen)?.call(st); if (!document.fullscreenEnabled && v?.webkitEnterFullscreen) v.webkitEnterFullscreen(); break; }
+      case 'livesound': { const v = document.getElementById('liveVid'); if (v) { v.muted = false; v.play().catch(() => { }); } b.hidden = true; break; }
+      case 'livemute': if (LIVE?.host) { LIVE.muted.add(b.dataset.u); toast('Участник заглушён до конца эфира'); } break;
+      case 'liverecx': if (S.liveRec) URL.revokeObjectURL(S.liveRec.url); S.liveRec = null; render(); break;
+      case 'livesave': { const r = S.liveRec; if (!r) break; const a = document.createElement('a'); a.href = r.url; a.download = ('Эфир ' + r.title).replace(/[\\/:*?"<>|]+/g, ' ').slice(0, 100) + (/mp4/.test(r.blob.type) ? '.mp4' : '.webm'); document.body.append(a); a.click(); a.remove(); break; }
+      case 'livepub': await livePublish(); break;
       case 'tmtab': case 'tmgo': case 'tmlap': case 'tmreset': case 'tmset': case 'tmcustom': case 'tmskip': tmAction(act, b); break;
       case 'calck': case 'calcc': case 'calcbs': case 'calceq': case 'calcneg': case 'calcsqrt': calcAction(act, b.dataset.v); break;
       case 'calch': { const h = calcHist()[Number(b.dataset.i)]; if (h) { S.calc = { e: h.r.replace(',', '.').replace(/[^0-9.\-e]/g, ''), last: h.e + ' =', done: true }; render(); } break; }
@@ -5552,6 +5919,8 @@ document.addEventListener('submit', async e => {
   const clear = id => { const el = document.getElementById(id); if (el) el.value = ''; resetIds.add(id); };
   try {
     switch (f.dataset.form) {
+      case 'livestart': { const f = S.liveForm; if (!f) break; await liveStart({ title: v('lvTitle'), mode: f.mode, facing: f.facing, rec: f.rec }); break; }
+      case 'livechat': { if (liveSay(v('liveIn'))) clear('liveIn'); document.getElementById('liveIn')?.focus(); break; }
       case 'login':
         S.authBusy = true; S.authError = ''; render();
         try { await signInWithEmailAndPassword(auth, v('aEmail'), document.getElementById('aPass').value); }

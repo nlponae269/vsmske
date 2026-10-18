@@ -5,7 +5,7 @@ import { test, before, after, beforeEach } from 'node:test';
 import { readFileSync } from 'node:fs';
 import { initializeTestEnvironment, assertSucceeds, assertFails } from '@firebase/rules-unit-testing';
 import {
-  doc, collection, setDoc, getDoc, updateDoc, deleteDoc, writeBatch,
+  doc, collection, setDoc, getDoc, getDocs, updateDoc, deleteDoc, writeBatch,
   serverTimestamp, arrayUnion, arrayRemove, increment, Timestamp, deleteField
 } from 'firebase/firestore';
 
@@ -711,4 +711,66 @@ test('6.3: без входа не читается и не пишется то, 
   await assertFails(deleteDoc(doc(f, 'videos', 'v1')));
   await assertFails(deleteDoc(doc(f, 'albums', 'al1')));
   await assertFails(setDoc(doc(collection(f, 'groups')), { name: 'x', about: '', photo: '', cover: 'blue', ownerId: A, admins: [A], membersCount: 1, createdAt: serverTimestamp() }));
+});
+
+/* ---------- 6.8: ВС Эфир ---------- */
+const stream = (o = {}) => ({ ownerId: A, title: 'Мой эфир', mode: 'camera', live: true, beat: serverTimestamp(), createdAt: serverTimestamp(), endedAt: null, ...o });
+test('6.8: эфир создаёт и завершает только хозяин, читают все вошедшие', async () => {
+  const s = doc(collection(db(A), 'streams'));
+  await assertSucceeds(setDoc(s, stream()));
+  await assertFails(setDoc(doc(collection(db(A), 'streams')), stream({ ownerId: B })));          // чужим именем
+  await assertFails(setDoc(doc(collection(db(A), 'streams')), stream({ title: 'я' })));          // короткое название
+  await assertFails(setDoc(doc(collection(db(A), 'streams')), stream({ mode: 'rtmp' })));        // неизвестный режим
+  await assertFails(setDoc(doc(collection(db(A), 'streams')), stream({ live: false })));         // начинается сразу в эфире
+  await assertFails(setDoc(doc(collection(db(A), 'streams')), { ...stream(), views: 5 }));       // лишнее поле
+  await assertSucceeds(getDoc(doc(db(B), 'streams', s.id)));
+  await assertFails(getDoc(doc(anon(), 'streams', s.id)));
+  await assertSucceeds(updateDoc(doc(db(A), 'streams', s.id), { beat: serverTimestamp() }));
+  await assertFails(updateDoc(doc(db(A), 'streams', s.id), { beat: Timestamp.fromMillis(1) }));   // «пульс» только серверным временем
+  await assertFails(updateDoc(doc(db(A), 'streams', s.id), { ownerId: B }));
+  await assertFails(updateDoc(doc(db(B), 'streams', s.id), { live: false }));
+  await assertSucceeds(updateDoc(doc(db(A), 'streams', s.id), { live: false, endedAt: serverTimestamp() }));
+  await assertFails(deleteDoc(doc(db(B), 'streams', s.id)));
+  await assertSucceeds(deleteDoc(doc(db(A), 'streams', s.id)));
+});
+test('6.8: заявки зрителей: offer пишет зритель, answer — только тот, кому адресовано', async () => {
+  const s = doc(collection(db(A), 'streams')); await assertSucceeds(setDoc(s, stream()));
+  const sdp = 'v=0\r\n' + 'a=x\r\n'.repeat(10);
+  const peer = doc(collection(db(B), 'streams', s.id, 'peers'));
+  await assertSucceeds(setDoc(peer, { uid: B, to: A, offer: sdp, createdAt: serverTimestamp() }));
+  await assertFails(setDoc(doc(collection(db(B), 'streams', s.id, 'peers')), { uid: C, to: A, offer: sdp, createdAt: serverTimestamp() }));   // чужим именем
+  await assertFails(setDoc(doc(collection(db(B), 'streams', s.id, 'peers')), { uid: B, to: A, offer: 'x', createdAt: serverTimestamp() }));    // слишком короткий
+  await assertFails(setDoc(doc(collection(db(B), 'streams', s.id, 'peers')), { uid: B, to: A, offer: sdp, createdAt: serverTimestamp(), answer: sdp }));
+  await assertSucceeds(getDoc(doc(db(A), 'streams', s.id, 'peers', peer.id)));        // тот, кому адресовано
+  await assertSucceeds(getDoc(doc(db(B), 'streams', s.id, 'peers', peer.id)));        // автор
+  await assertFails(getDoc(doc(db(C), 'streams', s.id, 'peers', peer.id)));           // посторонний
+  await assertFails(getDocs(collection(db(C), 'streams', s.id, 'peers')));            // посторонний не перечислит заявки
+  await assertSucceeds(getDocs(collection(db(A), 'streams', s.id, 'peers')));         // хозяин эфира — может (подчистка)
+  await assertFails(updateDoc(doc(db(B), 'streams', s.id, 'peers', peer.id), { answer: sdp }));   // зритель не может ответить сам себе
+  await assertFails(updateDoc(doc(db(C), 'streams', s.id, 'peers', peer.id), { answer: sdp }));
+  await assertFails(updateDoc(doc(db(A), 'streams', s.id, 'peers', peer.id), { answer: 'x'.repeat(16001) }));
+  await assertFails(updateDoc(doc(db(A), 'streams', s.id, 'peers', peer.id), { uid: C }));
+  await assertSucceeds(updateDoc(doc(db(A), 'streams', s.id, 'peers', peer.id), { answer: sdp }));
+  await assertFails(deleteDoc(doc(db(C), 'streams', s.id, 'peers', peer.id)));
+  await assertSucceeds(deleteDoc(doc(db(B), 'streams', s.id, 'peers', peer.id)));
+  // отказ вместо ответа
+  const p2 = doc(collection(db(B), 'streams', s.id, 'peers')); await assertSucceeds(setDoc(p2, { uid: B, to: C, offer: sdp, createdAt: serverTimestamp() }));
+  await assertSucceeds(updateDoc(doc(db(C), 'streams', s.id, 'peers', p2.id), { rej: true }));
+  await assertFails(updateDoc(doc(db(C), 'streams', s.id, 'peers', p2.id), { rej: false }));
+  // хозяин эфира подчищает всё
+  await assertSucceeds(deleteDoc(doc(db(A), 'streams', s.id, 'peers', p2.id)));
+});
+test('6.8: узлы цепочки пишет и стирает только сам участник (или хозяин эфира)', async () => {
+  const s = doc(collection(db(A), 'streams')); await assertSucceeds(setDoc(s, stream()));
+  const node = (u, o = {}) => ({ uid: u, depth: 1, free: 2, up: A, at: serverTimestamp(), ...o });
+  await assertSucceeds(setDoc(doc(db(B), 'streams', s.id, 'nodes', B), node(B)));
+  await assertSucceeds(setDoc(doc(db(B), 'streams', s.id, 'nodes', B), node(B, { free: 1 })));
+  await assertFails(setDoc(doc(db(B), 'streams', s.id, 'nodes', C), node(C)));                // за другого
+  await assertFails(setDoc(doc(db(B), 'streams', s.id, 'nodes', B), node(B, { depth: 99 })));
+  await assertFails(setDoc(doc(db(B), 'streams', s.id, 'nodes', B), node(B, { free: 'много' })));
+  await assertFails(setDoc(doc(db(B), 'streams', s.id, 'nodes', B), { ...node(B), x: 1 }));
+  await assertSucceeds(getDoc(doc(db(C), 'streams', s.id, 'nodes', B)));
+  await assertFails(deleteDoc(doc(db(C), 'streams', s.id, 'nodes', B)));
+  await assertSucceeds(deleteDoc(doc(db(A), 'streams', s.id, 'nodes', B)));                   // хозяин эфира
+  await assertFails(setDoc(doc(anon(), 'streams', s.id, 'nodes', B), node(B)));
 });

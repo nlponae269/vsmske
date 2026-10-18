@@ -76,5 +76,5 @@ if adm: text = re.sub(r':if ' + signed + r'\(\)&&(?=' + adm.group(1) + r'\(\)(&&
 text = text.rstrip('\n') + '\n'
 (root / 'firestore.min.rules').write_text(text, encoding='utf-8')
 print(f'{len(src)} → {len(text)} символов, {text.count(chr(10))} строк')
-if len(text) > 19000:
-    sys.exit('Слишком длинно для вставки с телефона (нужно меньше 19 000 символов)')
+if len(text) > 19600:
+    sys.exit('Слишком длинно для вставки с телефона (нужно меньше 19 600 символов; предел вставки с телефона — 20 000)')
