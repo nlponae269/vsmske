@@ -47,7 +47,7 @@ const MAX_POST_IMG = 700000;   // символов dataURL (~520 КБ), лими
 const MAX_AVATAR = 120000;
 const CHUNK = 700000;                                   // символов base64 в одном куске (кратно 4)
 const LIMITS = { disk: 10 * 1024 * 1024, video: 20 * 1024 * 1024, music: 12 * 1024 * 1024 };
-const VERSION = '6.6';
+const VERSION = '6.7';
 const MAX_MSG_IMG = 380000;    // фото в сообщении
 const ONLINE_MS = 5 * 60 * 1000; // «в сети», если заходил не раньше 5 минут назад
 
@@ -1251,19 +1251,19 @@ function navHtml() {
   const groups = { video: ['video', 'watch'], albums: ['albums', 'album'], clubs: ['clubs', 'club'], apps: ['apps', 'answers', 'question', 'mail', 'notes', 'weather', 'games', 'market', 'lot', 'events', 'event', 'rates', 'radio', 'horo', 'timer', 'calc', 'dice'], music: ['music'] };
   const on = v => (groups[v] ? groups[v].includes(S.view) : S.view === v) && (v !== 'profile' || S.profileId === me.id) ? 'on' : '';
   const nav = (v, href, icon, label, badge = 0, cls = '') => `<a class="navlink ${on(v)} ${cls}" href="#${href}">${icon}<span>${label}</span>${badge ? `<span class="badge">${badge}</span>` : ''}</a>`;
-  const moreOn = ['more', 'profile', 'people', 'albums', 'album', 'disk', 'vid', 'settings', 'edit', 'notif', 'post', 'clubs', 'club', 'admin', 'guests', 'tag', 'apps', 'answers', 'question', 'mail', 'notes', 'weather', 'games', 'market', 'lot', 'music', 'saved', 'events', 'event', 'rates', 'radio', 'horo', 'timer', 'calc', 'dice'].includes(S.view) ? 'on' : '';
+  const moreOn = ['more', 'profile', 'people', 'albums', 'album', 'disk', 'vid', 'settings', 'edit', 'notif', 'post', 'clubs', 'club', 'admin', 'guests', 'tag', 'apps', 'answers', 'question', 'mail', 'notes', 'weather', 'games', 'market', 'lot', 'saved', 'video', 'watch', 'events', 'event', 'rates', 'radio', 'horo', 'timer', 'calc', 'dice'].includes(S.view) ? 'on' : '';
   return `<nav class="nav"><i class="lg" aria-hidden="true"></i>
       ${nav('profile', 'id/' + me.id, I.home, 'Профиль', 0, 'm-hide')}
       ${nav('feed', 'feed', I.feed, 'Лента')}
+      ${nav('music', 'music', I.music, 'Музыка')}
       ${nav('messages', 'im', I.msg, 'Чаты', unread)}
       ${nav('friends', 'friends', I.friends, 'Друзья', reqs)}
       ${nav('notif', 'notif', I.bell, 'Сигналы', unseenNotifs(), 'm-hide')}
       ${nav('saved', 'saved', I.bookmark, 'Закладки', 0, 'm-hide')}
       ${nav('people', 'people', I.people, 'Люди', 0, 'm-hide')}
       ${nav('apps', 'apps', I.apps, 'Сервисы', unreadMail(), 'm-hide')}
-      ${nav('music', 'music', I.music, 'Музыка', 0, 'm-hide')}
       ${nav('clubs', 'clubs', I.club, 'Клубы', 0, 'm-hide')}
-      ${nav('video', 'video', I.video, 'Видео')}
+      ${nav('video', 'video', I.video, 'Видео', 0, 'm-hide')}
       ${nav('albums', 'albums', I.album, 'Альбомы', 0, 'm-hide')}
       ${nav('disk', 'disk', I.disk, 'Диск', 0, 'm-hide')}
       <a class="navlink m-only ${moreOn}" href="#more">${I.more}<span>Ещё</span></a>
@@ -1360,7 +1360,7 @@ function mdShell(me, main, up) {
   const n = x => x > 99 ? '99+' : x;
   const dest = (href, icon, label, cls, badge = 0) => `<a class="md-dest ${cls}" href="#${href}"><span class="md-ind">${icon}${badge ? `<span class="badge">${n(badge)}</span>` : ''}</span><span class="md-lbl">${label}</span></a>`;
   const unread = cache.chats.filter(isUnread).length, reqs = cache.incoming.length, sig = unseenNotifs();
-  const prim = dest('feed', I.feed, 'Лента', on('feed')) + dest('im', I.msg, 'Чаты', on('messages'), unread)
+  const prim = dest('feed', I.feed, 'Лента', on('feed')) + dest('music', I.music, 'Музыка', on('music')) + dest('im', I.msg, 'Чаты', on('messages'), unread)
     + dest('friends', I.friends, 'Друзья', on('friends', 'people'), reqs) + dest('notif', I.bell, 'Сигналы', on('notif'), sig);
   const menuBtn = `<button class="md-dest ${S.drawer ? 'on' : ''}" data-act="mddrawer" aria-label="Все разделы"><span class="md-ind">${I.more}</span><span class="md-lbl">Меню</span></button>`;
   const fabOn = ['feed', 'profile', 'tag', 'saved'].includes(v) && !banOf(me);
@@ -1369,7 +1369,7 @@ function mdShell(me, main, up) {
   return `<div class="md-app">
   <aside class="md-rail" aria-label="Разделы">
     ${banOf(me) ? '<span class="md-fab off"></span>' : `<button class="md-fab" data-act="mdcompose" aria-label="Новая запись">${I.pen}</button>`}
-    ${prim}${dest('music', I.music, 'Музыка', on('music'))}${dest('apps', I.apps, 'Сервисы', on(...MD_APPS), unreadMail())}
+    ${prim}${dest('apps', I.apps, 'Сервисы', on(...MD_APPS), unreadMail())}
     <span class="md-sp"></span>${menuBtn}
   </aside>
   <header class="md-top">
@@ -2654,8 +2654,10 @@ function fullPlayer() {
   const showLyrics = S.fpLyrics && !t.radio;
   const apStyle = showLyrics && !S.lyrEdit && lyrStyle() !== 'ya' && lyr.lines.length > 0;
   const pal = coverPalette(t), view = showLyrics ? 'lyrics' : S.fpMode || 'cover';
+  // 6.7: сверху — переключатель «Трек · Текст · Очередь»
+  const tab = (v, l, dis = false) => `<button role="tab" aria-selected="${view === v}" class="${view === v ? 'on' : ''}" data-act="fpview" data-v="${v}" ${dis ? 'disabled' : ''}>${l}</button>`;
   const head = `<div class="fp-top"><button class="icon-btn fp-x" data-act="fpclose" aria-label="Свернуть плеер">${I.down}</button>
-      <div class="fp-from"><span>${t.radio ? 'ВС Радио' : 'Играет из'}</span><b class="fp-label">${t.radio ? 'ВС Радио · прямой эфир' : esc(player.label || 'ВС Музыка')}</b></div>
+      <div class="fp-tabs" role="tablist">${tab('cover', 'Трек')}${tab('lyrics', 'Текст', t.radio)}${tab('queue', 'Очередь')}</div>
       <button class="icon-btn fp-x" data-act="fpsheet" data-v="more" aria-label="Ещё">${I.more}</button></div>`;
   const art = `<div class="fp-art">${cover ? `<img class="fp-cover" id="fpCover" src="${esc(cover)}" alt="Обложка" draggable="false">` : `<div class="fp-cover fp-cover-empty" id="fpCover" style="${t.radio ? `--rc:${t.c}` : ''}">${t.radio ? '📻' : '🎵'}</div>`}</div>`;
   const viz = `<div class="fp-viz"><canvas id="fpViz" aria-label="Визуализатор"></canvas></div>`;
@@ -2670,18 +2672,20 @@ function fullPlayer() {
       : lyr.lines.length ? `<div class="fp-lyrics ${lyr.timed ? 'timed' : ''}" id="fpLyrics" data-timed="${lyr.timed ? 1 : 0}">${lyr.lines.map(l => lyr.timed ? `<p data-t="${l.t}" data-act="lyrseek">${esc(l.text) || '♪'}</p>` : `<p>${esc(l.text) || '&nbsp;'}</p>`).join('')}
           ${own ? `<button class="btn ghost small" data-act="lyredit">Изменить текст</button>` : ''}</div>`
       : `<div class="fp-lyrics fp-empty"><b>Текста пока нет</b>${own ? `<span class="small">Найдём текст с тайм-кодами сами или добавьте свой — тогда слова будут идти вместе с музыкой</span><div class="row" style="justify-content:center;flex-wrap:wrap"><button class="btn small" data-act="lyrauto">🔎 Найти текст автоматически</button><button class="btn ghost small" data-act="lyredit">Добавить вручную</button></div>` : '<span class="small">Добавить текст может только автор трека</span>'}</div>`) : '';
-  const sleepTxt = player.sleep ? (player.sleep.end ? 'до конца трека' : fmtDur((player.sleep.at - Date.now()) / 1000)) : '';
-  return `<div class="fp ${apStyle ? 'ap fp-ly-' + lyrStyle() : ''} fp-v-${view}" role="dialog" aria-label="Плеер" style="--c1:${pal.c1};--c2:${pal.c2};--c3:${pal.c3}">
+  const sleepTxt = player.sleep ? (player.sleep.end ? 'до конца' : fmtDur((player.sleep.at - Date.now()) / 1000)) : '';
+  const act = (a, ic, label, on, extra = '', dis = false) => `<button class="fp-act ${on ? 'on' : ''}" data-act="${a}" ${extra} ${dis ? 'disabled' : ''}><span class="fp-act-ic">${ic}</span><span class="fp-act-l">${label}</span></button>`;
+  return `<div class="fp ${apStyle ? 'ap fp-ly-' + lyrStyle() : ''} fp-v-${view} ${a.paused ? 'paused' : ''}" role="dialog" aria-label="Плеер" style="--c1:${pal.c1};--c2:${pal.c2};--c3:${pal.c3}">
     <div class="fp-bg" style="${cover ? `background-image:url('${esc(cover)}')` : ''}"></div><div class="fp-glow" aria-hidden="true"><i></i><i></i><i></i></div>
     <div class="fp-in">
     ${head}
     <div class="fp-main">${apStyle ? `<div class="ap-head">${cover ? `<img src="${esc(cover)}" alt="">` : `<span class="ap-noart">🎵</span>`}<div class="grow" style="min-width:0"><b>${esc(t.title)}</b><span>${esc(t.artist || 'Неизвестный исполнитель')}</span></div></div>` : ''}
       ${view === 'lyrics' ? lyricsBox : view === 'viz' ? viz : view === 'queue' ? fpQueue() : art}</div>
     <div class="fp-side">
-    <div class="fp-info"><div class="grow" style="min-width:0"><div class="fp-title"><span>${esc(t.title)}</span></div>
+    <div class="fp-info"><div class="grow" style="min-width:0"><div class="fp-from"><span>${t.radio ? 'ВС Радио · прямой эфир' : 'Играет из'}</span> <b class="fp-label">${t.radio ? '' : esc(player.label || 'ВС Музыка')}</b></div><div class="fp-title"><span>${esc(t.title)}</span></div>
         <div class="fp-artist">${esc(t.artist || (t.radio ? '' : 'Неизвестный исполнитель'))}${owner ? ` · <a href="#music/${esc(owner.id)}" data-act="fpclose">${esc(owner.name)}</a>` : ''}</div></div>
       ${own ? `<button class="icon-btn fp-ic" data-act="tedit" data-id="cur" aria-label="Изменить трек" title="Название, исполнитель и обложка">✏️</button>` : ''}
-      <button class="icon-btn fp-ic fp-heart ${saved ? 'on' : ''}" data-act="fplike" ${t.radio || own ? 'disabled' : ''} aria-label="${saved ? 'В моей музыке' : 'Добавить в мою музыку'}">${saved ? I.heart : I.heartO}</button></div>
+      ${t.radio ? '' : `<button class="icon-btn fp-ic fp-round" data-act="tpl" data-id="${esc(t.id)}" aria-label="Добавить в плейлист" title="Добавить в плейлист">＋</button>`}
+      <button class="icon-btn fp-ic fp-round fp-heart ${saved ? 'on' : ''}" data-act="fplike" ${t.radio || own ? 'disabled' : ''} aria-label="${saved ? 'В моей музыке' : 'Добавить в мою музыку'}">${saved ? I.heart : I.heartO}</button></div>
     ${t.radio ? `<div class="fp-live"><span class="eq"><i></i><i></i><i></i><i></i></span> Прямой эфир</div>` : `<div class="fp-seek"><div class="fp-wave"><canvas id="fpWave" aria-hidden="true"></canvas>
         <input id="fpSeek" class="fp-range" type="range" min="0" max="1000" value="${Math.round(pct * 10)}" style="--p:${pct}%" aria-label="Перемотка"></div>
       <div class="fp-times tnum"><span id="fpCur">${fmtDur(a.currentTime)}</span>${player.rate !== 1 ? `<span class="fp-rate">${player.rate}×${player.pitch ? '' : ' 🎚'}</span>` : ''}<span id="fpLeft">${fmtDur(dur)}</span></div></div>`}
@@ -2691,13 +2695,13 @@ function fullPlayer() {
       <button class="fp-play" data-act="mplay" aria-label="${a.paused ? 'Играть' : 'Пауза'}">${player.loading ? '<span class="spin"></span>' : a.paused ? I.play : I.pause}</button>
       <button class="icon-btn fp-big" data-act="mnext" aria-label="Следующий">${I.next}</button>
       <button class="icon-btn fp-ic fp-mode ${player.repeat !== 'off' ? 'on' : ''}" data-act="fprepeat" aria-label="${REPEAT_LABEL[player.repeat]}" title="${REPEAT_LABEL[player.repeat]}">${I.repeat}${player.repeat === 'one' ? '<sup>1</sup>' : ''}</button></div>
-    <div class="fp-row">
-      <button class="fp-chip ${showLyrics ? 'on' : ''}" data-act="fplyrics" ${t.radio ? 'disabled' : ''} aria-label="Текст песни" title="Текст песни">${I.lyrics}<span>Текст</span></button>
-      ${showLyrics && !S.lyrEdit ? `<button class="fp-chip fp-style ${S.lyrPick ? 'on' : ''}" data-act="lyrpick" aria-label="Вид текста: ${LYR_STYLES[lyrStyle()]}" title="Вид текста: ${LYR_STYLES[lyrStyle()]}">Aa</button>` : ''}
-      <button class="fp-chip ${view === 'viz' ? 'on' : ''}" data-act="fpmode" data-v="viz" aria-label="Визуализатор" title="Визуализатор">${I.radio}<span>Винил</span></button>
-      <button class="fp-chip ${view === 'queue' ? 'on' : ''}" data-act="fpmode" data-v="queue" aria-label="Очередь" title="Очередь">${I.feed}<span>Очередь</span></button>
-      ${t.radio ? '' : `<button class="fp-chip ${eqActive() ? 'on' : ''}" data-act="fpsheet" data-v="eq" aria-label="Эквалайзер" title="Эквалайзер и басы">🎛<span>Эквалайзер</span></button>`}
-      <button class="fp-chip ${player.sleep ? 'on' : ''}" data-act="fpsheet" data-v="sleep" aria-label="Таймер сна" title="Таймер сна">🌙<span id="fpSleep">${sleepTxt || 'Таймер'}</span></button></div>
+    <div class="fp-acts">
+      ${act('fpsheet', '🎛', 'Звук', eqActive(), 'data-v="eq"', t.radio)}
+      ${showLyrics && !S.lyrEdit ? act('lyrpick', 'Aa', 'Вид текста', S.lyrPick) : act('fpmode', I.radio, 'Винил', view === 'viz', 'data-v="viz"')}
+      ${act('fpsheet', '⏩', player.rate !== 1 ? player.rate + '×' : 'Скорость', player.rate !== 1 || !player.pitch, 'data-v="speed"', t.radio)}
+      ${act('fpsheet', '🌙', `<span id="fpSleep">${sleepTxt || 'Сон'}</span>`, !!player.sleep, 'data-v="sleep"')}
+      ${act('toff', isOff(t) ? '✓' : '📥', isOff(t) ? 'Офлайн' : 'Скачать', isOff(t), 'data-id="cur"', t.radio)}
+      ${act('tlink', I.link, 'Ссылка', false, 'data-id="cur"', t.radio)}</div>
     </div>
   </div>${S.lyrPick && showLyrics ? lyrPicker() : ''}${fpSheet(t, own, showLyrics)}</div>`;
 }
@@ -2866,13 +2870,15 @@ function lyrPicker() {
 function musicBar() {
   const t = curTrack(); if (!t) return '';
   const a = player.audio, pct = a.duration ? a.currentTime / a.duration * 100 : 0;
-  return `<div class="mbar" role="region" aria-label="Плеер"><i class="lg" aria-hidden="true"></i><div class="mbar-fill" id="mbarFill" style="width:${pct}%"></div>
-    <button class="icon-btn" data-act="mprev" aria-label="Предыдущий">${I.prev}</button>
+  const pal = coverPalette(t), saved = !t.radio && ((S.me.tracks || []).includes(t.id) || t.ownerId === uid());
+  return `<div class="mbar mbar3 ${a.paused ? '' : 'playing'}" role="region" aria-label="Плеер" style="--c1:${pal.c1};--c2:${pal.c2}"><i class="lg" aria-hidden="true"></i><div class="mbar-fill" id="mbarFill" style="width:${pct}%"></div>
+    <button class="grow mbar-info" data-act="fpopen" aria-label="Открыть плеер"><span class="mbar-art">${safeImg(t.cover) ? `<img class="mbar-cover" src="${esc(t.cover)}" alt="">` : `<span class="mbar-noart">${t.radio ? '📻' : '🎵'}</span>`}</span><span class="mbar-txt"><b>${esc(t.title)}</b><span class="muted small">${esc(t.artist || (t.radio ? 'Прямой эфир' : 'Неизвестный исполнитель'))}</span></span></button>
+    <span class="small muted tnum" id="mbarTime">${t.radio ? '● Прямой эфир' : fmtDur(a.currentTime) + ' / ' + fmtDur(a.duration || t.duration)}</span>
+    ${t.radio || t.ownerId === uid() ? '' : `<button class="icon-btn mbar-like ${saved ? 'on' : ''}" data-act="fplike" aria-label="${saved ? 'В моей музыке' : 'В мои треки'}">${saved ? I.heart : I.heartO}</button>`}
+    <button class="icon-btn mbar-prev" data-act="mprev" aria-label="Предыдущий">${I.prev}</button>
     <button class="mbar-play" data-act="mplay" aria-label="${a.paused ? 'Играть' : 'Пауза'}">${player.loading ? '<span class="spin sm"></span>' : a.paused ? I.play : I.pause}</button>
     <button class="icon-btn" data-act="mnext" aria-label="Следующий">${I.next}</button>
-    <button class="grow mbar-info" data-act="fpopen" aria-label="Открыть плеер">${safeImg(t.cover) ? `<img class="mbar-cover" src="${esc(t.cover)}" alt="">` : ''}<span class="mbar-txt"><b>${esc(t.title)}</b><span class="muted small">${esc(t.artist || (t.radio ? 'Прямой эфир' : 'Неизвестный исполнитель'))}</span></span></button>
-    <span class="small muted tnum" id="mbarTime">${t.radio ? '● Прямой эфир' : fmtDur(a.currentTime) + ' / ' + fmtDur(a.duration || t.duration)}</span>
-    <button class="icon-btn" data-act="mclose" aria-label="Закрыть плеер">✕</button></div>`;
+    <button class="icon-btn mbar-x" data-act="mclose" aria-label="Закрыть плеер">✕</button></div>`;
 }
 /* ---------- ВС Музыка 6.3: Поток, Мои треки, Мои загрузки, свои плейлисты ----------
    S.musicTab: home | stream | liked | uploads | pl_<id> | <uid> (загрузки человека). Данные — в cache.mus. */
@@ -3320,46 +3326,62 @@ function musicSearchExtra() {
   return (A.length ? `<div class="card mus-list"><div class="mus-sec-t">Исполнители</div><div class="mus-chips">${A.map(([a, n]) => `<a class="mus-chip" href="#music/a_${encodeURIComponent(a)}">🎤 ${esc(a)} <span class="muted small">${n}</span></a>`).join('')}</div></div>` : '')
     + (pls.length ? `<div class="card mus-list"><div class="mus-sec-t">Плейлисты</div><div class="mus-chips">${pls.map(p => `<a class="mus-chip" href="#music/pl_${esc(p.id)}">♫ ${esc(p.title)}</a>`).join('')}</div></div>` : '');
 }
+/* Главная Музыки 3.0 (6.7): приветствие, быстрые плитки, «Поток», полки с прокруткой вбок */
 function musicHome() {
-  const me = S.me, M = cache.mus || {}, q = S.musicQ || '';
-  const streamOn = player.stream && curTrack() && !player.audio.paused;
-  const tile = (href, art, title, sub) => `<a class="mus-tile" href="#${href}">${art}<b>${esc(title)}</b><span class="muted small">${sub}</span></a>`;
+  const me = S.me, M = cache.mus || {}, q = S.musicQ || '', cur = curTrack(), paused = player.audio.paused;
+  const streamOn = player.stream && cur && !paused;
+  const h = new Date().getHours(), hi = h < 5 ? 'Доброй ночи' : h < 12 ? 'Доброе утро' : h < 18 ? 'Добрый день' : 'Добрый вечер';
+  const nT = n => `${n} ${plural(n, 'трек', 'трека', 'треков')}`;
+  const quick = (href, art, title, sub, list) => `<div class="mh-q"><a href="#${href}"><span class="mh-q-art">${art}</span><span class="mh-q-t"><b>${title}</b><span>${sub}</span></span></a>
+    ${list ? `<button class="mh-q-play" data-act="mlistplay" data-list="${list}" aria-label="Слушать: ${title}">${I.play}</button>` : ''}</div>`;
+  const ico = (c, e) => `<span class="mus-art" style="--plc:${c}"><span class="mus-art-ico">${e}</span></span>`;
+  const card = (t, key, i, sub) => { const on = cur?.id === t.id;
+    return `<button class="mh-card ${on ? 'cur' : ''}" data-act="mplay2" data-list="${key}" data-i="${i}" aria-label="${on && !paused ? 'Пауза' : 'Играть'}: ${esc(t.title)}">
+      <span class="mh-cv">${trackCover(t)}<span class="mh-pl">${on && !paused ? I.pause : I.play}</span>${on && !paused ? `<span class="mh-eq">${eqBars}</span>` : ''}</span>
+      <b>${esc(t.title)}</b><span>${sub ?? esc(t.artist || 'Неизвестный исполнитель')}</span></button>`; };
+  const shelf = (title, more, items) => items ? `<section class="mh-shelf"><div class="mh-h"><h2>${title}</h2>${more ? `<a href="#${more}">Все</a>` : ''}</div><div class="mh-row">${items}</div></section>` : '';
   const friends = (me.friends || []).map(U).filter(u => u && listeningOf(u)).slice(0, 12);
-  const recent = recentTracks().slice(0, 6), fresh = (M.stream || []).slice(0, 8);
-  return `<section class="mus-hero ${streamOn ? 'on' : ''}">
-      <div class="mus-hero-bg" aria-hidden="true"><i></i><i></i><i></i></div>
-      <div class="mus-hero-in"><span class="mus-kicker">ВС Музыка · Поток</span>
-        <h1 class="mus-hero-t">Вся музыка VСмске<br>подряд</h1>
-        <p>Без рекомендаций и алгоритмов — просто все треки платформы по очереди, ${streamOrder() === 'desc' ? 'от новых к старым' : 'от старых к новым'}.</p>
-        <div class="mus-acts"><button class="mus-play big" data-act="mstream">${streamOn ? I.pause : I.play}<span>${streamOn ? 'Пауза' : 'Слушать поток'}</span></button>
-          <a class="btn ghost on-dark" href="#music/stream">Все треки</a>
-          ${banOf(me) ? '' : `<button class="btn ghost on-dark" data-act="pickmusic" ${S.upload ? 'disabled' : ''}>${I.upload}<span>Загрузить</span></button>`}</div></div>
-      ${streamOn ? `<div class="mus-now">${trackCover(curTrack())}<span><b>${esc(curTrack().title)}</b><span>${esc(curTrack().artist || '')}</span></span>${eqBars}</div>` : ''}
+  const recent = recentTracks().slice(0, 12), fresh = (M.stream || []).slice(0, 14), fchart = (M.fchart || []).slice(0, 14), mix = (M.mix || []).slice(0, 14);
+  // исполнители — из загруженного Потока, по числу треков; картинка — обложка любого их трека
+  const arts = new Map();
+  (M.stream || []).forEach(t => { const a = (t.artist || '').trim(); if (!a) return; const x = arts.get(a) || { name: a, n: 0, cover: '' }; x.n++; if (!x.cover && safeImg(t.cover)) x.cover = t.cover; arts.set(a, x); });
+  const artists = [...arts.values()].sort((a, b) => b.n - a.n).slice(0, 14);
+  const hue = s => [...s].reduce((a, c) => a + c.charCodeAt(0), 0) % 360;
+  return `<section class="mh-head">
+      <div class="grow"><span class="mus-kicker">ВС Музыка</span><h1 class="mh-hi">${hi}, ${esc((me.name || '').split(' ')[0])}</h1></div>
+      ${banOf(me) ? '' : `<button class="btn sec mh-up" data-act="pickmusic" ${S.upload ? 'disabled' : ''}>${I.upload}<span>Загрузить</span></button>`}
     </section>
-    <div class="card mus-search">${I.search}<input id="musQ" type="search" placeholder="Найти трек или исполнителя" autocomplete="off" value="${esc(q)}"></div>
+    <div class="card mus-search">${I.search}<input id="musQ" type="search" placeholder="Трек, исполнитель или плейлист" autocomplete="off" value="${esc(q)}"></div>
     ${q.trim().length >= 2 ? `${musicSearchExtra()}<div class="card mus-list"><div class="mus-sec-t">Треки${!M.streamDone ? ' <span class="spin sm"></span>' : ''}</div>
       ${musicSearch().map((t, i) => trackRow(t, i, 'search')).join('') || '<div class="empty small">Ничего не нашлось</div>'}</div>` : `
-    <div class="mus-quick">
-      <a class="mus-q q-mix" href="#music/mix"><span class="mus-q-ic">✦</span><b>Микс дня</b><span>${(M.mix || []).length ? (M.mix || []).length + ' ' + plural((M.mix || []).length, 'трек', 'трека', 'треков') : 'собирается…'}</span></a>
-      <a class="mus-q q-fr" href="#music/friends"><span class="mus-q-ic">🔥</span><b>Популярное у друзей</b><span>${(M.fchart || []).length ? 'топ ' + Math.min(40, (M.fchart || []).length) : 'чарт друзей'}</span></a>
-      <a class="mus-q q-off" href="#music/offline"><span class="mus-q-ic">📥</span><b>Офлайн</b><span>${OFF.meta.size} ${plural(OFF.meta.size, 'трек', 'трека', 'треков')}</span></a>
-      <a class="mus-q q-st" href="#music/stats"><span class="mus-q-ic">📊</span><b>Статистика</b><span>${Object.values(playStats()).reduce((a, x) => a + (x.n || 0), 0)} прослушиваний</span></a>
+    <div class="mh-quick">
+      ${quick('music/liked', listArt(M.liked || [], '♥', '#DB2777'), 'Мои треки', nT((me.tracks || []).length), (M.liked || []).length ? 'liked' : '')}
+      ${quick('music/mix', ico('#7C3AED', '✦'), 'Микс дня', mix.length ? nT((M.mix || []).length) : 'собирается…', mix.length ? 'mix' : '')}
+      ${quick('music/offline', ico('#16A34A', '📥'), 'Офлайн', nT(OFF.meta.size), OFF.meta.size ? 'offline' : '')}
+      ${quick('music/friends', ico('#EA580C', '🔥'), 'Популярное у друзей', fchart.length ? 'топ ' + fchart.length : 'чарт друзей', fchart.length ? 'fchart' : '')}
+      ${quick('music/uploads', listArt(M.uploads || [], I.upload, '#0891B2'), 'Мои загрузки', nT((M.uploads || []).length), (M.uploads || []).length ? 'uploads' : '')}
+      ${quick('music/stats', ico('#2563EB', '📊'), 'Статистика', `${Object.values(playStats()).reduce((a, x) => a + (x.n || 0), 0)} прослушиваний`, '')}
     </div>
-    <h2 class="mus-h">Плейлисты</h2>
-    <div class="mus-grid">
-      ${tile('music/liked', listArt(M.liked || [], '♥', '#DB2777'), 'Мои треки', `${(me.tracks || []).length} ${plural((me.tracks || []).length, 'трек', 'трека', 'треков')}`)}
-      ${tile('music/uploads', listArt(M.uploads || [], I.upload, '#0891B2'), 'Мои загрузки', `${(M.uploads || []).length} ${plural((M.uploads || []).length, 'трек', 'трека', 'треков')}`)}
-      ${(M.pls || []).map(p => tile('music/pl_' + p.id, listArt((p.tracks || []).map(id => trackCache.get(id)).filter(Boolean), I.music, p.color), p.title, `${(p.tracks || []).length} ${plural((p.tracks || []).length, 'трек', 'трека', 'треков')}`)).join('')}
-      ${M.plsErr ? '' : `<button class="mus-tile mus-new" data-act="plnew"><span class="mus-art"><span class="mus-art-ico">＋</span></span><b>Новый плейлист</b><span class="muted small">Соберите свой</span></button>`}
-    </div>
+    <section class="mh-stream ${streamOn ? 'on' : ''}">
+      <div class="mh-stream-bg" aria-hidden="true">${Array.from({ length: 28 }, (_, k) => `<i style="--k:${k}"></i>`).join('')}</div>
+      <div class="mh-stream-t"><span class="mus-kicker">Поток</span><b>Вся музыка VСмске подряд</b>
+        <span>${streamOn ? `Сейчас: ${esc(cur.title)}${cur.artist ? ' — ' + esc(cur.artist) : ''}` : `Без рекомендаций — все треки по очереди, ${streamOrder() === 'desc' ? 'от новых к старым' : 'от старых к новым'}`}</span>
+        <a class="mh-stream-all" href="#music/stream">Все треки →</a></div>
+      <button class="mh-stream-play" data-act="mstream" aria-label="${streamOn ? 'Пауза' : 'Слушать поток'}">${streamOn ? I.pause : I.play}</button>
+    </section>
+    ${shelf('Микс дня', 'music/mix', mix.map((t, i) => card(t, 'mix', i)).join(''))}
+    ${shelf('Твои плейлисты', '', [
+      `<a class="mh-card" href="#music/liked"><span class="mh-cv">${listArt(M.liked || [], '♥', '#DB2777')}</span><b>Мои треки</b><span>${nT((me.tracks || []).length)}</span></a>`,
+      ...(M.pls || []).map(p => `<a class="mh-card" href="#music/pl_${esc(p.id)}"><span class="mh-cv">${listArt((p.tracks || []).map(id => trackCache.get(id)).filter(Boolean), I.music, p.color)}</span><b>${esc(p.title)}</b><span>${nT((p.tracks || []).length)}</span></a>`),
+      M.plsErr ? '' : `<button class="mh-card mh-new" data-act="plnew"><span class="mh-cv"><span class="mus-art"><span class="mus-art-ico">＋</span></span></span><b>Новый плейлист</b><span>Соберите свой</span></button>`].join(''))}
     ${M.plsErr ? '<div class="card pad small muted">Свои плейлисты заработают, когда владелец сайта обновит правила базы.</div>' : ''}
-    ${friends.length ? `<h2 class="mus-h">Друзья слушают</h2><div class="mus-friends">${friends.map(u => `<a class="mus-friend" href="#id/${esc(u.id)}">${avatar(u, 48, false)}
-      <span><b>${esc(u.name.split(' ')[0])}</b><span class="small">🎵 ${esc(listeningOf(u).title)}${listeningOf(u).artist ? ' — ' + esc(listeningOf(u).artist) : ''}</span></span></a>`).join('')}</div>` : ''}
-    ${topTracks(1).length ? `<h2 class="mus-h">Чаще всего слушаю <a class="small" href="#music/stats">Статистика →</a></h2><div class="card mus-list">${topTracks(5).map((t, i) => trackRow(t, i, 'top', true)).join('')}</div>`
-      : ''}
-    ${recent.length ? `<h2 class="mus-h">Недавно играло</h2><div class="card mus-list">${recent.map((t, i) => trackRow(trackCache.get(t.id) || t, i, 'recent')).join('')}</div>` : ''}
-    <h2 class="mus-h">Новое в Потоке <a class="small" href="#music/stream">Все →</a></h2>
-    <div class="card mus-list">${fresh.length ? fresh.map((t, i) => trackRow(t, i, 'stream')).join('') : '<div class="empty small">Пока никто ничего не загрузил — будьте первым</div>'}</div>`}`;
+    ${friends.length ? shelf('Друзья слушают', '', friends.map(u => `<a class="mh-friend" href="#id/${esc(u.id)}">${avatar(u, 64, false)}<b>${esc(u.name.split(' ')[0])}</b><span>🎵 ${esc(listeningOf(u).title)}</span></a>`).join('')) : ''}
+    ${shelf('Новое в Потоке', 'music/stream', fresh.map((t, i) => card(t, 'stream', i)).join(''))}
+    ${shelf('Популярное у друзей', 'music/friends', fchart.map((t, i) => card(t, 'fchart', i, `${t.fans} ${plural(t.fans, 'друг', 'друга', 'друзей')} добавили`)).join(''))}
+    ${shelf('Исполнители', '', artists.map(a => `<a class="mh-artist" href="#music/a_${encodeURIComponent(a.name)}"><span class="mh-av" style="--h:${hue(a.name)}">${a.cover ? `<img src="${esc(a.cover)}" alt="" loading="lazy">` : esc(a.name.slice(0, 1).toUpperCase())}</span><b>${esc(a.name)}</b><span>${nT(a.n)}</span></a>`).join(''))}
+    ${shelf('Недавно играло', '', recent.map((t, i) => card(trackCache.get(t.id) || t, 'recent', i)).join(''))}
+    ${topTracks(1).length ? `<section class="mh-shelf"><div class="mh-h"><h2>Чаще всего слушаю</h2><a href="#music/stats">Статистика</a></div><div class="card mus-list">${topTracks(5).map((t, i) => trackRow(t, i, 'top', true)).join('')}</div></section>` : ''}
+    ${!fresh.length ? '<div class="card empty"><b>Пока никто ничего не загрузил</b><span>Будьте первым — нажмите «Загрузить»</span></div>' : ''}`}`;
 }
 function playlistModal() {
   if (S.plPick) {
@@ -5006,6 +5028,10 @@ document.addEventListener('click', async e => {
       case 'fpclose': S.fullPlayer = false; S.lyrEdit = false; S.lyrPick = false; S.lyrFind = null; S.fpSheet = null; render(); break;
       case 'fpsheet': S.fpSheet = b.dataset.v || null; S.lyrPick = false; render(); break;
       case 'fpmode': { const v = b.dataset.v; S.fpMode = S.fpMode === v && !S.fpLyrics ? null : v; S.fpLyrics = false; S.lyrEdit = false; S.lyrPick = false; render();
+        if (v === 'queue') document.querySelector('.fq-item.on')?.scrollIntoView({ block: 'center' }); break; }
+      case 'fpview': { const v = b.dataset.v; S.lyrEdit = false; S.lyrPick = false;
+        if (v === 'lyrics') { S.fpLyrics = true; S.fpMode = null; lyricIdx = -1; render(); setTimeout(syncLyrics, 50); break; }
+        S.fpLyrics = false; S.fpMode = v === 'queue' ? 'queue' : null; render();
         if (v === 'queue') document.querySelector('.fq-item.on')?.scrollIntoView({ block: 'center' }); break; }
       case 'fqplay': playAt(Number(b.dataset.i)); break;
       case 'fprate': player.rate = Number(b.dataset.v); lsSet('vs_rate', String(player.rate)); applyRate(); render(); break;
