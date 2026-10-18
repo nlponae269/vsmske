@@ -155,3 +155,48 @@
 .fq-act+.fq-act{margin-left:0}
 .fq-act:hover{background:rgba(255,255,255,.2)}
 a.fs-row{text-decoration:none}
+/* ==========================================================================
+   Плеер 3.0 (6.7): переключатель «Трек · Текст · Очередь» сверху, крупная обложка
+   (на паузе чуть отъезжает), круглые кнопки «＋» и ♥, панель действий из шести кнопок.
+   ========================================================================== */
+.fp-bg{filter:blur(80px) saturate(1.7) brightness(.72);opacity:.9}
+.fp-glow::after{background:linear-gradient(180deg,rgba(10,6,18,.15),rgba(10,6,18,.25) 45%,rgba(10,6,18,.82))}
+.fp-top{grid-template-columns:44px 1fr 44px;gap:10px}
+.fp-tabs{justify-self:center;display:flex;gap:2px;padding:4px;border-radius:99px;background:rgba(255,255,255,.12);
+  -webkit-backdrop-filter:blur(16px);backdrop-filter:blur(16px);box-shadow:inset 0 1px 0 rgba(255,255,255,.16)}
+.fp-tabs button{border:0;background:none;color:#fff;font:700 13.5px var(--f-body,system-ui);padding:8px 14px;border-radius:99px;cursor:pointer;opacity:.75;transition:background .2s,color .2s,opacity .2s}
+.fp-tabs button:hover{opacity:1}
+.fp-tabs button.on{background:#fff;color:#130A22;opacity:1;box-shadow:0 6px 16px -8px rgba(0,0,0,.5)}
+.fp-tabs button:disabled{opacity:.3;cursor:default}
+.fp-art{transition:transform .5s cubic-bezier(.34,1.4,.64,1)}
+.fp.paused .fp-art{transform:scale(.88)}
+.fp-cover{border-radius:28px;width:min(100%,44vh)}
+.fp-info{align-items:flex-end;gap:8px}
+.fp-from{display:block;margin-bottom:4px;font-size:11px;letter-spacing:.12em;text-transform:uppercase;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.fp-from span{opacity:.6;font-weight:700}
+.fp-from .fp-label{display:inline;font-size:11px;letter-spacing:.12em;opacity:.95}
+.fp-title{font-size:26px;font-weight:800;letter-spacing:-.025em;line-height:1.15}
+.fp-artist{font-size:16px;opacity:.75;margin-top:2px}
+.fp-artist a{color:inherit;text-decoration:underline;text-underline-offset:3px;text-decoration-color:rgba(255,255,255,.35)}
+.fp-round{width:44px;height:44px;flex:none;border-radius:50%;background:rgba(255,255,255,.12);font-size:22px;font-weight:600;color:#fff}
+.fp-round:hover{background:rgba(255,255,255,.2)}
+.fp-round svg{width:22px;height:22px}
+.fp-play{width:84px;height:84px}
+.fp-play svg{width:36px;height:36px}
+.fp-acts{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:4px;margin-top:2px}
+.fp-act{display:flex;flex-direction:column;align-items:center;gap:6px;min-width:0;padding:0;border:0;background:none;color:#fff;cursor:pointer;font:inherit}
+.fp-act-ic{width:48px;height:48px;display:grid;place-items:center;border-radius:50%;background:rgba(255,255,255,.1);font-size:19px;font-weight:800;
+  -webkit-backdrop-filter:blur(12px);backdrop-filter:blur(12px);box-shadow:inset 0 1px 0 rgba(255,255,255,.14);transition:background .2s,transform .12s}
+.fp-act-ic svg{width:21px;height:21px}
+.fp-act:hover .fp-act-ic{background:rgba(255,255,255,.18)}
+.fp-act:active .fp-act-ic{transform:scale(.92)}
+.fp-act.on .fp-act-ic{background:#fff;color:#130A22}
+.fp-act-l{max-width:100%;font-size:11px;font-weight:700;opacity:.75;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.fp-act:disabled{opacity:.3;cursor:default}
+@media (max-width:380px){.fp-act-ic{width:42px;height:42px}.fp-tabs button{padding:7px 10px;font-size:12.5px}}
+@media (max-height:700px){.fp-play{width:68px;height:68px}.fp-act-ic{width:40px;height:40px}.fp-acts{gap:2px}.fp-act-l{display:none}}
+@media (min-width:860px) and (min-aspect-ratio:5/4){
+  .fp-title{font-size:34px}
+  .fp-cover{width:min(100%,62vh)}
+  .fp-tabs{grid-column:2}
+}
