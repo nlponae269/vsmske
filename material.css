@@ -383,3 +383,17 @@ main{gap:12px}
 .pal{background:var(--md-s-high);border-radius:28px}
 .pal-item{border-radius:20px}
 .pal-item.on,.pal-item:hover{background:var(--md-sc);color:var(--md-on-sc)}
+
+/* 6.3: музыка в Material You */
+.mus-hero{border-radius:32px}
+.mus-tile{background:var(--md-s-low);border:0;border-radius:28px;padding:12px}
+.mus-tile:hover{background:var(--md-s-c);transform:none}
+.mus-art{border-radius:20px}
+.mus-head{border-radius:32px!important}
+.mus-search{border-radius:32px!important;background:var(--md-s-high)!important}
+.trow{border-radius:20px}
+.trow.cur{background:var(--md-sc)}
+.tmenu{background:var(--md-s-high);border:0;border-radius:20px}
+.mus-friend{background:var(--md-s-low);border:0;border-radius:24px}
+.mus-play{background:var(--md-p);color:var(--md-on-p);transition:border-radius .3s var(--ease-spring),transform .2s}
+.mus-play:active{border-radius:16px}

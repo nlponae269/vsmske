@@ -347,6 +347,15 @@ service cloud.firestore {
         && d().pinned is bool && now(d().updatedAt);
     }
 
+    // ---------- ВС Музыка: свои плейлисты (видны всем по ссылке, меняет только хозяин) ----------
+    match /playlists/{pid} {
+      allow read: if signed();
+      allow create, update: if signed() && fields(['ownerId', 'title', 'tracks', 'color', 'updatedAt'])
+        && d().ownerId == me() && (resource == null || resource.data.ownerId == me())
+        && str(d().title, 1, 60) && d().tracks is list && d().tracks.size() <= 500 && colorOk(d().color) && now(d().updatedAt);
+      allow delete: if signed() && resource.data.ownerId == me();
+    }
+
     // ---------- ВС Музыка: трек = описание + файл в files (kind = 'music') ----------
     match /tracks/{tid} {
       allow read: if signed();

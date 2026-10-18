@@ -1105,3 +1105,112 @@ kbd{font:600 11px/1 var(--f-body,system-ui);border:1px solid var(--line);border-
 .pal-ico .av{width:36px!important;height:36px!important}
 .pal-foot{padding:10px 18px;border-top:1px solid var(--line)}
 @media (max-width:520px){.pal-foot{display:none}.pal-ov{padding-top:12px}}
+
+/* 6.3: ВС Музыка — Поток, плейлисты, строки треков (работает во всех дизайнах) */
+.mus-hero{position:relative;overflow:hidden;border-radius:calc(var(--r) + 6px);color:#fff;min-height:250px;display:flex;align-items:flex-end;
+  background:linear-gradient(135deg,#1E1B4B,#4C1D95 45%,#9D174D)}
+.mus-hero-bg{position:absolute;inset:0;pointer-events:none}
+.mus-hero-bg i{position:absolute;border-radius:50%;filter:blur(40px);opacity:.75;animation:musblob 14s ease-in-out infinite alternate}
+.mus-hero-bg i:nth-child(1){width:340px;height:340px;left:-80px;top:-120px;background:#7C3AED}
+.mus-hero-bg i:nth-child(2){width:300px;height:300px;right:-60px;top:-60px;background:#DB2777;animation-duration:18s}
+.mus-hero-bg i:nth-child(3){width:260px;height:260px;left:35%;bottom:-140px;background:#0891B2;animation-duration:22s}
+@keyframes musblob{to{transform:translate(60px,40px) scale(1.2)}}
+.mus-hero.on .mus-hero-bg i{animation-duration:5s}
+.mus-hero-in{position:relative;z-index:1;padding:28px;display:flex;flex-direction:column;gap:10px;max-width:640px}
+.mus-kicker{font:600 12px/1.2 var(--f-body);text-transform:uppercase;letter-spacing:.14em;opacity:.85}
+.mus-hero-t{font:800 clamp(30px,5.5vw,46px)/1.05 var(--f-display);letter-spacing:-.025em;margin:0}
+.mus-hero p{margin:0;opacity:.88;max-width:46ch}
+.mus-acts{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin-top:6px}
+.mus-play{display:inline-flex;align-items:center;gap:10px;border:0;cursor:pointer;border-radius:99px;padding:12px 22px 12px 16px;
+  background:var(--accent);color:var(--accent-fg);font:700 15px/1 var(--f-body);transition:transform .2s}
+.mus-play svg{width:22px;height:22px}
+.mus-play:active{transform:scale(.96)}
+.mus-play:disabled{opacity:.45}
+.mus-play.big{background:#fff;color:#1d1b20;padding:15px 26px 15px 20px;font-size:16px;box-shadow:0 10px 30px rgba(0,0,0,.3)}
+.btn.on-dark{color:#fff!important;background:rgba(255,255,255,.16)!important}
+.mus-now{position:absolute;z-index:1;right:20px;top:20px;display:flex;align-items:center;gap:10px;max-width:46%;background:rgba(0,0,0,.25);
+  backdrop-filter:blur(10px);border-radius:16px;padding:8px 12px 8px 8px}
+.mus-now b,.mus-now span span{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.mus-now span span{font-size:12px;opacity:.8}
+.mus-now > span:nth-child(2){min-width:0}
+.mus-now .tcv{width:40px;height:40px}
+@media (max-width:640px){.mus-now{display:none}}
+.mus-search{display:flex;align-items:center;gap:10px;padding:4px 16px}
+.mus-search svg{color:var(--muted);flex:none}
+.mus-search input{flex:1;min-width:0;height:48px;border:0;background:none;outline:none;font-size:16px;color:var(--fg)}
+.mus-h{font:700 20px/1.2 var(--f-display);margin:10px 4px 0;display:flex;align-items:baseline;justify-content:space-between}
+.mus-sec-t{padding:14px 16px 4px;font-weight:700;display:flex;gap:8px;align-items:center}
+.mus-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:12px}
+.mus-tile{display:flex;flex-direction:column;gap:4px;padding:10px;border-radius:var(--r);background:var(--surface);color:var(--fg);border:1px solid var(--line);
+  text-align:left;cursor:pointer;transition:transform .2s,background-color .2s}
+.mus-tile:hover{transform:translateY(-3px)}
+.mus-tile b{margin-top:6px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.mus-new .mus-art{background:var(--surface-2);color:var(--accent)}
+.mus-art{position:relative;width:100%;aspect-ratio:1;border-radius:calc(var(--r) - 4px);overflow:hidden;display:grid;grid-template-columns:1fr 1fr;
+  background:linear-gradient(135deg,var(--plc,var(--accent)),color-mix(in srgb,var(--plc,var(--accent)) 45%,#000));color:#fff;flex:none}
+.mus-art img{width:100%;height:100%;object-fit:cover;display:block}
+.mus-art img.one{grid-column:1/-1;grid-row:1/-1}
+.mus-art-ico{grid-column:1/-1;display:grid;place-items:center;font:800 44px/1 var(--f-display)}
+.mus-art-ico svg{width:44px;height:44px}
+.mus-art-stream{background:conic-gradient(from 200deg,#7C3AED,#DB2777,#F97316,#0891B2,#7C3AED)}
+/* шапка списка */
+.mus-head{display:flex;gap:22px;align-items:flex-end;padding:22px;position:relative;overflow:hidden;
+  background:linear-gradient(180deg,color-mix(in srgb,var(--plc) 28%,var(--surface)),var(--surface) 75%)!important}
+.mus-head .mus-art{width:min(200px,38vw)}
+.mus-head-t{min-width:0;display:flex;flex-direction:column;gap:6px}
+.mus-title{font:800 clamp(28px,5vw,44px)/1.05 var(--f-display);letter-spacing:-.02em;margin:0;overflow-wrap:anywhere}
+.mus-head .mus-back{position:absolute;top:12px;left:12px;z-index:2}
+.mus-head .mus-art{margin-top:28px}
+@media (max-width:560px){.mus-head{flex-direction:column;align-items:flex-start}.mus-head .mus-art{width:150px}}
+.mus-list{padding:6px 0;position:relative}
+.mus-more{display:block;margin:10px auto 6px}
+/* строка трека */
+.trow{position:relative;display:flex;align-items:center;gap:4px;padding:4px 8px 4px 4px;border-radius:14px;margin:0 6px}
+.trow:hover{background:var(--surface-2)}
+.trow.cur{background:var(--accent-soft)}
+.trow-main{flex:1;min-width:0;display:flex;align-items:center;gap:12px;border:0;background:none;color:var(--fg);padding:6px;text-align:left;cursor:pointer;border-radius:12px}
+.trow-n{width:24px;flex:none;text-align:center;color:var(--muted);font-size:14px;display:grid;place-items:center}
+.trow-n svg{width:16px;height:16px;color:var(--accent)}
+.trow-cv{position:relative;flex:none}
+.tcv{width:46px;height:46px;border-radius:10px;overflow:hidden;display:grid;place-items:center;flex:none;background:linear-gradient(135deg,var(--accent),color-mix(in srgb,var(--accent) 50%,#000));color:#fff}
+.tcv img{width:100%;height:100%;object-fit:cover}
+.tcv-ph svg{width:20px;height:20px}
+.trow-pl{position:absolute;inset:0;border-radius:10px;display:grid;place-items:center;background:rgba(0,0,0,.45);color:#fff;opacity:0;transition:opacity .15s}
+.trow-pl svg{width:20px;height:20px}
+.trow-main:hover .trow-pl,.trow.playing .trow-pl{opacity:1}
+.trow-t{min-width:0;display:flex;flex-direction:column}
+.trow-t b{font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.trow.cur .trow-t b{color:var(--accent)}
+.trow-t span{font-size:13px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.trow-d{font-size:13px;color:var(--muted);padding:0 6px}
+.trow-like{font-size:18px}
+.trow-like.on{color:var(--like)!important}
+.tmenu{position:absolute;z-index:15;right:8px;top:calc(100% - 4px);min-width:250px;background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:6px;
+  box-shadow:0 14px 40px rgba(0,0,0,.2);display:flex;flex-direction:column;animation:palin .18s ease-out}
+.tmenu :is(button,a){border:0;background:none;color:var(--fg);text-align:left;padding:10px 12px;border-radius:10px;cursor:pointer;font:inherit}
+.tmenu :is(button,a):hover{background:var(--surface-2)}
+.tmenu .danger{color:var(--like)}
+@media (max-width:520px){.trow-d{display:none}}
+/* «Друзья слушают» */
+.mus-friends{display:flex;gap:10px;overflow-x:auto;padding-bottom:4px;scrollbar-width:none}
+.mus-friend{flex:none;width:220px;display:flex;align-items:center;gap:10px;padding:10px;border-radius:var(--r);background:var(--surface);border:1px solid var(--line);color:var(--fg)}
+.mus-friend > span{min-width:0}
+.mus-friend b,.mus-friend .small{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.mus-friend .small{color:var(--muted)}
+/* эквалайзер «сейчас играет» */
+.eq-bars{display:inline-flex;align-items:flex-end;gap:2px;height:14px}
+.eq-bars i{width:3px;background:var(--accent);border-radius:1px;animation:eqb .9s ease-in-out infinite alternate}
+.mus-now .eq-bars i{background:#fff}
+.eq-bars i:nth-child(2){animation-delay:-.3s}.eq-bars i:nth-child(3){animation-delay:-.6s}
+@keyframes eqb{from{height:3px}to{height:14px}}
+/* окно плейлистов */
+.pl-modal{gap:12px!important}
+.pl-pick{display:flex;flex-direction:column;gap:6px;max-height:50vh;overflow:auto}
+.pl-opt{display:flex;align-items:center;gap:12px;border:0;background:var(--surface-2);color:var(--fg);border-radius:14px;padding:8px 12px 8px 8px;text-align:left;cursor:pointer}
+.pl-opt .mus-art{width:44px;border-radius:10px}
+.pl-opt .mus-art-ico{font-size:18px}
+.pl-opt .mus-art-ico svg{width:20px;height:20px}
+.pl-opt b,.pl-opt .small{display:block}
+.pl-opt.on{background:var(--accent-soft)}
+.pl-check{width:32px;height:32px;border-radius:50%;display:grid;place-items:center;background:var(--surface);font-weight:700;color:var(--accent)}
+:root[data-anim="off"] :is(.mus-hero-bg i,.eq-bars i){animation:none}

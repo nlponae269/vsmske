@@ -683,3 +683,32 @@ test('3.2: без входа ничего не пишется', async () => {
   await assertFails(setDoc(doc(f, 'notifs', 'n1'), { to: A, from: 'x', type: 'like', postId: '', text: '', createdAt: serverTimestamp() }));
   await assertFails(updateDoc(doc(f, 'posts', 'p1'), { likes: [] }));
 });
+
+/* ---------- 6.3: свои плейлисты ---------- */
+test('6.3: плейлист создаёт и меняет только хозяин, читают все вошедшие', async () => {
+  const p = doc(collection(db(A), 'playlists'));
+  const pl = { ownerId: A, title: 'В дорогу', tracks: ['t1'], color: '#7C3AED', updatedAt: serverTimestamp() };
+  await assertSucceeds(setDoc(p, pl));
+  await assertSucceeds(updateDoc(p, { tracks: arrayUnion('t2'), updatedAt: serverTimestamp() }));
+  await assertSucceeds(updateDoc(p, { title: 'Ночь', color: '#16A34A', updatedAt: serverTimestamp() }));
+  await assertSucceeds(getDoc(doc(db(B), 'playlists', p.id)));
+  await assertFails(getDoc(doc(anon(), 'playlists', p.id)));
+  await assertFails(updateDoc(doc(db(B), 'playlists', p.id), { tracks: arrayUnion('x'), updatedAt: serverTimestamp() }));
+  await assertFails(setDoc(doc(db(B), 'playlists', p.id), { ...pl, ownerId: B }));
+  await assertFails(deleteDoc(doc(db(B), 'playlists', p.id)));
+  await assertFails(setDoc(doc(collection(db(B), 'playlists')), { ...pl, ownerId: A }));       // чужой ownerId
+  await assertFails(setDoc(doc(collection(db(A), 'playlists')), { ...pl, title: '' }));        // без названия
+  await assertFails(setDoc(doc(collection(db(A), 'playlists')), { ...pl, color: 'red' }));     // цвет — только #RRGGBB
+  await assertFails(setDoc(doc(collection(db(A), 'playlists')), { ...pl, extra: 1 }));         // лишнее поле
+  await assertFails(setDoc(doc(collection(db(A), 'playlists')), { ...pl, tracks: Array.from({ length: 501 }, (_, i) => 't' + i) }));
+  await assertSucceeds(deleteDoc(p));
+});
+test('6.3: без входа не читается и не пишется то, где сжатые правила убрали лишний signed()', async () => {
+  const f = anon();
+  await assertFails(setDoc(doc(collection(f, 'playlists')), { ownerId: A, title: 'x', tracks: [], color: '', updatedAt: serverTimestamp() }));
+  await assertFails(getDoc(doc(f, 'albums', 'al1')));
+  await assertFails(setDoc(doc(collection(f, 'posts')), { authorId: A, wallId: A, text: 'x', image: '', likes: [], commentCount: 0, createdAt: serverTimestamp() }));
+  await assertFails(deleteDoc(doc(f, 'videos', 'v1')));
+  await assertFails(deleteDoc(doc(f, 'albums', 'al1')));
+  await assertFails(setDoc(doc(collection(f, 'groups')), { name: 'x', about: '', photo: '', cover: 'blue', ownerId: A, admins: [A], membersCount: 1, createdAt: serverTimestamp() }));
+});

@@ -65,6 +65,14 @@ text = re.sub(r'\n(?!match )', '', text).replace('\nmatch ', '\nmatch ')
 signed = re.search(r'function (\w+)\(\)\{return request\.auth!=null;\}', text).group(1)
 me = re.search(r'function (\w+)\(\)\{return request\.auth\.uid;\}', text).group(1)
 text = re.sub(r':if ' + signed + r'\(\)&&(?=(ro\(\)|no\(\)|\w[\w.()\']*[!=]=' + me + r'\(\)|' + me + r'\(\) in [\w.()]+)(&&|;))', ':if ', text)
+# то же перед notBanned(): она первой строкой читает профиль по request.auth.uid
+nb = re.search(r'function (\w+)\(\)\{let b=\w+\(' + me + r'\(\)\)', text)
+if nb: text = text.replace(':if ' + signed + '()&&' + nb.group(1) + '()', ':if ' + nb.group(1) + '()')
+# и перед скобкой «(я владелец/отправитель || …)» и isAdmin(): первое, что там считается, — request.auth.uid
+adm = re.search(r'function (\w+)\(\)\{return \w+\(' + me + r'\(\)\)\.get\(\'admin\'', text)
+first = r'(ro\(\)|rd\(\)\.\w+==' + me + r'\(\)|get\([^()]*\([^()]*\)\)\.data\.\w+==' + me + r'\(\))'
+text = re.sub(r':if ' + signed + r'\(\)&&(?=\(' + first + r'\|\||' + first + r'(&&|;))', ':if ', text)
+if adm: text = re.sub(r':if ' + signed + r'\(\)&&(?=' + adm.group(1) + r'\(\)(&&|;))', ':if ', text)
 text = text.rstrip('\n') + '\n'
 (root / 'firestore.min.rules').write_text(text, encoding='utf-8')
 print(f'{len(src)} → {len(text)} символов, {text.count(chr(10))} строк')
