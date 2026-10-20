@@ -53,7 +53,7 @@ const MAX_POST_IMG = 700000;   // символов dataURL (~520 КБ), лими
 const MAX_AVATAR = 120000;
 const CHUNK = 700000;                                   // символов base64 в одном куске (кратно 4)
 const LIMITS = { disk: 10 * 1024 * 1024, video: 20 * 1024 * 1024, music: 12 * 1024 * 1024 };
-const VERSION = '6.9';
+const VERSION = '7.0';
 const MAX_MSG_IMG = 380000;    // фото в сообщении
 const ONLINE_MS = 5 * 60 * 1000; // «в сети», если заходил не раньше 5 минут назад
 
@@ -99,7 +99,21 @@ const mentionify = t => {
   const parts = t.split(/(@[a-zA-Z0-9._]{3,30})/);
   return parts.map((x, i) => i % 2 && !/[a-zA-Z0-9._]$/.test(parts[i - 1]) ? `<a class="tag" href="#@${encodeURIComponent(x.slice(1).toLowerCase())}">${esc(x)}</a>` : esc(x)).join('');
 };
-const tagify = t => t.split(TAG_RE).map((x, i) => i % 2 ? `<a class="tag" href="#tag/${encodeURIComponent(x.slice(1).toLowerCase())}">${esc(x)}</a>` : mentionify(x)).join('');
+const tagify0 = t => t.split(TAG_RE).map((x, i) => i % 2 ? `<a class="tag" href="#tag/${encodeURIComponent(x.slice(1).toLowerCase())}">${esc(x)}</a>` : mentionify(x)).join('');
+// 7.0: разметка как в мессенджерах — **жирный**, *курсив*, ~~зачёркнутый~~, ||спойлер||, `код` (в базе текст хранится как есть)
+const spoilersOpen = new Set();   // открытые спойлеры (по тексту) остаются открытыми после перерисовки
+const FMT_RE = /(\|\|(?=\S)[^|\n]{1,500}?(?<=\S)\|\||\*\*(?=\S)[^*\n]{1,500}?(?<=\S)\*\*|~~(?=\S)[^~\n]{1,500}?(?<=\S)~~|`[^`\n]{1,500}?`|(?<![\p{L}\d*])\*(?=\S)[^*\n]{1,300}?(?<=\S)\*(?![\p{L}\d*]))/u;
+const tagify = t => String(t).split(FMT_RE).map((x, i) => {
+  if (!(i % 2)) return tagify0(x);
+  if (x.startsWith('||')) return `<span class="spoiler ${spoilersOpen.has(x.slice(2, -2)) ? 'show' : ''}" data-act="spoiler" tabindex="0" title="Спойлер — нажмите, чтобы открыть">${tagify0(x.slice(2, -2))}</span>`;
+  if (x.startsWith('**')) return `<b>${tagify0(x.slice(2, -2))}</b>`;
+  if (x.startsWith('~~')) return `<s>${tagify0(x.slice(2, -2))}</s>`;
+  if (x.startsWith('`')) return `<code class="icode">${esc(x.slice(1, -1))}</code>`;
+  return `<i>${tagify0(x.slice(1, -1))}</i>`;
+}).join('');
+// для превью (список чатов, сигналы, уведомления браузера): без значков разметки, спойлер скрыт
+const plainText = t => String(t ?? '').split(FMT_RE).map((x, i) => !(i % 2) ? x : x.startsWith('||') ? '▒▒▒' : x.startsWith('**') || x.startsWith('~~') ? x.slice(2, -2) : x.slice(1, -1)).join('');
+document.addEventListener('keydown', e => { if ((e.key === 'Enter' || e.key === ' ') && e.target.classList?.contains('spoiler')) { e.preventDefault(); spoilersOpen.add(e.target.textContent); e.target.classList.add('show'); } });
 const extractMentions = t => [...new Set([...String(t || '').matchAll(/(?:^|[\s(,.!?])@([a-z0-9._]{3,30})/gi)].map(m => m[1].toLowerCase()))].slice(0, 5);
 // Уведомляем упомянутых (по короткому имени), себя и уже уведомлённого автора пропускаем
 async function notifyMentions(text, postId, skip = []) {
@@ -594,7 +608,7 @@ function notifyChats(s, first) {
     if (!document.hidden && S.view === 'messages' && S.chatWith === key) return;
     try {
       const title = c.group ? c.name + ': ' + (U(from)?.name || '') : U(from)?.name || 'Новое сообщение';
-      const n = new Notification(title, { body: c.lastText || '', tag: c.id, icon: safeImg(U(from)?.photo) || undefined });
+      const n = new Notification(title, { body: plainText(c.lastText), tag: c.id, icon: safeImg(U(from)?.photo) || undefined });
       n.onclick = () => { window.focus(); go('im/' + key); n.close(); };
     } catch (e) { console.error(e); }
   });
@@ -649,7 +663,9 @@ function startSession() {
 /* ---------- Маршруты (#feed, #id/<uid>, #im/<uid>, #friends, #people, #edit) ---------- */
 function route() {
   if (S.phase !== 'app') return;
-  S.drawer = false; S.compose = false;
+  S.drawer = false; S.compose = false; clipsStop(); clearInterval(vNextTimer);
+  // «Что нового» — один раз после обновления и только тем, кто был с нами до 7.0 (новичкам не мешаем)
+  if (!S.wnChecked && S.me) { S.wnChecked = true; if (lsGet('vs_seen_ver') !== WN_VER && Date.now() - ms(S.me.createdAt) > 864e5) S.whatsNew = true; else lsSet('vs_seen_ver', WN_VER); }
   const [v, arg] = (curRoute() || 'feed').split('/');
   S.confirm = null;
   if (v[0] === '@') {   // #@ник — адрес страницы
@@ -681,24 +697,32 @@ function route() {
   else if (v === 'mail') { S.view = 'mail'; S.mailBox = arg === 'sent' ? 'sent' : arg === 'new' ? 'new' : 'in'; S.mailId = arg && !['sent', 'new', 'in'].includes(arg) ? arg : null; }
   else if (v === 'games') { S.view = 'games'; S.game = arg || null; }
   else if (v === 'live') { S.view = 'live'; S.liveId = arg || null; }
+  else if (v === 'clips') { S.view = 'clips'; S.clipId = arg || null; }
   else if (v === 'tag' && arg) { S.view = 'tag'; try { S.tag = decodeURIComponent(arg).toLowerCase(); } catch (e) { S.tag = arg; } }
   else if (['feed', 'friends', 'people', 'edit', 'disk', 'vid', 'settings', 'more', 'notif', 'clubs', 'admin', 'guests', 'apps', 'notes', 'weather', 'events', 'rates', 'radio', 'horo', 'timer', 'calc', 'dice', 'live'].includes(v)) S.view = v;
   else S.view = 'feed';
   if (S.view !== 'edit') { S.editColor = null; S.editCover = null; S.editPhoto = undefined; S.editEmoji = undefined; }
   if (S.view !== 'watch') { S.videoSrc = null; S.videoErr = null; }
   S.lightbox = null; S.lightboxImg = null; S.preview = null; S.linkForm = false; S.newAlbum = false;
-  S.viewImg = null; S.postMenu = null; S.emoji = null; S.msgSel = null; S.profMenu = false; S.modOpen = false; S.report = null;
+  S.viewImg = null; S.postMenu = null; S.emoji = null; S.fmt = null; S.msgSel = null; S.profMenu = false; S.modOpen = false; S.report = null;
   if (S.view !== 'games' || S.game !== 'snake') { clearInterval(snakeTimer); snakeTimer = null; if (snake && !snake.over) snake = null; }
   S.liveForm = null; S.newQ = false; S.noteEdit = null; S.giftFor = null; S.newLot = false; S.newEvent = false; if (S.view !== 'mail') S.mailDraft = null;
   S.newRoom = null; S.fwd = null; S.roomInfo = false; S.story = null; S.storyDraft = null; clearTimeout(storyTimer); S.clubEdit = false; S.editGroupPhoto = undefined; S.editGroupCover = null;
   if (S.view !== 'messages') S.replyTo = null;
-  S.editMsg = null; S.mqOpen = false; S.mq = '';
+  S.editMsg = null; S.mqOpen = false; S.mq = ''; S.wallPick = false;
   recStop(false); players.forEach(p => p.pause()); players.clear();
-  if (S.view !== 'video') S.videoDraft = null;
+  if (S.view !== 'video') { S.videoDraft = null; S.videoAdd = false; }
   attachView();
   window.scrollTo(0, 0);
 }
-window.addEventListener('popstate', route);
+// 7.0: смена страницы — плавным переходом (View Transitions), где браузер умеет и анимации не выключены
+function navRoute(back = false) {
+  const reduce = document.documentElement.dataset.anim === 'off' || matchMedia('(prefers-reduced-motion: reduce)').matches;
+  if (!document.startViewTransition || reduce || S.phase !== 'app' || document.hidden || S.view === 'clips') return route();
+  document.documentElement.dataset.nav = back ? 'back' : 'fwd';
+  document.startViewTransition(() => route());
+}
+window.addEventListener('popstate', () => navRoute(true));
 // старые ссылки с решёткой (/#video, #music/stats) превращаем в обычные адреса; решётку Google (#id_token) не трогаем
 function legacyHash() {
   const h = location.hash; if (h.length < 2 || /^#(id_token|access_token|error|state)=/.test(h)) return false;
@@ -730,7 +754,7 @@ function prettyUrl(pid) {
   if (!u?.nick || u.deleted || curRoute() !== 'id/' + pid) return;
   nickUid.set(u.nick, pid); history.replaceState(null, '', BASE + '@' + u.nick);
 }
-const go = h => { if (curRoute() === h) route(); else { history.pushState(null, '', BASE + h); route(); } };
+const go = h => { if (curRoute() === h) route(); else { history.pushState(null, '', BASE + h); navRoute(); } };
 
 function onViewErr(e) { console.error(e); S.viewError = e; S.loading = false; render(); }
 
@@ -803,6 +827,9 @@ function attachView() {
       cache.videos = s.docs.map(data).sort((a, b) => ms(b.createdAt) - ms(a.createdAt));
       ensureUsers(cache.videos.map(v => v.ownerId)); S.loading = false; render();
     }, onViewErr));
+  } else if (S.view === 'clips') {
+    S.clipsReady = false; S.clipIdx = 0; cache.clips = []; cache.clipsLast = null; cache.clipsDone = false; cache.clipsBusy = false;
+    loadClips(S.clipId).then(() => { if (S.view !== 'clips') return; S.clipsReady = true; S.loading = false; render(); });
   } else if (S.view === 'watch') {
     cache.video = null; cache.videos = [];
     const wid = S.watchId;
@@ -1078,7 +1105,11 @@ const BAN_DAYS = [[1, '1 день'], [7, 'Неделя'], [30, 'Месяц'], [0
 const emojiOf = u => typeof u?.emoji === 'string' && u.emoji && u.emoji.length <= 16 && /\p{Extended_Pictographic}/u.test(u.emoji) && !/[<>"'&]/.test(u.emoji) ? u.emoji : '';
 const emojiTag = u => emojiOf(u) ? `<span class="emoji-st" title="Статус">${emojiOf(u)}</span>` : '';
 const nameLink = u => u && !u.deleted ? `<a class="name" href="#id/${esc(u.id)}" style="color:var(--fg);font-weight:600">${esc(u.name)}</a>${emojiTag(u)}${admBadge(u)}` : `<span class="name">${esc(u?.name || '…')}</span>`;
-const loadingBox = () => `<div class="card loading"><div class="spin"></div></div>`;
+// 7.0: пока грузится — «скелетон» страницы вместо крутилки
+const loadingBox = (n = 2) => `<div class="sk-wrap" role="status" aria-label="Загружаем…">${Array.from({ length: n }, (_, k) => `<div class="card pad sk-post">
+  <div class="row"><span class="sk-av big"></span><span class="grow"><span class="sk-line" style="width:${38 + k * 9}%"></span><span class="sk-line short" style="width:24%"></span></span></div>
+  <span class="sk-line" style="margin-top:16px;width:92%"></span><span class="sk-line" style="margin-top:8px;width:${70 - k * 12}%"></span>
+  ${k === 0 ? '<span class="sk-box sk-media"></span>' : ''}</div>`).join('')}</div>`;
 
 const playerKey = () => { const v = cache.video; return `${S.watchId}:${v ? (v.missing ? 'x' : v.source) : '-'}:${S.videoSrc ? 1 : 0}:${S.videoErr ? 1 : 0}`; };
 function render() {
@@ -1090,6 +1121,24 @@ function render() {
     if (pl && pl.dataset.key === playerKey()) {
       const swap = (sel, html) => { const el = app.querySelector(sel); if (el) el.outerHTML = html; };
       swap('nav.nav', navHtml()); swap('#watchInfo', watchInfo()); swap('#watchSide', watchSide());
+      return;
+    }
+  }
+  // в клипах ленту не пересоздаём (ролик не перезапускается), а окна поверх неё меняем отдельно
+  if (S.phase === 'app' && S.view === 'clips' && !S.viewError) {
+    const box = app.querySelector('#clips'), host = app.querySelector('#clipsOv');
+    if (box && host && box.dataset.key === clipsKey()) {
+      const html = overlay();
+      if (html !== clipsOvHtml) {
+        const focusId = document.activeElement?.id, sel = document.activeElement?.selectionStart, kept = {};
+        host.querySelectorAll('input[id],textarea[id]').forEach(el => { if (el.type !== 'file') kept[el.id] = el.value; });
+        host.innerHTML = clipsOvHtml = html;
+        for (const [k, v] of Object.entries(kept)) { const el = document.getElementById(k); if (el && !resetIds.has(k)) el.value = v; }
+        resetIds.clear();
+        const f = focusId && document.getElementById(focusId);
+        if (f && host.contains(f)) { f.focus(); try { f.setSelectionRange(sel, sel); } catch (e) { } }
+        animate();
+      }
       return;
     }
   }
@@ -1116,6 +1165,8 @@ function render() {
     box.querySelectorAll('img').forEach(im => { if (!im.complete) im.addEventListener('load', () => { box.scrollTop = box.scrollHeight; }, { once: true }); });
   }
   { const ph = document.getElementById('liveVid'); if (ph && keepVid && LIVE && S.liveId === LIVE.sid) ph.replaceWith(keepVid); if (document.getElementById('liveVid')) liveAttach(); const bx = document.getElementById('liveMsgs'); if (bx) bx.scrollTop = bx.scrollHeight; }
+  if (S.view === 'clips') clipsMount();
+  { const mi = document.getElementById('msgInput'); if (mi) mi.closest('form')?.classList.toggle('has-text', !!mi.value.trim()); }
   animate();
   syncGlass();
   if (S.fullPlayer && S.fpLyrics) { syncLyrics(); if (!lyrRaf) lyrLoop(); }
@@ -1321,6 +1372,7 @@ function navHtml() {
 
 function shell() {
   const me = S.me;
+  if (S.view === 'clips' && !S.viewError) { clipsOvHtml = overlay(); return viewClips() + `<div id="clipsOv">${clipsOvHtml}</div>`; }
   let main;
   if (S.viewError) main = errBox(S.viewError);
   else if (S.view === 'profile') main = viewProfile();
@@ -1447,7 +1499,7 @@ function mdDrawer(me) {
     ${it('im', I.msg, 'Чаты', v === 'messages', cache.chats.filter(isUnread).length)}${it('friends', I.friends, 'Друзья', v === 'friends', cache.incoming.length)}
     ${it('notif', I.bell, 'Сигналы', v === 'notif', unseenNotifs())}${it('saved', I.bookmark, 'Закладки', v === 'saved')}${it('people', I.people, 'Люди', v === 'people')}
     <div class="md-group">Медиа</div>
-    ${it('music', I.music, 'Музыка', v === 'music')}${it('video', I.video, 'Видео', ['video', 'watch'].includes(v))}${it('albums', I.album, 'Альбомы', ['albums', 'album'].includes(v))}
+    ${it('music', I.music, 'Музыка', v === 'music')}${it('video', I.video, 'Видео', ['video', 'watch'].includes(v))}${it('clips', I.play, 'Клипы', v === 'clips')}${it('albums', I.album, 'Альбомы', ['albums', 'album'].includes(v))}
     ${it('disk', I.disk, 'Диск', v === 'disk')}${it('clubs', I.club, 'Клубы', ['clubs', 'club'].includes(v))}
     <div class="md-group">Сервисы</div>
     ${it('apps', I.apps, 'Все сервисы', MD_APPS.includes(v), unreadMail())}
@@ -1593,7 +1645,7 @@ const PAL_SECTIONS = () => [
   ['settings', I.gear, 'Настройки', 'тема дизайн цвет'], ['edit', I.home, 'Редактировать страницу', 'имя фото статус'],
   ['@recap', I.star, 'Мои итоги', 'статистика wrapped'], ['music/stats', I.music, 'Моя статистика музыки', 'прослушивания любимые треки исполнители'],
   ['timer', '⏱', 'ВС Таймер', 'секундомер таймер помодоро'], ['calc', '🧮', 'ВС Калькулятор', 'посчитать'], ['dice', '🎲', 'ВС Жребий', 'монетка кубик случайное число'],
-  ['games/sudoku', '🔢', 'Судоку', 'игра головоломка'], ['live', '🔴', 'ВС Эфир', 'стрим трансляция прямой эфир'], ['@keys', '⌨', 'Горячие клавиши', 'сочетания клавиатура'],
+  ['games/sudoku', '🔢', 'Судоку', 'игра головоломка'], ['@whatsnew', '✨', 'Что нового в 7.0', 'обновление версия новинки'], ['live', '🔴', 'ВС Эфир', 'стрим трансляция прямой эфир'], ['clips', '🎬', 'ВС Клипы', 'короткие видео ролики reels шортс'], ['@keys', '⌨', 'Горячие клавиши', 'сочетания клавиатура'],
 ];
 const norm = t => String(t || '').toLowerCase().replace(/ё/g, 'е');
 function palItems() {
@@ -1620,6 +1672,7 @@ function palGo(i) {
   S.pal = null;
   if (x.href === '@recap') { openRecap(); return; }
   if (x.href === '@keys') { S.keys = true; render(); return; }
+  if (x.href === '@whatsnew') { S.whatsNew = true; render(); return; }
   if (x.q !== undefined) S.query = x.q;
   if (curRoute() === x.href) render(); else go(x.href);
 }
@@ -1691,6 +1744,7 @@ const REPORT_REASONS = { spam: 'Спам', abuse: 'Оскорбления', nsfw
 function overlay() {
   if (S.recap) return recapOverlay();
   if (S.keys) return keysOverlay();
+  if (S.whatsNew) return whatsNewModal();
   if (S.liveForm) return liveFormModal();
   if (S.liveRec) return liveRecModal();
   if (S.plPick || S.plForm) return playlistModal();
@@ -1776,24 +1830,28 @@ function overlay() {
   return '';
 }
 
-/* ---------- ВС Видео ---------- */
-function videoCard(v) {
-  const o = U(v.ownerId), th = videoThumb(v);
-  return `<a class="vcard" href="#video/${esc(v.id)}">
+/* ---------- ВС Видео 2.0 (7.0): главная с большим роликом, полкой Клипов и сеткой; страница просмотра с «Дальше» ---------- */
+const provName = v => v.provider === 'youtube' ? 'YouTube' : v.provider === 'rutube' ? 'Rutube' : v.provider === 'vk' ? 'VK Видео' : 'Ссылка';
+function videoCard(v, wide = false) {
+  const o = U(v.ownerId), th = videoThumb(v), likes = (v.likes || []).length;
+  return `<a class="vcard ${wide ? 'vcard-wide' : ''}" href="#video/${esc(v.id)}">
     <div class="vthumb">${th ? `<img src="${esc(th)}" alt="" loading="lazy" referrerpolicy="no-referrer">` : `<span class="vph">${I.play}</span>`}
-      ${v.duration ? `<span class="vdur tnum">${fmtDur(v.duration)}</span>` : v.source === 'link' ? `<span class="vdur">${v.provider === 'youtube' ? 'YouTube' : v.provider === 'rutube' ? 'Rutube' : v.provider === 'vk' ? 'VK Видео' : 'Ссылка'}</span>` : ''}</div>
-    <div class="vmeta"><b>${esc(v.title || 'Без названия')}</b><span class="muted small">${esc(o?.name || '')}${o ? ' · ' : ''}${ago(v.createdAt)}</span></div>
+      ${v.duration ? `<span class="vdur tnum">${fmtDur(v.duration)}</span>` : v.source === 'link' ? `<span class="vdur">${provName(v)}</span>` : ''}
+      <span class="vplay" aria-hidden="true">${I.play}</span></div>
+    <div class="vmeta">${o ? avatar(o, 32, false) : ''}<span class="vmeta-t"><b>${esc(v.title || 'Без названия')}</b>
+      <span class="muted small">${esc(o?.name || '')}${o ? ' · ' : ''}${ago(v.createdAt)}${likes ? ` · ♥ ${likes}` : ''}</span></span></div>
   </a>`;
 }
-
-function viewVideo() {
-  const me = S.me, owner = S.videoOwner, ou = owner ? U(owner) : null, mine = owner === me.id;
-  const tab = (href, l, on) => `<a class="${on ? 'on' : ''}" href="#${href}">${l}</a>`;
+const clipCard = v => { const th = videoThumb(v), o = U(v.ownerId);
+  return `<a class="vclip" href="#clips/${esc(v.id)}"><span class="vclip-img">${th ? `<img src="${esc(th)}" alt="" loading="lazy" referrerpolicy="no-referrer">` : `<span class="vph">${I.play}</span>`}</span>
+    <span class="vclip-t"><b>${esc(v.title || 'Без названия')}</b><span>${esc(o?.name || '')}</span></span></a>`; };
+function videoAdder() {
   const d = S.videoDraft;
-  const adder = !owner || mine ? `<div class="card pad form">
+  return `<div class="card pad form vadd">
       <div class="row" style="flex-wrap:wrap;gap:8px"><b class="grow">Добавить видео</b>
         <button class="btn sec" data-act="pickvideo" ${S.upload ? 'disabled' : ''}>${I.upload}<span>Загрузить файл</span></button>
-        <button class="btn sec" data-act="linkform">${I.link}<span>По ссылке</span></button></div>
+        <button class="btn sec" data-act="linkform">${I.link}<span>По ссылке</span></button>
+        <button class="icon-btn" data-act="videoadd" aria-label="Закрыть">✕</button></div>
       ${S.linkForm ? `<form class="form" data-form="videolink">
         <div class="field"><label for="vlUrl">Ссылка на YouTube, Rutube или VK Видео</label><input id="vlUrl" type="url" required placeholder="https://youtu.be/…" autocomplete="off"></div>
         <div class="field"><label for="vlTitle">Название</label><input id="vlTitle" required maxlength="120"></div>
@@ -1805,14 +1863,235 @@ function viewVideo() {
         <div class="field"><label for="vfTitle">Название</label><input id="vfTitle" required maxlength="120" value="${esc(d.title)}"></div>
         <div class="field"><label for="vfDesc">Описание</label><textarea id="vfDesc" rows="2" maxlength="2000" placeholder="Необязательно"></textarea></div>
         <div class="row"><button class="btn" type="submit" ${S.upload ? 'disabled' : ''}>Опубликовать</button><button type="button" class="btn ghost" data-act="canceldraft">Отмена</button></div>
-      </form>` : `<p class="hint" style="margin:0">Файл до ${fmtSize(LIMITS.video)}: примерно 20–40 секунд с телефона. Длинные ролики добавляйте ссылкой, они не занимают место.</p>`}
-    </div>` : '';
-  return `<div class="card"><div class="pad" style="padding-bottom:0"><h1 class="h brandh">ВС Видео</h1></div>
-      <div class="tabs">${tab('video', 'Все видео', !owner)}${tab('videos/' + me.id, 'Мои видео', mine)}${owner && !mine ? tab('videos/' + owner, esc(ou?.name || '…'), true) : ''}</div></div>
-    ${adder}
-    ${S.loading ? loadingBox() : cache.videos.length ? `<div class="vgrid">${cache.videos.map(videoCard).join('')}</div>`
-      : `<div class="card empty"><b>${mine ? 'Вы ещё не добавили видео' : owner ? 'Здесь пока нет видео' : 'Видео пока нет'}</b><span>Загрузите короткий ролик или добавьте ссылку.</span></div>`}`;
+      </form>` : `<p class="hint" style="margin:0">Файл до ${fmtSize(LIMITS.video)}: примерно 20–40 секунд с телефона — снятые вертикально ролики сразу попадут в Клипы. Длинные видео добавляйте ссылкой.</p>`}
+    </div>`;
 }
+const vSkeleton = n => `<div class="vgrid">${Array.from({ length: n }, () => `<div class="vcard sk"><div class="vthumb sk-box"></div><div class="vmeta"><span class="sk-av"></span><span class="vmeta-t"><span class="sk-line"></span><span class="sk-line short"></span></span></div></div>`).join('')}</div>`;
+function viewVideo() {
+  const me = S.me, owner = S.videoOwner, ou = owner ? U(owner) : null, mine = owner === me.id, vids = cache.videos || [];
+  const tab = (href, l, on) => `<a class="${on ? 'on' : ''}" href="#${href}">${l}</a>`;
+  const canAdd = (!owner || mine) && !banOf(me), adding = S.videoAdd || S.linkForm || S.videoDraft;
+  const head = `<section class="vh-head"><div class="grow" style="min-width:0"><span class="mus-kicker">ВС Видео</span>
+      <h1 class="vh-title">${owner ? (mine ? 'Мои видео' : esc(ou?.name || 'Видео')) : 'Смотри, что нового'}</h1></div>
+      <a class="btn sec vh-clips" href="#clips">${I.play}<span>Клипы</span></a>
+      ${canAdd ? `<button class="btn" data-act="videoadd">${I.upload}<span>Добавить</span></button>` : ''}</section>
+    <div class="tabs vh-tabs">${tab('video', 'Главная', !owner)}${tab('clips', 'Клипы', false)}${tab('videos/' + me.id, 'Мои видео', mine)}${owner && !mine ? tab('videos/' + owner, esc(ou?.name || '…'), true) : ''}</div>`;
+  if (S.loading) return head + (adding && canAdd ? videoAdder() : '') + vSkeleton(6);
+  if (!vids.length) return head + (canAdd ? videoAdder() : '') + `<div class="card empty"><b>${mine ? 'Вы ещё не добавили видео' : owner ? 'Здесь пока нет видео' : 'Видео пока нет'}</b><span>Загрузите короткий ролик или добавьте ссылку.</span></div>`;
+  if (owner) return head + (adding && canAdd ? videoAdder() : '') + `<div class="vgrid">${vids.map(v => videoCard(v)).join('')}</div>`;
+  const hero = vids[0], ho = U(hero.ownerId), hth = videoThumb(hero);
+  const monthAgo = Date.now() - 30 * 864e5;
+  const popular = vids.filter(v => (v.likes || []).length && ms(v.createdAt) > monthAgo).sort((a, b) => (b.likes || []).length - (a.likes || []).length).slice(0, 8);
+  return head + (adding && canAdd ? videoAdder() : '') + `
+    <a class="vhero" href="#video/${esc(hero.id)}">
+      <span class="vhero-img">${hth ? `<img src="${esc(hth)}" alt="" referrerpolicy="no-referrer">` : ''}</span>
+      <span class="vhero-shade"></span>
+      <span class="vhero-play">${I.play}</span>
+      <span class="vhero-t"><span class="mus-kicker">Новое видео</span><b>${esc(hero.title || 'Без названия')}</b>
+        <span class="vhero-by">${ho ? avatar(ho, 28, false) : ''}${esc(ho?.name || '')} · ${ago(hero.createdAt)}${hero.duration ? ' · ' + fmtDur(hero.duration) : ''}</span></span></a>
+    <section class="mh-shelf"><div class="mh-h"><h2>Клипы</h2><a href="#clips">Смотреть все</a></div>
+      <div class="mh-row"><a class="vclip vclip-go" href="#clips"><span class="vclip-img"><span class="vclip-go-ic">${I.play}</span></span><span class="vclip-t"><b>Листать клипы</b><span>как в ленте коротких видео</span></span></a>${vids.slice(0, 12).map(clipCard).join('')}</div></section>
+    ${popular.length >= 2 ? `<section class="mh-shelf"><div class="mh-h"><h2>Популярное за месяц</h2></div><div class="mh-row">${popular.map(v => videoCard(v, true)).join('')}</div></section>` : ''}
+    <section class="mh-shelf"><div class="mh-h"><h2>Все видео</h2></div><div class="vgrid">${vids.slice(1).map(v => videoCard(v)).join('')}</div></section>`;
+}
+function watchInfo() {
+  const v = cache.video; if (!v || v.missing) return '<div id="watchInfo"></div>';
+  const o = U(v.ownerId), me = S.me, likes = v.likes || [], liked = likes.includes(me.id), own = v.ownerId === me.id;
+  const long = (v.description || '').length > 180, open = S.vdescOpen === v.id;
+  return `<div class="card pad watch-info" id="watchInfo">
+    <h1 class="h watch-title">${esc(v.title || 'Без названия')}</h1>
+    <div class="row watch-by">${avatar(o, 44)}<div class="grow" style="min-width:0">${nameLink(o)}<div class="muted small">${ago(v.createdAt)}${v.source === 'link' ? ' · ' + provName(v) : ''}</div></div>
+      <a class="btn ghost small" href="#videos/${esc(v.ownerId)}">Все видео</a></div>
+    <div class="row watch-acts">
+      <button class="pill ${liked ? 'liked' : ''}" data-act="likevideo" data-id="${esc(v.id)}" aria-pressed="${liked}">${liked ? I.heart : I.heartO}${likes.length || ''}</button>
+      <a class="pill" href="#clips/${esc(v.id)}">${I.play}Как клип</a>
+      <button class="pill" data-act="copylink" data-id="${esc(v.id)}">${I.link}Ссылка</button>
+      <span class="grow"></span>
+      ${own || isSiteAdmin() ? `<button class="btn ${S.confirm === 'video:' + v.id ? 'danger' : 'ghost'} small" data-act="delvideo" data-id="${esc(v.id)}">${S.confirm === 'video:' + v.id ? 'Удалить видео?' : 'Удалить'}</button>` : ''}</div>
+    ${v.description ? `<div class="watch-desc ${long && !open ? 'cut' : ''}"><div class="post-text">${linkify(v.description)}</div>${long ? `<button class="linkbtn small" data-act="vdesc" data-id="${esc(v.id)}">${open ? 'Свернуть' : 'Ещё'}</button>` : ''}</div>` : ''}
+  </div>`;
+}
+const vAutoplay = () => lsGet('vs_vauto') !== '0';
+function watchSide() {
+  const list = cache.videos.slice(0, 12);
+  return `<aside class="watch-side" id="watchSide"><div class="row watch-next-h"><b class="grow">Дальше</b>
+      <button class="vauto" data-act="vautoplay" role="switch" aria-checked="${vAutoplay()}" title="Автоматически включать следующее видео"><span class="small">Автовоспроизведение</span><span class="vauto-sw ${vAutoplay() ? 'on' : ''}"></span></button></div>
+    ${list.length ? list.map(v => videoCard(v, true)).join('') : '<span class="muted small">Других видео пока нет</span>'}</aside>`;
+}
+// конец ролика на странице просмотра → через 5 секунд следующее (можно отменить)
+let vNextTimer = 0;
+document.addEventListener('ended', e => {
+  const vid = e.target; if (!(vid instanceof HTMLVideoElement) || !vid.closest('#player') || S.view !== 'watch' || !vAutoplay()) return;
+  const next = cache.videos?.[0]; if (!next) return;
+  const pl = document.getElementById('player'); if (!pl || pl.querySelector('.vnext')) return;
+  let n = 5;
+  pl.insertAdjacentHTML('beforeend', `<div class="vnext" role="status"><span class="small">Дальше через <b id="vnextN">${n}</b></span><b class="vnext-t">${esc(next.title || 'Без названия')}</b>
+    <div class="row"><button class="btn small" data-act="vnextgo" data-id="${esc(next.id)}">Смотреть</button><button class="btn ghost small light" data-act="vnextno">Отмена</button></div></div>`);
+  clearInterval(vNextTimer);
+  vNextTimer = setInterval(() => { n--; const el = document.getElementById('vnextN'); if (!el || S.view !== 'watch') { clearInterval(vNextTimer); return; } el.textContent = n; if (n <= 0) { clearInterval(vNextTimer); go('video/' + next.id); } }, 1000);
+}, true);
+
+/* ---------- ВС Клипы (7.0): вертикальная лента роликов — листается свайпом, играет по кругу, двойной тап — «нравится» ----------
+   Страница рисуется один раз за заход: обновления сайта её не перерисовывают (иначе ролик начинался бы заново), всё меняется точечно. */
+const CLIP_PAGE = 16;
+let clipObs = null, clipTapT = 0, clipTapTimer = 0;
+const clipsKey = () => S.clipsReady ? 'ready' : 'wait';
+let clipsOvHtml = '';
+async function loadClips(startId) {
+  if (cache.clipsBusy || cache.clipsDone) return [];
+  cache.clipsBusy = true;
+  try {
+    const parts = [orderBy('createdAt', 'desc'), limit(CLIP_PAGE)];
+    if (cache.clipsLast) parts.splice(1, 0, startAfter(cache.clipsLast));
+    const s = await getDocs(query(collection(db, 'videos'), ...parts));
+    cache.clipsLast = s.docs[s.docs.length - 1] || cache.clipsLast; if (s.size < CLIP_PAGE) cache.clipsDone = true;
+    let list = s.docs.map(data);
+    if (startId && !cache.clips.length) {
+      let first = list.find(v => v.id === startId);
+      if (!first) { const d = await getDoc(doc(db, 'videos', startId)).catch(() => null); if (d?.exists()) first = data(d); }
+      if (first) list = [first, ...list.filter(v => v.id !== startId)];
+    }
+    const have = new Set(cache.clips.map(v => v.id)), add = list.filter(v => !have.has(v.id));
+    cache.clips.push(...add); ensureUsers(add.map(v => v.ownerId));
+    return add;
+  } catch (e) { console.error(e); return []; } finally { cache.clipsBusy = false; }
+}
+function clipHtml(v, i) {
+  const o = U(v.ownerId), likes = v.likes || [], liked = likes.includes(S.me.id), th = videoThumb(v);
+  return `<section class="clip" data-i="${i}" data-id="${esc(v.id)}">
+    <div class="clip-bg" style="${th ? `background-image:url('${esc(th)}')` : ''}"></div>
+    <div class="clip-media" data-act="cliptap" data-id="${esc(v.id)}">${th ? `<img class="clip-poster" src="${esc(th)}" alt="" referrerpolicy="no-referrer">` : ''}</div>
+    <div class="clip-paused" aria-hidden="true">${I.play}</div>
+    <div class="clip-info"><a class="clip-author" href="#id/${esc(v.ownerId)}">${avatar(o, 38, false)}<b>${esc(o?.name || '')}</b></a>
+      <div class="clip-title">${esc(v.title || '')}</div>${v.description ? `<div class="clip-desc">${esc(v.description)}</div>` : ''}</div>
+    <div class="clip-side">
+      <button class="clip-btn ${liked ? 'on' : ''}" data-act="cliplike" data-id="${esc(v.id)}" aria-label="Нравится" aria-pressed="${liked}"><span class="clip-ic">${liked ? I.heart : I.heartO}</span><span class="clip-n">${likes.length || ''}</span></button>
+      <a class="clip-btn" href="#video/${esc(v.id)}" aria-label="Открыть ролик"><span class="clip-ic">${I.video}</span><span class="clip-n">Открыть</span></a>
+      <button class="clip-btn" data-act="clipshare" data-id="${esc(v.id)}" aria-label="Скопировать ссылку"><span class="clip-ic">${I.link}</span><span class="clip-n">Ссылка</span></button>
+    </div>
+    <div class="clip-prog"><i></i></div>
+  </section>`;
+}
+function viewClips() {
+  const list = cache.clips || [];
+  const top = `<div class="clips-top"><a class="clips-x" href="#video" aria-label="Назад к видео">${I.back}</a><b>Клипы</b><span class="grow"></span>
+    <button class="clips-x" data-act="clipmute" id="clipMute" aria-label="${S.clipMuted ? 'Включить звук' : 'Выключить звук'}">${S.clipMuted ? '🔇' : '🔊'}</button></div>`;
+  if (!S.clipsReady) return `<div class="clips" id="clips" data-key="wait">${top}<div class="clip-load"><div class="spin"></div></div></div>`;
+  if (!list.length) return `<div class="clips" id="clips" data-key="ready">${top}<div class="clip-load"><b>Клипов пока нет</b><span>Загрузите короткое видео — оно появится здесь</span><a class="btn" href="#video">В ВС Видео</a></div></div>`;
+  return `<div class="clips" id="clips" data-key="ready">${top}
+    <div class="clips-feed" id="clipsFeed">${list.map(clipHtml).join('')}</div>
+    <div class="clips-nav"><button class="clips-x" data-act="clipstep" data-d="-1" aria-label="Предыдущий">${I.back}</button><button class="clips-x" data-act="clipstep" data-d="1" aria-label="Следующий">${I.back}</button></div>
+  </div>`;
+}
+// после полной перерисовки: следим, какой ролик на экране, и возвращаемся к тому, что смотрели
+function clipsMount() {
+  const feed = document.getElementById('clipsFeed'); if (!feed || feed.dataset.on) return;
+  feed.dataset.on = '1';
+  clipObs?.disconnect();
+  clipObs = new IntersectionObserver(es => es.forEach(e => { if (e.isIntersecting && e.intersectionRatio >= 0.6) clipActivate(+e.target.dataset.i); }), { root: feed, threshold: [0.6] });
+  feed.querySelectorAll('.clip').forEach(el => clipObs.observe(el));
+  const i = Math.min(S.clipIdx || 0, (cache.clips || []).length - 1);
+  if (i > 0) feed.scrollTop = i * feed.clientHeight;
+}
+function clipsStop() {
+  clipObs?.disconnect(); clipObs = null; clearTimeout(clipTapTimer);
+  document.querySelectorAll('#clipsFeed video').forEach(v => v.pause());
+}
+function clipsAppend(add) {
+  const feed = document.getElementById('clipsFeed'); if (!feed) return;
+  const start = cache.clips.length - add.length;
+  feed.insertAdjacentHTML('beforeend', add.map((v, k) => clipHtml(v, start + k)).join(''));
+  feed.querySelectorAll('.clip').forEach(el => { if (+el.dataset.i >= start) clipObs?.observe(el); });
+}
+async function clipActivate(i) {
+  if (S.view !== 'clips' || S.clipIdx === i && document.querySelector(`#clipsFeed .clip[data-i="${i}"].on`)) return;
+  const list = cache.clips, v = list[i]; if (!v) return;
+  S.clipIdx = i;
+  if (curRoute() !== 'clips/' + v.id) history.replaceState(null, '', BASE + 'clips/' + v.id);
+  document.querySelectorAll('#clipsFeed .clip').forEach(el => { const k = +el.dataset.i; if (k !== i) clipPause(el, Math.abs(k - i) > 2); });
+  const el = document.querySelector(`#clipsFeed .clip[data-i="${i}"]`); if (el) { el.classList.add('on'); clipPlay(el, v); }
+  const nx = list[i + 1]; if (nx?.source === 'file') getFileUrl(nx.fileId, nx.type || 'video/mp4').catch(() => { });   // следующий качаем заранее
+  if (i >= list.length - 3 && !cache.clipsDone) { const add = await loadClips(); if (add.length) clipsAppend(add); }
+}
+async function clipPlay(el, v) {
+  const media = el.querySelector('.clip-media');
+  if (v.source === 'link' && v.provider !== 'direct') {   // YouTube / Rutube / VK — их собственный плеер
+    if (!media.querySelector('iframe')) {
+      let src = embedSrc(v); if (!src) return;
+      if (v.provider === 'youtube') src += `?autoplay=1&mute=${S.clipMuted ? 1 : 0}&playsinline=1&loop=1&playlist=${v.vid}&controls=0&rel=0`;
+      else src += (src.includes('?') ? '&' : '?') + 'autoplay=1';
+      media.insertAdjacentHTML('beforeend', `<iframe src="${esc(src)}" allow="autoplay; encrypted-media; fullscreen; picture-in-picture" allowfullscreen referrerpolicy="strict-origin-when-cross-origin" title="${esc(v.title)}"></iframe>`);
+      el.classList.add('playing');
+    }
+    return;
+  }
+  let vid = media.querySelector('video');
+  if (!vid) {
+    vid = document.createElement('video'); vid.className = 'clip-v'; vid.loop = true; vid.playsInline = true; vid.setAttribute('playsinline', ''); vid.preload = 'auto';
+    vid.muted = !!S.clipMuted; media.appendChild(vid);
+    const bar = el.querySelector('.clip-prog i');
+    vid.addEventListener('timeupdate', () => { if (vid.duration) bar.style.width = (vid.currentTime / vid.duration * 100) + '%'; });
+    vid.addEventListener('playing', () => el.classList.add('playing'));
+    try { vid.src = v.source === 'file' ? await getFileUrl(v.fileId, v.type || 'video/mp4') : v.vid; }
+    catch (e) { console.error(e); el.classList.add('err'); return; }
+  }
+  if (S.view !== 'clips' || S.clipIdx !== +el.dataset.i) return;   // пока качали, уже пролистали дальше
+  el.classList.remove('paused'); vid.muted = !!S.clipMuted;
+  vid.play().then(() => { if (!vid.muted && !player.audio.paused) player.audio.pause(); })   // музыка не мешает ролику со звуком
+    .catch(() => { vid.muted = true; S.clipMuted = true; clipMuteUi(); vid.play().catch(() => { }); });
+}
+function clipPause(el, unload) {
+  el.classList.remove('on');
+  const vid = el.querySelector('video');
+  if (vid) {
+    vid.pause();
+    if (unload) {   // далеко ушли — отпускаем память
+      const v = cache.clips[+el.dataset.i];
+      vid.removeAttribute('src'); vid.load(); vid.remove(); el.classList.remove('playing');
+      if (v?.source === 'file' && blobCache.has(v.fileId) && cache.video?.fileId !== v.fileId) { URL.revokeObjectURL(blobCache.get(v.fileId)); blobCache.delete(v.fileId); }
+    }
+  }
+  const fr = el.querySelector('iframe'); if (fr) { fr.remove(); el.classList.remove('playing'); }
+}
+function clipToggle(el) {
+  const vid = el?.querySelector('video'); if (!vid) return;
+  if (vid.paused) { vid.play().catch(() => { }); el.classList.remove('paused'); } else { vid.pause(); el.classList.add('paused'); }
+}
+function clipMuteUi() { const b = document.getElementById('clipMute'); if (b) { b.textContent = S.clipMuted ? '🔇' : '🔊'; b.setAttribute('aria-label', S.clipMuted ? 'Включить звук' : 'Выключить звук'); } }
+function clipHeart(el, x, y) {   // летящее сердце на месте двойного тапа
+  if (!el) return; const r = el.getBoundingClientRect();
+  const h = document.createElement('span'); h.className = 'tap-heart'; h.innerHTML = I.heart;
+  h.style.left = (x - r.left) + 'px'; h.style.top = (y - r.top) + 'px'; h.style.setProperty('--rot', (Math.random() * 30 - 15) + 'deg');
+  el.appendChild(h); setTimeout(() => h.remove(), 900);
+  try { navigator.vibrate?.(12); } catch (e) { }
+}
+async function clipLike(id, onlyAdd) {
+  const v = (cache.clips || []).find(x => x.id === id); if (!v) return;
+  const me = uid(), has = (v.likes || []).includes(me);
+  if (has && onlyAdd) return;
+  v.likes = has ? v.likes.filter(x => x !== me) : [...(v.likes || []), me];
+  document.querySelectorAll(`#clipsFeed .clip[data-id="${CSS.escape(id)}"] [data-act=cliplike]`).forEach(b => {
+    b.classList.toggle('on', !has); b.setAttribute('aria-pressed', String(!has));
+    b.querySelector('.clip-ic').innerHTML = !has ? I.heart : I.heartO; b.querySelector('.clip-n').textContent = v.likes.length || '';
+    if (!has) { b.classList.remove('pop'); void b.offsetWidth; b.classList.add('pop'); }
+  });
+  try { await updateDoc(doc(db, 'videos', id), { likes: has ? arrayRemove(me) : arrayUnion(me) }); }
+  catch (e) { toast(errText(e)); }
+}
+function clipStep(d) {
+  const feed = document.getElementById('clipsFeed'); if (!feed) return;
+  const i = Math.max(0, Math.min((cache.clips || []).length - 1, (S.clipIdx || 0) + d));
+  feed.scrollTo({ top: i * feed.clientHeight, behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' });
+}
+document.addEventListener('keydown', e => {
+  if (S.view !== 'clips' || clipsOvHtml || S.fullPlayer || e.target.matches?.('input,textarea') || e.ctrlKey || e.metaKey || e.altKey) return;
+  const el = document.querySelector(`#clipsFeed .clip[data-i="${S.clipIdx || 0}"]`);
+  if (e.key === 'ArrowDown' || e.key === 'j' || e.key === 'о') { e.preventDefault(); clipStep(1); }
+  else if (e.key === 'ArrowUp' || e.key === 'k' || e.key === 'л') { e.preventDefault(); clipStep(-1); }
+  else if (e.key === ' ') { e.preventDefault(); clipToggle(el); }
+  else if (e.key === 'm' || e.key === 'ь') { S.clipMuted = !S.clipMuted; document.querySelectorAll('#clipsFeed video').forEach(v => { v.muted = S.clipMuted; }); clipMuteUi(); }
+  else if (e.key === 'Escape') go('video');
+});
 
 function viewWatch() {
   const v = cache.video;
@@ -1831,22 +2110,6 @@ function viewWatch() {
     </div>
     ${watchSide()}
   </div>`;
-}
-function watchInfo() {
-  const v = cache.video; if (!v || v.missing) return '<div id="watchInfo"></div>';
-  const o = U(v.ownerId), me = S.me, likes = v.likes || [], liked = likes.includes(me.id), own = v.ownerId === me.id;
-  return `<div class="card pad" id="watchInfo" style="display:flex;flex-direction:column;gap:10px">
-    <h1 class="h" style="font-size:20px;text-wrap:balance">${esc(v.title || 'Без названия')}</h1>
-    <div class="row" style="flex-wrap:wrap">${avatar(o, 40)}<div class="grow">${nameLink(o)}<div class="muted small">${ago(v.createdAt)}</div></div>
-      <button class="pill ${liked ? 'liked' : ''}" data-act="likevideo" data-id="${esc(v.id)}" aria-pressed="${liked}">${liked ? I.heart : I.heartO}${likes.length || ''}</button>
-      <button class="pill" data-act="copylink" data-id="${esc(v.id)}">${I.link}Ссылка</button>
-      ${own || isSiteAdmin() ? `<button class="btn ${S.confirm === 'video:' + v.id ? 'danger' : 'ghost'} small" data-act="delvideo" data-id="${esc(v.id)}">${S.confirm === 'video:' + v.id ? 'Удалить видео?' : 'Удалить'}</button>` : ''}</div>
-    ${v.description ? `<div class="post-text">${esc(v.description)}</div>` : ''}
-  </div>`;
-}
-function watchSide() {
-  const list = cache.videos.slice(0, 10);
-  return `<aside class="watch-side" id="watchSide"><b>Ещё видео</b>${list.length ? list.map(videoCard).join('') : '<span class="muted small">Других видео пока нет</span>'}</aside>`;
 }
 
 /* ---------- ВС Альбомы ---------- */
@@ -1963,7 +2226,7 @@ function viewSettings() {
       <a class="uitem setlink" href="#vid"><span class="ficon">${I.vid}</span><span class="grow">VС ID: вход, почта, пароль</span>›</a>
       <button class="uitem setlink" data-act="logout"><span class="ficon">${I.out}</span><span class="grow" style="text-align:left">Выйти из аккаунта</span></button>
     </div></div>
-    <p class="hint" style="text-align:center">VСмске ${VERSION}</p>`;
+    <p class="hint" style="text-align:center">VСмске ${VERSION} · <button class="linkbtn" data-act="whatsnew">Что нового</button></p>`;
 }
 
 /* ---------- Мобильное меню «Ещё» ---------- */
@@ -1981,6 +2244,7 @@ function viewMore() {
       ${item('albums', I.album, 'ВС Альбомы', 'Ваши фотографии')}
       ${item('disk', I.disk, 'ВС Диск', 'Личные файлы')}
       ${item('videos/' + me.id, I.video, 'Мои видео')}
+      ${item('clips', I.play, 'ВС Клипы', 'Короткие видео — листай свайпом')}
     </div>
     <div class="card ulist">
       ${item('vid', I.vid, 'VС ID', 'Вход, почта, пароль')}
@@ -2107,6 +2371,7 @@ function viewApps() {
       ${tile('events', I.cal, 'ВС События', 'Встречи и вечеринки', 'c-event')}
       ${tile('rates', I.rate, 'ВС Курсы', 'Курсы валют и конвертер', 'c-rate')}
       ${tile('horo', I.star, 'ВС Гороскоп', 'Прогноз на сегодня', 'c-horo')}
+      ${tile('clips', '🎬', 'ВС Клипы', 'Короткие видео — листай свайпом', 'c-clips')}
       ${tile('live', '🔴', 'ВС Эфир', 'Прямые эфиры с камеры и экрана', 'c-live')}
       ${tile('timer', '⏱', 'ВС Таймер', 'Секундомер, таймер, помодоро', 'c-timer')}
       ${tile('calc', '🧮', 'ВС Калькулятор', 'Со скобками и историей', 'c-calc')}
@@ -4157,6 +4422,72 @@ async function liveCleanStale() {
 }
 window.addEventListener('pagehide', () => { const L = LIVE; if (!L) return; nodeDel(L); if (L.host) updateDoc(doc(db, 'streams', L.sid), { live: false, endedAt: serverTimestamp() }).catch(() => { }); });
 
+/* 7.0: «нравится» у записи — кнопкой или двойным тапом по фото (двойной тап только ставит, не снимает) */
+let imgTap = {};
+async function togglePostLike(id, onlyAdd = false) {
+  const p = findPost(id); if (!p) return;
+  const had = (p.likes || []).includes(uid()), nid = `like_${id}_${uid()}`;
+  if (had && onlyAdd) return;
+  try { navigator.vibrate?.(had ? 0 : 10); } catch (e) { }
+  await updateDoc(doc(db, 'posts', id), { likes: had ? arrayRemove(uid()) : arrayUnion(uid()) });
+  if (p.authorId !== uid()) { if (had) unnotify(nid); else notify(p.authorId, 'like', id, p.text || (p.poll ? p.poll.q : 'Фото'), nid); }
+}
+function tapHeart(x, y) {
+  const h = document.createElement('span'); h.className = 'tap-heart fixed'; h.innerHTML = I.heart;
+  h.style.left = x + 'px'; h.style.top = y + 'px'; h.style.setProperty('--rot', (Math.random() * 30 - 15) + 'deg');
+  document.body.appendChild(h); setTimeout(() => h.remove(), 900);
+}
+/* 7.0: обои чата (хранятся на устройстве: для каждого диалога или сразу для всех) */
+const WALLS = [['none', 'Без обоев'], ['dusk', 'Сумерки'], ['ocean', 'Океан'], ['sunset', 'Закат'], ['mint', 'Мята'], ['night', 'Ночь'], ['dots', 'Горошек'], ['waves', 'Волны'], ['hearts', 'Сердечки']];
+const wallsGet = () => { try { const w = JSON.parse(lsGet('vs_walls') || '{}'); return w && typeof w === 'object' ? w : {}; } catch (e) { return {}; } };
+const wallOf = key => { const w = wallsGet(), v = w[key] || w['*'] || 'none'; return WALLS.some(x => x[0] === v) ? v : 'none'; };
+const wallCls = key => { const w = wallOf(key); return w === 'none' ? '' : 'wall wall-' + w; };
+function wallPanel(key) {
+  const cur = wallOf(key);
+  return `<div class="wall-pick"><div class="wall-sw">${WALLS.map(([k, l]) => `<button class="wall-o wall-${k} ${cur === k ? 'on' : ''}" data-act="wallset" data-v="${k}" data-key="${esc(key)}" aria-pressed="${cur === k}"><span>${l}</span></button>`).join('')}</div>
+    <div class="row" style="justify-content:space-between;gap:8px;flex-wrap:wrap"><span class="small muted">Обои видны только вам</span>
+      <button class="btn ghost small" data-act="wallall" data-key="${esc(key)}">Поставить во все чаты</button></div></div>`;
+}
+function replyToMsg(id) {
+  const m = cache.messages.find(x => x.id === id); if (!m) return;
+  S.replyTo = { id: m.id, from: m.from, text: (m.text || (m.image ? '📷 Фото' : m.audio ? '🎤 Голосовое' : '')).slice(0, 100) };
+  S.msgSel = null; render(); document.getElementById('msgInput')?.focus();
+}
+// свайп сообщения вправо — ответить (на телефоне)
+let swipeMsg = null;
+document.addEventListener('touchstart', e => { const m = e.target.closest?.('.msgs .msg[data-id]'); swipeMsg = m && e.touches.length === 1 ? { el: m, x: e.touches[0].clientX, y: e.touches[0].clientY, dx: 0, lock: null } : null; }, { passive: true });
+document.addEventListener('touchmove', e => {
+  const s = swipeMsg; if (!s) return;
+  const t = e.touches[0], dx = t.clientX - s.x, dy = t.clientY - s.y;
+  if (s.lock === null && (Math.abs(dx) > 8 || Math.abs(dy) > 8)) s.lock = dx > 0 && Math.abs(dx) > Math.abs(dy) * 1.3 ? 'x' : 'y';
+  if (s.lock !== 'x') return;
+  s.dx = Math.max(0, Math.min(90, dx)); s.el.style.transform = `translateX(${s.dx}px)`; s.el.classList.toggle('swipe-ok', s.dx > 60);
+}, { passive: true });
+document.addEventListener('touchend', () => {
+  const s = swipeMsg; swipeMsg = null; if (!s || s.lock !== 'x') return;
+  s.el.style.transition = 'transform .2s'; s.el.style.transform = ''; s.el.classList.remove('swipe-ok'); setTimeout(() => { s.el.style.transition = ''; }, 220);
+  if (s.dx > 60) { try { navigator.vibrate?.(10); } catch (e) { } replyToMsg(s.el.dataset.id); }
+});
+// поле сообщения: пока пусто — микрофон, когда есть текст — кнопка «отправить»
+document.addEventListener('input', e => { if (e.target.id === 'msgInput') e.target.closest('form')?.classList.toggle('has-text', !!e.target.value.trim()); });
+/* 7.0: окно «Что нового» */
+const WN_VER = '7.0';
+const WN_ITEMS = [
+  ['🎬', 'ВС Клипы', 'Короткие видео во весь экран: листай свайпом, двойной тап — «нравится», звук одной кнопкой.', 'clips', 'Смотреть'],
+  ['📺', 'Новое ВС Видео', 'Главная с большим роликом, полками и «Популярным», а после видео само включается следующее.', 'video', 'Открыть'],
+  ['❤️', 'Двойной тап по фото', 'В ленте теперь можно лайкнуть фото двойным касанием — вылетит сердечко.', '', ''],
+  ['✍️', 'Разметка текста', 'Пиши **жирный**, *курсив*, ~~зачёркнутый~~, ||спойлер|| и `код` — в записях, комментариях и чатах. В новой записи есть кнопка «Aa».', '', ''],
+  ['🎨', 'Обои в чатах', 'Кнопка 🎨 в шапке диалога. А свайп сообщения вправо — быстрый ответ.', 'im', 'В чаты'],
+  ['🌊', 'Плавнее и быстрее', 'Страницы сменяются плавно, а вместо крутилки — аккуратные заготовки, пока всё грузится.', '', ''],
+];
+function whatsNewModal() {
+  return `<div class="ov wn-ov" data-act="wnclose"><div class="ov-in modal wn" data-stop="1" role="dialog" aria-label="Что нового">
+    <div class="wn-head"><i></i><i></i><i></i><span class="wn-kick">Обновление</span><b class="wn-title">VСмске 7.0</b><span class="wn-sub">Самое большое обновление — смотри, что нового</span>
+      <button class="icon-btn wn-x" data-act="wnclose" aria-label="Закрыть">✕</button></div>
+    <div class="wn-list">${WN_ITEMS.map(([e, t, d, href, btn]) => `<div class="wn-item"><span class="wn-ic">${e}</span><span class="grow"><b>${t}</b><span>${tagify(d)}</span></span>
+      ${href ? `<button class="btn sec small" data-act="wngo" data-href="${href}">${btn}</button>` : ''}</div>`).join('')}</div>
+    <button class="btn wn-ok" data-act="wnclose">Круто, понятно</button></div></div>`;
+}
 /* ---------- ВС Радио ---------- */
 const RADIO = [
   { id: 'record', title: 'Радио Record', artist: 'Танцевальная музыка', url: 'https://radiorecord.hostingradio.ru/rr_main96.aacp', c: '#F2994A' },
@@ -4614,7 +4945,7 @@ function viewNotifs() {
       const href = n.type === 'gift' || n.type === 'nick' ? '#id/' + uid() : n.type === 'friend' ? '#id/' + n.from : ['answer', 'best'].includes(n.type) ? '#q/' + n.postId : n.postId ? '#post/' + n.postId : '#id/' + n.from;
       return `<a class="uitem notif" href="${esc(href)}" style="color:var(--fg)">${avatar(u, 46, false)}
         <div class="grow" style="min-width:0"><b>${esc(u.name)}</b> ${NOTIF_TEXT[n.type] || ''}
-          ${n.text ? `<div class="muted small notif-text">«${esc(n.text)}»</div>` : ''}<div class="muted small">${ago(n.createdAt)}</div></div>
+          ${n.text ? `<div class="muted small notif-text">«${esc(plainText(n.text))}»</div>` : ''}<div class="muted small">${ago(n.createdAt)}</div></div>
         <span class="notif-ico" data-t="${esc(n.type)}">${n.type === 'like' ? I.heart : n.type === 'comment' ? I.comment : n.type === 'friend' ? I.friends : I.feed}</span></a>`;
     }).join('') : `<div class="empty">Пока тихо<span class="small">Здесь появятся лайки, комментарии и записи на вашей стене</span></div>`}</div></div>`;
 }
@@ -4647,6 +4978,27 @@ const EMOJI = '😀 😂 🥲 😍 😘 😎 🤔 😴 😭 😡 🥳 😇 🙃 
 const emojiPanel = target => S.emoji === target
   ? `<div class="emoji" role="group" aria-label="Смайлики">${EMOJI.map(e => `<button type="button" data-act="emoji" data-t="${target}" data-e="${e}">${e}</button>`).join('')}</div>` : '';
 const emojiBtn = (target, cls = 'icon-btn') => `<button type="button" class="${cls}" data-act="emojis" data-t="${target}" aria-label="Смайлики" aria-expanded="${S.emoji === target}">😊</button>`;
+// 7.0: кнопки разметки — оборачивают выделенный текст значками (**…**, *…*, ~~…~~, ||…||, `…`)
+const FMT_MARKS = [['**', '<b>Ж</b>', 'Жирный'], ['*', '<i>К</i>', 'Курсив'], ['~~', '<s>З</s>', 'Зачёркнутый'], ['||', '▒', 'Спойлер'], ['`', '{ }', 'Код']];
+const fmtPanel = target => S.fmt === target ? `<div class="fmt-bar" role="group" aria-label="Разметка текста">${FMT_MARKS.map(([m, l, t]) => `<button type="button" data-act="fmtwrap" data-t="${target}" data-m="${m}" title="${t}" aria-label="${t}">${l}</button>`).join('')}
+  <span class="small muted">Выделите слова и нажмите</span></div>` : '';
+const fmtBtn = target => `<button type="button" class="icon-btn" data-act="fmts" data-t="${target}" aria-label="Разметка текста" aria-expanded="${S.fmt === target}" title="Разметка: жирный, курсив, спойлер"><b class="fmt-aa">Aa</b></button>`;
+function fmtWrap(id, mark) {
+  const el = document.getElementById(id); if (!el) return;
+  const a = el.selectionStart ?? el.value.length, z = el.selectionEnd ?? a, sel = el.value.slice(a, z);
+  if (el.value.length + mark.length * 2 > (el.maxLength > 0 ? el.maxLength : 1e9)) return;
+  el.value = el.value.slice(0, a) + mark + sel + mark + el.value.slice(z);
+  el.focus(); el.setSelectionRange(a + mark.length, a + mark.length + sel.length);
+  el.dispatchEvent(new Event('input', { bubbles: true }));
+}
+// кнопка разметки не забирает фокус (на телефоне не прячется клавиатура и не теряется выделение)
+document.addEventListener('pointerdown', e => { if (e.target.closest?.('[data-act=fmtwrap]')) e.preventDefault(); });
+// Ctrl/⌘+B — жирный, Ctrl/⌘+I — курсив в полях записи, комментария и сообщения
+document.addEventListener('keydown', e => {
+  if (!(e.ctrlKey || e.metaKey) || e.altKey || e.shiftKey || !['KeyB', 'KeyI'].includes(e.code)) return;
+  const el = e.target; if (!el?.id || !(el.id === 'postText' || el.id === 'msgInput' || el.id.startsWith('c_'))) return;
+  e.preventDefault(); fmtWrap(el.id, e.code === 'KeyB' ? '**' : '*');
+});
 
 function composer(wallId, ph, g = null) {
   if (banOf(S.me)) return '';
@@ -4661,10 +5013,10 @@ function composer(wallId, ph, g = null) {
       ${Array.from({ length: d.pollN }, (_, i) => `<input id="pollO${i}" maxlength="80" placeholder="Вариант ${i + 1}">`).join('')}
       <div class="row">${d.pollN < 6 ? `<button type="button" class="btn ghost small" data-act="polladd">+ Вариант</button>` : ''}<span class="grow"></span>
         <button type="button" class="btn ghost small" data-act="polltoggle">Убрать опрос</button></div></div>` : ''}
-    ${emojiPanel('postText')}
+    ${emojiPanel('postText')}${fmtPanel('postText')}
     <div class="composer-bar"><button type="button" class="icon-btn" data-act="attach">${I.photo}<span class="small">Фото</span></button>
       ${d.poll ? '' : `<button type="button" class="icon-btn" data-act="polltoggle">${I.poll}<span class="small">Опрос</span></button>`}
-      ${emojiBtn('postText')}
+      ${emojiBtn('postText')}${fmtBtn('postText')}
       <span class="grow"></span><button class="btn" type="submit" ${S.busy ? 'disabled' : ''}>${S.busy ? 'Публикуем…' : 'Опубликовать'}</button></div>
   </form></div>`;
 }
@@ -5048,10 +5400,11 @@ function viewMessages() {
     if (!c) chatHtml = S.chatsLoaded ? `<div class="empty" style="height:100%">Беседа не найдена или вас в ней больше нет<a class="btn sec" href="#im">К диалогам</a></div>` : '<div class="loading"><div class="spin"></div></div>';
     else chatHtml = `<div class="chat-head"><a class="icon-btn back" href="#im" aria-label="К диалогам">${I.back}</a>${roomAvatar(c, 38)}
         <div class="grow"><b>${esc(c.name)}</b><div class="small muted">${c.members.length} ${plural(c.members.length, 'участник', 'участника', 'участников')}</div></div>
+        <button class="icon-btn" data-act="wallpick" aria-label="Обои чата" aria-expanded="${!!S.wallPick}" title="Обои чата">🎨</button>
         <button class="icon-btn" data-act="mqtoggle" aria-label="Поиск по сообщениям">${I.search}</button>
         <button class="icon-btn" data-act="roominfo" aria-label="Участники" aria-expanded="${!!S.roomInfo}">${I.friends}</button></div>
       ${S.roomInfo ? roomPanel(c) : ''}
-      ${S.mqOpen ? searchBar() : ''}<div class="msgs">${mq ? found() : body(null, 'Напишите первое сообщение в беседу')}</div>
+      ${S.wallPick ? wallPanel(key) : ''}${S.mqOpen ? searchBar() : ''}<div class="msgs ${wallCls(key)}">${mq ? found() : body(null, 'Напишите первое сообщение в беседу')}</div>
       ${replyBar((U(rp?.from)?.name || '').split(' ')[0])}${emojiPanel('msgInput')}${chatForm(key)}`;
   } else {
     const o = key && U(key), self = key === id;
@@ -5061,8 +5414,9 @@ function viewMessages() {
       const peerRead = self ? null : chat?.read?.[key] ? ms(chat.read[key]) : 0;
       chatHtml = `<div class="chat-head"><a class="icon-btn back" href="#im" aria-label="К диалогам">${I.back}</a>${self ? `<span class="av fav" style="width:38px;height:38px">★</span>` : avatar(o, 38)}
         <div class="grow">${self ? '<b>Избранное</b>' : nameLink(o)}<div class="small seen ${!self && isOnline(o) ? 'on' : ''}">${self ? 'Только для вас' : esc(seenText(o) || o.city || '@' + (o.nick || ''))}</div></div>
+        <button class="icon-btn" data-act="wallpick" aria-label="Обои чата" aria-expanded="${!!S.wallPick}" title="Обои чата">🎨</button>
         <button class="icon-btn" data-act="mqtoggle" aria-label="Поиск по сообщениям">${I.search}</button></div>
-        ${S.mqOpen ? searchBar() : ''}<div class="msgs">${mq ? found() : body(peerRead, self ? 'Сохраняйте сюда заметки, ссылки и фото — их видите только вы' : 'Напишите ' + esc(o.name.split(' ')[0]) + ' первым')}</div>
+        ${S.wallPick ? wallPanel(key) : ''}${S.mqOpen ? searchBar() : ''}<div class="msgs ${wallCls(key)}">${mq ? found() : body(peerRead, self ? 'Сохраняйте сюда заметки, ссылки и фото — их видите только вы' : 'Напишите ' + esc(o.name.split(' ')[0]) + ' первым')}</div>
         ${replyBar(o.name.split(' ')[0])}${emojiPanel('msgInput')}
         ${o.deleted ? '' : banOf(S.me) ? chatForm(key)
           : !self && iBlocked(o.id) ? `<div class="chat-form muted small" style="justify-content:center">Вы заблокировали этого человека · <button class="linkbtn" data-act="unblock" data-id="${esc(o.id)}">разблокировать</button></div>`
@@ -5081,7 +5435,7 @@ function viewMessages() {
     const prefix = c.lastFrom === id && !me1 ? 'Вы: ' : c.group && c.lastFrom && U(c.lastFrom) ? U(c.lastFrom).name.split(' ')[0] + ': ' : '';
     return `<a class="ditem ${S.chatWith === k ? 'on' : ''}" href="#im/${esc(k)}">${c.group ? roomAvatar(c, 46) : me1 ? `<span class="av fav" style="width:46px;height:46px">★</span>` : avatar(ou, 46, false)}
       <div class="grow"><div class="row" style="gap:6px"><b class="grow" style="font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(name)}</b>${c.lastAt ? `<span class="muted small">${ms(c.lastAt) >= startOfDay() ? hm(new Date(ms(c.lastAt))) : dayLabel(c.lastAt)}</span>` : ''}</div>
-      <div class="last">${c.fresh ? 'Новый диалог' : esc(prefix + (c.lastText || ''))}</div></div>${unread ? '<span class="dot" aria-label="Непрочитано"></span>' : ''}</a>`;
+      <div class="last">${c.fresh ? 'Новый диалог' : esc(prefix + plainText(c.lastText))}</div></div>${unread ? '<span class="dot" aria-label="Непрочитано"></span>' : ''}</a>`;
   }).join('');
   return `${S.chatsError ? errBox(S.chatsError) : ''}<div class="card im ${S.chatWith ? 'open' : ''}">
     <div class="dlist"><div class="dsearch">${I.search}<input id="dq" type="search" placeholder="Поиск по диалогам" autocomplete="off" value="${esc(S.dq)}">
@@ -5110,6 +5464,7 @@ document.addEventListener('click', async e => {
   if (!['postmenu', 'delpost', 'pinpost'].includes(act)) S.postMenu = null;
   if (!['tmenu', 'tdel'].includes(act)) S.tmenu = null;
   if (!['emoji', 'emojis'].includes(act)) S.emoji = null;
+  if (!['fmts', 'fmtwrap', 'emoji', 'emojis'].includes(act)) S.fmt = null;
   try {
     switch (act) {
       case 'recap': openRecap(); break;
@@ -5142,13 +5497,8 @@ document.addEventListener('click', async e => {
       }
       case 'logout': await signOut(auth); history.replaceState(null, '', BASE); break;
       case 'feedtab': S.feedTab = b.dataset.tab; attachView(); break;
-      case 'like': {
-        const p = findPost(id); if (!p) return;
-        const had = (p.likes || []).includes(uid()), nid = `like_${id}_${uid()}`;
-        await updateDoc(doc(db, 'posts', id), { likes: had ? arrayRemove(uid()) : arrayUnion(uid()) });
-        if (p.authorId !== uid()) { if (had) unnotify(nid); else notify(p.authorId, 'like', id, p.text || (p.poll ? p.poll.q : 'Фото'), nid); }
-        break;
-      }
+      case 'like': await togglePostLike(id); break;
+      case 'spoiler': spoilersOpen.add(b.textContent); b.classList.add('show'); break;
       case 'togglec':
         if (S.openComments.has(id)) { S.openComments.delete(id); render(); break; }
         S.openComments.add(id);
@@ -5180,6 +5530,21 @@ document.addEventListener('click', async e => {
       case 'linkform': S.linkForm = !S.linkForm; render(); if (S.linkForm) document.getElementById('vlUrl')?.focus(); break;
       case 'copy': await copyText(b.dataset.text); break;
       case 'copylink': await copyText(siteUrl('video/' + id), 'Ссылка на видео скопирована'); break;
+      case 'videoadd': S.videoAdd = !(S.videoAdd || S.linkForm || S.videoDraft); if (!S.videoAdd) { S.linkForm = false; S.videoDraft = null; } render(); break;
+      case 'vdesc': S.vdescOpen = S.vdescOpen === id ? null : id; render(); break;
+      case 'vautoplay': lsSet('vs_vauto', vAutoplay() ? '0' : '1'); render(); break;
+      case 'vnextgo': clearInterval(vNextTimer); go('video/' + id); break;
+      case 'vnextno': clearInterval(vNextTimer); document.querySelector('#player .vnext')?.remove(); break;
+      case 'cliptap': {
+        const el = b.closest('.clip'), now = Date.now();
+        if (now - clipTapT < 320) { clearTimeout(clipTapTimer); clipTapT = 0; clipHeart(el, e.clientX, e.clientY); clipLike(id, true); break; }
+        clipTapT = now; clearTimeout(clipTapTimer); clipTapTimer = setTimeout(() => clipToggle(el), 300); break;
+      }
+      case 'cliplike': clipLike(id); break;
+      case 'clipshare': await copyText(siteUrl('clips/' + id), 'Ссылка на клип скопирована'); break;
+      case 'clipmute': { S.clipMuted = !S.clipMuted; document.querySelectorAll('#clipsFeed video').forEach(v => { v.muted = S.clipMuted; }); clipMuteUi();
+        const v = document.querySelector('#clipsFeed .clip.on video'); if (v && !S.clipMuted) { v.play().catch(() => { }); if (!player.audio.paused) player.audio.pause(); } break; }
+      case 'clipstep': clipStep(Number(b.dataset.d)); break;
       case 'likevideo': {
         const v = cache.video; if (!v) return;
         await updateDoc(doc(db, 'videos', id), { likes: (v.likes || []).includes(uid()) ? arrayRemove(uid()) : arrayUnion(uid()) });
@@ -5247,11 +5612,13 @@ document.addEventListener('click', async e => {
       case 'selmsg':
         if (e.target.closest('a')) return;
         S.msgSel = S.msgSel === id ? null : id; S.confirm = null; render(); break;
-      case 'replymsg': {
-        const m = cache.messages.find(x => x.id === id); if (!m) return;
-        S.replyTo = { id: m.id, from: m.from, text: (m.text || (m.image ? '📷 Фото' : '')).slice(0, 100) };
-        S.msgSel = null; render(); document.getElementById('msgInput')?.focus(); break;
-      }
+      case 'replymsg': replyToMsg(id); break;
+      case 'wnclose': lsSet('vs_seen_ver', WN_VER); S.whatsNew = false; render(); break;
+      case 'wngo': lsSet('vs_seen_ver', WN_VER); S.whatsNew = false; go(b.dataset.href); break;
+      case 'whatsnew': S.whatsNew = true; S.drawer = false; render(); break;
+      case 'wallpick': S.wallPick = !S.wallPick; render(); break;
+      case 'wallset': { const w = wallsGet(); w[b.dataset.key] = b.dataset.v; lsSet('vs_walls', JSON.stringify(w)); render(); break; }
+      case 'wallall': { const w = wallsGet(), cur = wallOf(b.dataset.key); for (const k of Object.keys(w)) delete w[k]; w['*'] = cur; lsSet('vs_walls', JSON.stringify(w)); toast('Обои поставлены во все чаты'); S.wallPick = false; render(); break; }
       case 'mqtoggle': S.mqOpen = !S.mqOpen; S.mq = ''; render(); if (S.mqOpen) document.getElementById('mq')?.focus(); break;
       case 'noreply': S.replyTo = null; S.editMsg = null; render(); break;
       case 'editmsg': {
@@ -5276,6 +5643,8 @@ document.addEventListener('click', async e => {
       case 'polltoggle': S.draft.poll = !S.draft.poll; S.draft.pollN = 2; render(); if (S.draft.poll) document.getElementById('pollQ')?.focus(); break;
       case 'polladd': S.draft.pollN = Math.min(6, S.draft.pollN + 1); render(); document.getElementById('pollO' + (S.draft.pollN - 1))?.focus(); break;
       case 'emojis': S.emoji = S.emoji === b.dataset.t ? null : b.dataset.t; render(); break;
+      case 'fmts': S.fmt = S.fmt === b.dataset.t ? null : b.dataset.t; render(); break;
+      case 'fmtwrap': fmtWrap(b.dataset.t, b.dataset.m); break;
       case 'emoji': {
         const el = document.getElementById(b.dataset.t); if (!el) return;
         const at = el.selectionStart ?? el.value.length, end = el.selectionEnd ?? at, em = b.dataset.e;
@@ -5283,6 +5652,12 @@ document.addEventListener('click', async e => {
         el.focus(); el.setSelectionRange(at + em.length, at + em.length); break;
       }
       case 'viewimg': {
+        if (b.dataset.kind === 'post') {
+          const now = Date.now();
+          if (imgTap.id === id && now - imgTap.t < 320) { clearTimeout(imgTap.timer); imgTap = {}; tapHeart(e.clientX, e.clientY); await togglePostLike(id, true); break; }
+          clearTimeout(imgTap.timer); imgTap = { id, t: now, timer: setTimeout(() => { imgTap = {}; const pp = findPost(id), i = Number(b.dataset.i) || 0, src = pp ? (pp.images?.[i] || pp.image) : null; if (safeImg(src)) { S.viewImg = src; render(); } }, 300) };
+          break;
+        }
         const pp = b.dataset.kind === 'post' ? findPost(id) : null, i = Number(b.dataset.i) || 0;
         const src = pp ? (pp.images?.[i] || pp.image) : cache.messages.find(m => m.id === id)?.image;
         if (safeImg(src)) { S.viewImg = src; render(); }
@@ -5867,6 +6242,7 @@ async function openLightbox(i) {
 document.addEventListener('keydown', e => {
   if (S.story) { if (e.key === 'Escape') { clearTimeout(storyTimer); S.story = null; render(); } else if (e.key === 'ArrowRight') storyStep(1); else if (e.key === 'ArrowLeft') storyStep(-1); return; }
   if (e.key === 'Escape' && S.trackForm) { S.trackForm = null; render(); return; }
+  if (e.key === 'Escape' && S.whatsNew) { lsSet('vs_seen_ver', WN_VER); S.whatsNew = false; render(); return; }
   if (S.fullPlayer && curTrack() && !e.target.matches?.('input,textarea,select,[contenteditable]') && !e.ctrlKey && !e.metaKey && !e.altKey) {
     const a = player.audio, t = curTrack();
     if (e.key === ' ') { e.preventDefault(); a.paused ? a.play() : a.pause(); return; }
