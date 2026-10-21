@@ -29,6 +29,11 @@ service cloud.firestore {
     // Чёрный список: users/{uid}.blocked — кого человек заблокировал
     function blockedBy(id) { return id != me() && me() in user(id).get('blocked', []); }
     function group(id) { return get(path('groups', id)).data; }
+    function post(id) { return get(path('posts', id)).data; }
+    function file(id) { return get(path('files', id)).data; }
+    // новый комментарий (к записи или видео): от себя, 1–1000 символов, хозяин меня не заблокировал
+    function cmtOk(owner) { return notBanned() && fields(['authorId', 'text', 'createdAt']) && d().authorId == me() && str(d().text, 1, 1000) && nowC() && !blockedBy(owner); }
+    function meAfter() { return getAfter(path('users', me())).data; }   // мой профиль после пачки
     function groupAdmin(id) { return me() in group(id).admins; }
 
     // Список изменился ровно на «добавить меня» или «убрать меня»
@@ -44,7 +49,7 @@ service cloud.firestore {
       // обычный человек занимает основное имя от 4 символов, админ — от 1;
       // коллекционное имя (col) выпускает только админ — себе или в подарок любому человеку
       allow create: if signed() && (nick.matches('^[a-z0-9._]{4,30}$') || (nick.matches('^[a-z0-9._]{1,30}$') && isAdmin()))
-        && ((fields(['uid']) && d().uid == me() && getAfter(path('users', me())).data.nick == nick)
+        && ((fields(['uid']) && d().uid == me() && meAfter().nick == nick)
           || (isAdmin() && fields(['uid', 'col']) && d().col == true && exists(path('users', d().uid))));
       // коллекционное имя можно подарить (владелец) или переназначить (админ), но не то, что стоит основным
       allow update: if signed() && resource.data.col == true && onlyChanged(['uid'])
@@ -55,6 +60,7 @@ service cloud.firestore {
     }
 
     // ---------- Пользователи ----------
+    function privOk(p) { return p is map && p.keys().hasOnly(['messages', 'wall']) && p.get('messages', 'all') in ['all', 'friends'] && p.get('wall', 'friends') in ['friends', 'me']; }
     function validProfile(u) {
       return str(u.name, 1, 60) && u.nick is string && u.nick.matches('^[a-z0-9._]{1,30}$')
         && str(u.get('city', ''), 0, 40) && str(u.get('status', ''), 0, 120) && str(u.get('about', ''), 0, 600)
@@ -63,9 +69,7 @@ service cloud.firestore {
           'lastSeen', 'notifSeenAt', 'pinned', 'cover', 'groups', 'blocked', 'bday', 'tracks', 'saved', 'emoji', 'listening', 'admin', 'ban'])
         && lst(u.get('search', []), 150)
         && lst(u.get('friends', []), 5000)
-        && u.get('privacy', {}) is map && u.get('privacy', {}).keys().hasOnly(['messages', 'wall'])
-        && u.get('privacy', {}).get('messages', 'all') in ['all', 'friends']
-        && u.get('privacy', {}).get('wall', 'friends') in ['friends', 'me']
+        && privOk(u.get('privacy', {}))
         && (!('lastSeen' in u) || u.lastSeen is timestamp)
         && (!('notifSeenAt' in u) || u.notifSeenAt is timestamp)
         && str(u.get('pinned', ''), 0, 40)
@@ -173,14 +177,12 @@ service cloud.firestore {
 
       match /comments/{cid} {
         allow read: if signed();
-        allow create: if signed() && notBanned() && fields(['authorId', 'text', 'createdAt'])
-          && d().authorId == me() && str(d().text, 1, 1000) && nowC()
-          && !blockedBy(get(path('posts', pid)).data.authorId);
+        allow create: if signed() && cmtOk(post(pid).authorId);
         allow update: if signed() && notBanned() && onlyChanged(['likes'])
           && toggledMe(resource.data.get('likes', []), d().likes);
         allow delete: if signed() && (resource.data.authorId == me()
-          || get(path('posts', pid)).data.authorId == me()
-          || get(path('posts', pid)).data.wallId == me()
+          || post(pid).authorId == me()
+          || post(pid).wallId == me()
           || isAdmin());
       }
     }
@@ -240,7 +242,7 @@ service cloud.firestore {
         allow read: if signed() && inChat(cid);
         allow create: if signed() && inChat(cid) && canStart() && notBanned() && (isGroupChat(cid) || !blockedBy(peer(cid)))
           && fields(['from', 'text', 'image', 'audio', 'dur', 'replyTo', 'fwd', 'createdAt'])
-          && (!('audio' in d()) || (str(d().audio, 1, 700000) && d().audio.matches('^data:audio/.*') && d().dur is number && d().dur <= 61))
+          && (!('audio' in d()) || (str(d().audio, 1, 700000) && d().audio.matches('^data:(audio|video)/.*') && d().dur is number && d().dur <= 61))
           && d().from == me() && str(d().text, 0, 2000) && str(d().get('image', ''), 0, 400000) && imgOk(d().get('image', ''))
           && (!('replyTo' in d()) || (d().replyTo is map && d().replyTo.keys().hasOnly(['id', 'from', 'text'])
             && str(d().replyTo.text, 0, 120) && str(d().replyTo.id, 1, 40)))
@@ -267,7 +269,7 @@ service cloud.firestore {
       allow read: if signed();
       allow create: if signed() && notBanned() && fields(['name', 'about', 'photo', 'cover', 'ownerId', 'admins', 'membersCount', 'createdAt'])
         && validGroup(d()) && d().ownerId == me() && d().admins == [me()] && d().membersCount == 1 && nowC()
-        && gid in getAfter(path('users', me())).data.get('groups', []);
+        && gid in meAfter().get('groups', []);
       // админы сообщества меняют название, описание, фото, обложку
       allow update: if signed() && me() in resource.data.admins && onlyChanged(['name', 'about', 'photo', 'cover']) && validGroup(d());
       // владелец назначает админов (сам остаётся админом)
@@ -276,9 +278,9 @@ service cloud.firestore {
       // подписка / отписка
       allow update: if signed() && onlyChanged(['membersCount'])
         && ((d().membersCount == resource.data.membersCount + 1
-              && !(gid in user(me()).get('groups', [])) && gid in getAfter(path('users', me())).data.get('groups', []))
+              && !(gid in user(me()).get('groups', [])) && gid in meAfter().get('groups', []))
           || (d().membersCount == resource.data.membersCount - 1
-              && gid in user(me()).get('groups', []) && !(gid in getAfter(path('users', me())).data.get('groups', []))));
+              && gid in user(me()).get('groups', []) && !(gid in meAfter().get('groups', []))));
       allow delete: if signed() && (resource.data.ownerId == me() || isAdmin());
     }
 
@@ -287,7 +289,7 @@ service cloud.firestore {
       allow read: if signed() && resource.data.to == me();
       allow create: if signed() && fields(['to', 'from', 'type', 'postId', 'text', 'createdAt'])
         && d().from == me() && d().to is string && d().to != me() && notBanned() && !blockedBy(d().to)
-        && d().type in ['like', 'comment', 'wall', 'friend', 'repost', 'answer', 'best', 'mention', 'gift', 'nick']
+        && d().type in ['like', 'comment', 'wall', 'friend', 'repost', 'answer', 'best', 'mention', 'gift', 'nick', 'call']
         && str(d().postId, 0, 40) && str(d().text, 0, 120) && nowC();
       allow delete: if signed() && (resource.data.to == me() || resource.data.from == me());
     }
@@ -364,7 +366,7 @@ service cloud.firestore {
       allow create: if signed() && notBanned() && fields(['ownerId', 'title', 'artist', 'fileId', 'type', 'duration', 'size', 'createdAt'])
         && d().ownerId == me() && str(d().title, 1, 120) && str(d().artist, 0, 120) && str(d().type, 0, 60)
         && d().duration is number && d().size is int && nowC()
-        && get(path('files', d().fileId)).data.ownerId == me() && get(path('files', d().fileId)).data.kind == 'music';
+        && file(d().fileId).ownerId == me() && file(d().fileId).kind == 'music';
       // автор трека меняет название, исполнителя, текст песни (можно с тайм-кодами) и обложку
       allow update: if signed() && resource.data.ownerId == me() && onlyChanged(['title', 'artist', 'lyrics', 'cover'])
         && str(d().title, 1, 120) && str(d().artist, 0, 120) && str(d().get('lyrics', ''), 0, 20000)
@@ -409,8 +411,9 @@ service cloud.firestore {
     // ---------- ВС Эфир (6.8): прямые эфиры из браузера. Видео идёт между устройствами (WebRTC), в базе только «знакомство» ----------
     match /streams/{sid} {
       allow read: if signed();
-      allow create: if signed() && notBanned() && fields(['ownerId', 'title', 'mode', 'live', 'beat', 'createdAt', 'endedAt'])
-        && d().ownerId == me() && str(d().title, 2, 100) && d().mode in ['camera', 'screen'] && d().live == true
+      // 8.0: звонок 1:1 — тот же эфир с mode 'call' и to = кому звоним (видео принимает только он)
+      allow create: if signed() && notBanned() && fields(['ownerId', 'title', 'mode', 'live', 'beat', 'createdAt', 'endedAt', 'to'])
+        && d().ownerId == me() && str(d().title, 2, 100) && d().mode in ['camera', 'screen', 'call'] && d().live == true && str(d().get('to', ''), 0, 40)
         && d().endedAt == null && now(d().beat) && nowC();
       allow update: if signed() && resource.data.ownerId == me() && onlyChanged(['live', 'endedAt', 'beat', 'title'])
         && d().live is bool && str(d().title, 2, 100) && (!changed().hasAny(['beat']) || now(d().beat));
@@ -419,7 +422,7 @@ service cloud.firestore {
       match /peers/{pid} {
         allow read: if signed() && (get(path('streams', sid)).data.ownerId == me() || resource.data.uid == me() || resource.data.to == me());
         allow create: if signed() && fields(['uid', 'to', 'offer', 'createdAt']) && d().uid == me()
-          && str(d().to, 1, 40) && str(d().offer, 20, 16000) && nowC();
+          && str(d().to, 1, 40) && str(d().offer, 1, 16000) && nowC();
         allow update: if signed() && resource.data.to == me() && onlyChanged(['answer', 'rej'])
           && d().get('answer', '').size() <= 16000 && d().get('rej', true) == true;
         allow delete: if signed() && (resource.data.uid == me() || resource.data.to == me() || get(path('streams', sid)).data.ownerId == me());
@@ -453,11 +456,19 @@ service cloud.firestore {
         && (d().source != 'link' || (d().provider in ['youtube', 'rutube', 'vk', 'direct'] && str(d().vid, 1, 500)
           && (d().provider != 'direct' || d().vid.matches('^https://.*'))))
         && d().likes == [] && nowC()
-        && (d().source == 'link' || (d().source == 'file' && get(path('files', d().fileId)).data.ownerId == me()));
+        && (d().source == 'link' || (d().source == 'file' && file(d().fileId).ownerId == me()));
       allow update: if signed() && resource.data.ownerId == me() && onlyChanged(['title', 'description'])
         && str(d().title, 1, 120) && str(d().get('description', ''), 0, 2000);
       allow update: if signed() && onlyChanged(['likes']) && toggledMe(resource.data.likes, d().likes);
+      // 8.0: просмотры — только +1
+      allow update: if signed() && onlyChanged(['views']) && d().views == resource.data.get('views', 0) + 1;
       allow delete: if signed() && (resource.data.ownerId == me() || isAdmin());
+      // 8.0: комментарии к видео и клипам
+      match /comments/{cid} {
+        allow read: if signed();
+        allow create: if signed() && cmtOk(get(path('videos', vid)).data.ownerId);
+        allow delete: if signed() && (resource.data.authorId == me() || get(path('videos', vid)).data.ownerId == me() || isAdmin());
+      }
     }
 
     // ---------- Файлы ВС Диска и видео (кусками по 700 000 символов) ----------
@@ -472,12 +483,12 @@ service cloud.firestore {
       allow delete: if signed() && resource.data.ownerId == me();
 
       match /chunks/{n} {
-        allow read: if signed() && (get(path('files', fid)).data.ownerId == me()
-          || get(path('files', fid)).data.kind in ['video', 'music']);
-        allow create: if signed() && get(path('files', fid)).data.ownerId == me()
-          && fields(['i', 'data']) && d().i is int && d().i >= 0 && d().i < get(path('files', fid)).data.chunks
+        allow read: if signed() && (file(fid).ownerId == me()
+          || file(fid).kind in ['video', 'music']);
+        allow create: if signed() && file(fid).ownerId == me()
+          && fields(['i', 'data']) && d().i is int && d().i >= 0 && d().i < file(fid).chunks
           && str(d().data, 0, 700000);
-        allow delete: if signed() && get(path('files', fid)).data.ownerId == me();
+        allow delete: if signed() && file(fid).ownerId == me();
       }
     }
 

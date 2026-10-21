@@ -53,7 +53,7 @@ const MAX_POST_IMG = 700000;   // символов dataURL (~520 КБ), лими
 const MAX_AVATAR = 120000;
 const CHUNK = 700000;                                   // символов base64 в одном куске (кратно 4)
 const LIMITS = { disk: 10 * 1024 * 1024, video: 20 * 1024 * 1024, music: 12 * 1024 * 1024 };
-const VERSION = '7.0';
+const VERSION = '8.0';
 const MAX_MSG_IMG = 380000;    // фото в сообщении
 const ONLINE_MS = 5 * 60 * 1000; // «в сети», если заходил не раньше 5 минут назад
 
@@ -67,7 +67,7 @@ const isIOS = () => /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.p
 // Android-приложение собирает GitHub Actions (папка android/) и кладёт в релиз с тегом android
 const APK_URL = 'https://github.com/nlponae269/vsmske/releases/download/android/VSmske.apk';
 const androidCard = () => isIOS() ? '' : `<div class="card pad set"><h2 class="h" style="font-size:16px">Приложение для Android</h2>
-    <div class="set-row"><span class="grow">Настоящее приложение: liquid glass, музыка в фоне с управлением в шторке</span><a class="btn" href="${APK_URL}" rel="noopener">Скачать APK</a></div></div>`;
+    <div class="set-row"><span class="grow">Настоящее приложение: музыка в фоне с управлением в шторке</span><a class="btn" href="${APK_URL}" rel="noopener">Скачать APK</a></div></div>`;
 function installCard() {
   if (isStandalone()) return '';
   if (installPrompt) return `<div class="card pad set install"><h2 class="h" style="font-size:16px">Приложение VСмске</h2>
@@ -1168,76 +1168,23 @@ function render() {
   if (S.view === 'clips') clipsMount();
   { const mi = document.getElementById('msgInput'); if (mi) mi.closest('form')?.classList.toggle('has-text', !!mi.value.trim()); }
   animate();
-  syncGlass();
   if (S.fullPlayer && S.fpLyrics) { syncLyrics(); if (!lyrRaf) lyrLoop(); }
   if (S.fullPlayer && !fpRaf) fpLoop();
 }
 const resetIds = new Set();
 
-/* ---------- Liquid glass, как в iOS ----------
-   Для шапки, дока и мини-плеера строим карту преломления точно под их размер и скругление:
-   у кромки фон «затягивается» внутрь, центр чуть увеличен, а три канала цвета смещаются по-разному —
-   отсюда радужный развод по краю. Работает там, где браузер умеет SVG-фильтры в backdrop-filter (Chrome);
-   в остальных остаётся обычное размытое стекло. */
-const GLASS = [['.top', 'lgTop'], ['.nav', 'lgNav'], ['.mbar', 'lgBar']], glassKeys = {};
-function lensMap(w, h, r, scale) {
-  const c = document.createElement('canvas'); c.width = w; c.height = h;
-  const x = c.getContext('2d'), img = x.createImageData(w, h), d = img.data;
-  const cx = w / 2, cy = h / 2, hw = w / 2, hh = h / 2, band = Math.min(hh * .7, 18), maxBend = scale * 0.3;
-  for (let py = 0; py < h; py++) for (let px = 0; px < w; px++) {
-    const qx = Math.abs(px + .5 - cx) - (hw - r), qy = Math.abs(py + .5 - cy) - (hh - r);
-    const ox = Math.max(qx, 0), oy = Math.max(qy, 0), out = Math.hypot(ox, oy), sd = out + Math.min(Math.max(qx, qy), 0) - r;
-    let nx, ny; if (qx > 0 && qy > 0) { nx = ox / out; ny = oy / out; } else if (qx > qy) { nx = 1; ny = 0; } else { nx = 0; ny = 1; }
-    nx *= Math.sign(px + .5 - cx) || 1; ny *= Math.sign(py + .5 - cy) || 1;
-    const depth = Math.max(0, -sd), e = Math.max(0, 1 - depth / band), bend = e * e * maxBend;
-    const offX = -nx * bend + (cx - px) * 0.025, offY = -ny * bend + (cy - py) * 0.025;   // внутрь у кромки + лёгкая линза
-    const i = (py * w + px) * 4;
-    d[i] = Math.max(0, Math.min(255, 128 + offX / scale * 255)); d[i + 1] = Math.max(0, Math.min(255, 128 + offY / scale * 255)); d[i + 2] = 128; d[i + 3] = 255;
-  }
-  x.putImageData(img, 0, 0); return c.toDataURL();
-}
-function syncGlass() {
-  const defs = document.getElementById('lgDefs'); if (!defs || isLite()) return;
-  let changed = false;
-  for (const [sel, id] of GLASS) {
-    const el = document.querySelector(sel); if (!el) continue;
-    const rc = el.getBoundingClientRect(), w = Math.round(rc.width), h = Math.round(rc.height);
-    if (w < 20 || h < 20) continue;
-    const r = Math.min(parseFloat(getComputedStyle(el).borderTopLeftRadius) || 20, h / 2), key = w + 'x' + h + 'x' + r;
-    if (glassKeys[id] === key) continue;
-    glassKeys[id] = key; changed = true;
-    const S = Math.round(Math.min(h, 60)), map = lensMap(w, h, r, S);
-    const ch = (k, sc, m) => `<feDisplacementMap in="SourceGraphic" in2="m" scale="${sc}" xChannelSelector="R" yChannelSelector="G" result="d${k}"/><feColorMatrix in="d${k}" type="matrix" values="${m}" result="c${k}"/>`;
-    const html = `<filter id="${id}" x="0" y="0" width="${w}" height="${h}" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
-      <feImage href="${map}" x="0" y="0" width="${w}" height="${h}" preserveAspectRatio="none" result="m"/>
-      ${ch('r', S * 1.1, '1 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 1 0')}${ch('g', S, '0 0 0 0 0  0 1 0 0 0  0 0 0 0 0  0 0 0 1 0')}${ch('b', S * 0.9, '0 0 0 0 0  0 0 0 0 0  0 0 1 0 0  0 0 0 1 0')}
-      <feBlend in="cr" in2="cg" mode="screen" result="rg"/><feBlend in="rg" in2="cb" mode="screen" result="rgb"/>
-      <feGaussianBlur in="rgb" stdDeviation="0.8" result="bl"/><feColorMatrix in="bl" type="saturate" values="1.5"/></filter>`;
-    const old = document.getElementById(id); if (old) old.remove();
-    defs.insertAdjacentHTML('beforeend', html);
-  }
-  // Chrome кэширует фильтр: после замены переприсваиваем свойство, чтобы он подхватил новую карту
-  if (changed) GLASS.forEach(([sel]) => { const el = document.querySelector(sel + '>.lg'); if (el) { el.style.backdropFilter = 'none'; el.offsetWidth; el.style.backdropFilter = ''; } });
-}
-// SVG-фильтр внутри backdrop-filter понимает только Chromium (Chrome, Edge, Яндекс, Samsung); userAgentData есть только у него
-const lgOk = !!navigator.userAgentData?.brands?.some(b => /Chromium/.test(b.brand));
-/* Оформление (6.0): material — Material You (material.css), glass — «Фиолетовое стекло» / Liquid Glass (glass.css),
-   lite — классический вид первых версий (только style.css). Сразу при загрузке это делает скрипт в index.html, чтобы не мигало. */
-const SKINS = [['material', 'Material You'], ['glass', 'Liquid Glass'], ['lite', 'Классический']];
+/* Оформление: material — Material You (material.css, по умолчанию), paper — «Газета» (8.0, paper.css),
+   lite — классический вид первых версий (только style.css). Сразу при загрузке это делает скрипт в index.html, чтобы не мигало.
+   Liquid Glass убран в 8.0: у кого он был выбран, тот попадает в Material You. */
+const SKINS = [['material', 'Material You'], ['paper', 'Газета'], ['lite', 'Классический']];
 const skinNow = () => { const k = lsGet('vs_skin'); return SKINS.some(s => s[0] === k) ? k : (lsGet('vs_lite') === 'on' ? 'lite' : 'material'); };
-const isLite = () => skinNow() !== 'glass';   // всё стеклянное (карта преломления) нужно только в Liquid Glass
 function applySkin() {
-  const k = skinNow(), html = document.documentElement, glass = document.getElementById('skin'), md = document.getElementById('skinMd');
-  if (glass) glass.disabled = k !== 'glass';
+  const k = skinNow(), html = document.documentElement, paper = document.getElementById('skinPaper'), md = document.getElementById('skinMd');
+  if (paper) paper.disabled = k !== 'paper';
   if (md) md.disabled = k !== 'material';
   html.dataset.skin = k;
-  html.classList.toggle('lg-on', lgOk && k === 'glass');
-  if (k === 'glass') setTimeout(syncGlass, 400);
 }
 applySkin();
-// если glass.css был отключён с самого начала, браузер догружает его только при включении — карту стекла пересчитываем, когда он применится
-document.getElementById('skin')?.addEventListener('load', () => syncGlass());
-window.addEventListener('resize', () => setTimeout(syncGlass, 100));
 
 /* Material You: рябь от места нажатия, как у кнопок Android (только в этом оформлении) */
 const RIPPLE = '.btn,.pill,.icon-btn,.seg button,.tabs button,.tabs a,.app-tile,.ditem,.fgrid button,.mbar-play,.top-me,.top-bell,.nav a,.nav button';
@@ -1347,7 +1294,7 @@ function navHtml() {
   const on = v => (groups[v] ? groups[v].includes(S.view) : S.view === v) && (v !== 'profile' || S.profileId === me.id) ? 'on' : '';
   const nav = (v, href, icon, label, badge = 0, cls = '') => `<a class="navlink ${on(v)} ${cls}" href="#${href}">${icon}<span>${label}</span>${badge ? `<span class="badge">${badge}</span>` : ''}</a>`;
   const moreOn = ['more', 'profile', 'people', 'albums', 'album', 'disk', 'vid', 'settings', 'edit', 'notif', 'post', 'clubs', 'club', 'admin', 'guests', 'tag', 'apps', 'answers', 'question', 'mail', 'notes', 'weather', 'games', 'market', 'lot', 'saved', 'video', 'watch', 'events', 'event', 'rates', 'radio', 'horo', 'timer', 'calc', 'dice', 'live'].includes(S.view) ? 'on' : '';
-  return `<nav class="nav"><i class="lg" aria-hidden="true"></i>
+  return `<nav class="nav">
       ${nav('profile', 'id/' + me.id, I.home, 'Профиль', 0, 'm-hide')}
       ${nav('feed', 'feed', I.feed, 'Лента')}
       ${nav('music', 'music', I.music, 'Музыка')}
@@ -1420,7 +1367,7 @@ function shell() {
   const up = S.upload ? `<div class="card pad upbar" role="status"><div class="row"><span class="grow">${esc(S.upload.label)}</span><b class="tnum">${Math.round(S.upload.pct * 100)}%</b></div><div class="bar"><i style="width:${Math.round(S.upload.pct * 100)}%"></i></div><div class="hint">Не закрывайте страницу до конца загрузки</div></div>` : '';
   if (MD()) return mdShell(me, main, up);
   return `
-  <header class="top"><i class="lg" aria-hidden="true"></i><div class="top-in">
+  <header class="top"><div class="top-in">
     <a class="logo" href="#feed" aria-label="VСмске, лента"><span class="logo-mark">вс</span><span class="logo-word" style="color:var(--fg)">VСмске</span></a>
     <form class="search" data-form="search">${I.search}<input id="q" type="search" placeholder="Поиск людей" autocomplete="off" value="${esc(S.view === 'people' ? S.query : '')}"></form>
     <a class="top-bell icon-btn ${S.view === 'notif' ? 'on' : ''}" href="#notif" aria-label="Уведомления">${I.bell}${unseenNotifs() ? `<span class="badge">${unseenNotifs()}</span>` : ''}</a>
@@ -1439,7 +1386,7 @@ function shell() {
 /* ---------- Новый сайт (6.1, дизайн Material You) ----------
    Своя раскладка поверх тех же страниц: на компьютере — навигационная колонка (rail) с кнопкой «Создать»,
    сверху — панель с названием страницы, поиском и аватаркой; на телефоне — нижняя панель и круглая кнопка «Создать».
-   Все разделы — в боковом меню (S.drawer), новая запись — в шторке снизу (S.compose). Liquid Glass и Классический
+   Все разделы — в боковом меню (S.drawer), новая запись — в шторке снизу (S.compose). «Газета» и Классический
    собираются по-старому (shell()). */
 const MD = () => document.documentElement.dataset.skin === 'material';
 const MD_TITLES = { feed: 'Лента', messages: 'Чаты', friends: 'Друзья', notif: 'Сигналы', people: 'Люди', edit: 'Редактирование',
@@ -2203,7 +2150,7 @@ function viewSettings() {
     <div class="card pad set"><h2 class="h" style="font-size:16px">Оформление</h2>
       <div class="set-row"><span class="grow">Тема</span>${seg('theme', th, [['system', 'Как в системе'], ['light', 'Светлая'], ['dark', 'Тёмная']])}</div>
       <div class="set-row"><span class="grow">Цвет</span><div class="accents" role="radiogroup">${ACCENTS.map(([k, l, c]) => `<button role="radio" aria-checked="${(lsGet('vs_accent') || 'blue') === k}" aria-label="${l}" title="${l}" class="${(lsGet('vs_accent') || 'blue') === k ? 'on' : ''}" style="background:${c}" data-act="accent" data-v="${k}"></button>`).join('')}</div></div>
-      <div class="set-row"><span class="grow">Дизайн<br><span class="muted small">Material You — как на Android, Liquid Glass — фиолетовое стекло, Классический — простой и быстрый</span></span>${seg('skin', skinNow(), SKINS)}</div>
+      <div class="set-row"><span class="grow">Дизайн<br><span class="muted small">Material You — как на Android, Газета — бумага и типографика, Классический — простой и быстрый</span></span>${seg('skin', skinNow(), SKINS)}</div>
       <p class="hint" style="margin:0">Сохраняется на этом устройстве.</p></div>
     ${androidCard()}${installCard()}
     <div class="card pad set"><h2 class="h" style="font-size:16px">Музыка</h2>
@@ -3184,7 +3131,7 @@ function musicBar() {
   const t = curTrack(); if (!t) return '';
   const a = player.audio, pct = a.duration ? a.currentTime / a.duration * 100 : 0;
   const pal = coverPalette(t), saved = !t.radio && ((S.me.tracks || []).includes(t.id) || t.ownerId === uid());
-  return `<div class="mbar mbar3 ${a.paused ? '' : 'playing'}" role="region" aria-label="Плеер" style="--c1:${pal.c1};--c2:${pal.c2}"><i class="lg" aria-hidden="true"></i><div class="mbar-fill" id="mbarFill" style="width:${pct}%"></div>
+  return `<div class="mbar mbar3 ${a.paused ? '' : 'playing'}" role="region" aria-label="Плеер" style="--c1:${pal.c1};--c2:${pal.c2}"><div class="mbar-fill" id="mbarFill" style="width:${pct}%"></div>
     <button class="grow mbar-info" data-act="fpopen" aria-label="Открыть плеер"><span class="mbar-art">${safeImg(t.cover) ? `<img class="mbar-cover" src="${esc(t.cover)}" alt="">` : `<span class="mbar-noart">${t.radio ? '📻' : '🎵'}</span>`}</span><span class="mbar-txt"><b>${esc(t.title)}</b><span class="muted small">${esc(t.artist || (t.radio ? 'Прямой эфир' : 'Неизвестный исполнитель'))}</span></span></button>
     <span class="small muted tnum" id="mbarTime">${t.radio ? '● Прямой эфир' : fmtDur(a.currentTime) + ' / ' + fmtDur(a.duration || t.duration)}</span>
     ${t.radio || t.ownerId === uid() ? '' : `<button class="icon-btn mbar-like ${saved ? 'on' : ''}" data-act="fplike" aria-label="${saved ? 'В моей музыке' : 'В мои треки'}">${saved ? I.heart : I.heartO}</button>`}
