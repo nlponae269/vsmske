@@ -12,7 +12,7 @@ import {
 import {
   getFirestore, doc, collection, query, where, orderBy, limit, limitToLast,
   getDoc, getDocs, addDoc, setDoc, updateDoc, deleteDoc, onSnapshot, writeBatch,
-  serverTimestamp, arrayUnion, arrayRemove, increment, deleteField, startAfter
+  serverTimestamp, arrayUnion, arrayRemove, increment, deleteField, startAfter, getCountFromServer
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
 const firebaseConfig = {
@@ -53,7 +53,7 @@ const MAX_POST_IMG = 700000;   // символов dataURL (~520 КБ), лими
 const MAX_AVATAR = 120000;
 const CHUNK = 700000;                                   // символов base64 в одном куске (кратно 4)
 const LIMITS = { disk: 10 * 1024 * 1024, video: 20 * 1024 * 1024, music: 12 * 1024 * 1024 };
-const VERSION = '7.0';
+const VERSION = '8.0';
 const MAX_MSG_IMG = 380000;    // фото в сообщении
 const ONLINE_MS = 5 * 60 * 1000; // «в сети», если заходил не раньше 5 минут назад
 
@@ -67,7 +67,7 @@ const isIOS = () => /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.p
 // Android-приложение собирает GitHub Actions (папка android/) и кладёт в релиз с тегом android
 const APK_URL = 'https://github.com/nlponae269/vsmske/releases/download/android/VSmske.apk';
 const androidCard = () => isIOS() ? '' : `<div class="card pad set"><h2 class="h" style="font-size:16px">Приложение для Android</h2>
-    <div class="set-row"><span class="grow">Настоящее приложение: liquid glass, музыка в фоне с управлением в шторке</span><a class="btn" href="${APK_URL}" rel="noopener">Скачать APK</a></div></div>`;
+    <div class="set-row"><span class="grow">Настоящее приложение: музыка в фоне с управлением в шторке</span><a class="btn" href="${APK_URL}" rel="noopener">Скачать APK</a></div></div>`;
 function installCard() {
   if (isStandalone()) return '';
   if (installPrompt) return `<div class="card pad set install"><h2 class="h" style="font-size:16px">Приложение VСмске</h2>
@@ -334,6 +334,7 @@ function errBox(e) {
 const ic = (w, body) => `<svg width="${w}" height="${w}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">${body}</svg>`;
 const du = d => `<path d="${d}" fill="currentColor" fill-opacity=".2" stroke="none"/>`;   // заливка-подложка
 const I = {
+  phone: ic(20, '<path d="M5 3.5h3.2l1.6 4.2-2.2 1.5a11 11 0 0 0 7.2 7.2l1.5-2.2 4.2 1.6V19a1.8 1.8 0 0 1-1.9 1.8A16.6 16.6 0 0 1 3.2 5.4 1.8 1.8 0 0 1 5 3.5z"/>'),
   pen: ic(24, '<path d="M4 20h4L19 9a2.8 2.8 0 0 0-4-4L4 16z"/><path d="M13.5 6.5l4 4"/>'),
   video: ic(20, du('M5.5 5h13a3 3 0 0 1 3 3v8a3 3 0 0 1-3 3h-13a3 3 0 0 1-3-3V8a3 3 0 0 1 3-3z') + '<path d="M5.5 5h13a3 3 0 0 1 3 3v8a3 3 0 0 1-3 3h-13a3 3 0 0 1-3-3V8a3 3 0 0 1 3-3z"/><path d="M10.2 9.2v5.6l4.8-2.8z" fill="currentColor"/>'),
   album: ic(20, '<path d="M7 3.5h11a2.5 2.5 0 0 1 2.5 2.5v11"/>' + du('M5 6.5h10a2.5 2.5 0 0 1 2.5 2.5v10a2.5 2.5 0 0 1-2.5 2.5H5A2.5 2.5 0 0 1 2.5 19V9A2.5 2.5 0 0 1 5 6.5z') + '<rect x="2.5" y="6.5" width="15" height="15" rx="2.5"/><path d="M2.8 18l4.2-4 3 3 2.5-2.2 4.8 4.4"/><circle cx="12.5" cy="10.8" r="1.2"/>'),
@@ -648,7 +649,7 @@ function startSession() {
   }, console.error));
   globalUnsubs.push(onSnapshot(query(collection(db, 'notifs'), where('to', '==', id), limit(NOTIF_KEEP + 50)), s => {
     cache.notifs = s.docs.map(data).sort((a, b) => ms(b.createdAt) - ms(a.createdAt));
-    ensureUsers(cache.notifs.map(n => n.from));
+    ensureUsers(cache.notifs.map(n => n.from)); callCheck();
     if (S.view === 'notif' && unseenNotifs()) updateDoc(doc(db, 'users', id), { notifSeenAt: serverTimestamp() }).catch(console.error);
     render();
     // старые уведомления удаляем, чтобы коллекция не росла
@@ -664,7 +665,8 @@ function startSession() {
 function route() {
   if (S.phase !== 'app') return;
   S.drawer = false; S.compose = false; clipsStop(); clearInterval(vNextTimer);
-  // «Что нового» — один раз после обновления и только тем, кто был с нами до 7.0 (новичкам не мешаем)
+  if (S.vcmt) { vcmtUnsub?.(); vcmtUnsub = null; S.vcmt = null; }
+  // «Что нового» — один раз после обновления и только тем, кто был с нами раньше (новичкам не мешаем)
   if (!S.wnChecked && S.me) { S.wnChecked = true; if (lsGet('vs_seen_ver') !== WN_VER && Date.now() - ms(S.me.createdAt) > 864e5) S.whatsNew = true; else lsSet('vs_seen_ver', WN_VER); }
   const [v, arg] = (curRoute() || 'feed').split('/');
   S.confirm = null;
@@ -698,6 +700,8 @@ function route() {
   else if (v === 'games') { S.view = 'games'; S.game = arg || null; }
   else if (v === 'live') { S.view = 'live'; S.liveId = arg || null; }
   else if (v === 'clips') { S.view = 'clips'; S.clipId = arg || null; }
+  else if (v === 'theme') { S.themeOffer = themeParse(arg); S.view = 'settings'; history.replaceState(null, '', BASE + 'settings'); if (!S.themeOffer) toast('Ссылка на тему повреждена'); }
+  else if (v === 'search') { S.view = 'search'; try { S.sq = decodeURIComponent(arg || ''); } catch (e) { S.sq = arg || ''; } S.stab = 'all'; }
   else if (v === 'tag' && arg) { S.view = 'tag'; try { S.tag = decodeURIComponent(arg).toLowerCase(); } catch (e) { S.tag = arg; } }
   else if (['feed', 'friends', 'people', 'edit', 'disk', 'vid', 'settings', 'more', 'notif', 'clubs', 'admin', 'guests', 'apps', 'notes', 'weather', 'events', 'rates', 'radio', 'horo', 'timer', 'calc', 'dice', 'live'].includes(v)) S.view = v;
   else S.view = 'feed';
@@ -710,7 +714,8 @@ function route() {
   S.newRoom = null; S.fwd = null; S.roomInfo = false; S.story = null; S.storyDraft = null; clearTimeout(storyTimer); S.clubEdit = false; S.editGroupPhoto = undefined; S.editGroupCover = null;
   if (S.view !== 'messages') S.replyTo = null;
   S.editMsg = null; S.mqOpen = false; S.mq = ''; S.wallPick = false;
-  recStop(false); players.forEach(p => p.pause()); players.clear();
+  recStop(false); players.forEach(p => p.pause()); players.clear(); vnoteClose(false);
+  vnoteEls.forEach(v => { v.pause(); v.removeAttribute("src"); v.load(); }); vnoteEls.clear();
   if (S.view !== 'video') { S.videoDraft = null; S.videoAdd = false; }
   attachView();
   window.scrollTo(0, 0);
@@ -827,6 +832,8 @@ function attachView() {
       cache.videos = s.docs.map(data).sort((a, b) => ms(b.createdAt) - ms(a.createdAt));
       ensureUsers(cache.videos.map(v => v.ownerId)); S.loading = false; render();
     }, onViewErr));
+  } else if (S.view === 'search') {
+    S.loading = false; searchLoad();
   } else if (S.view === 'clips') {
     S.clipsReady = false; S.clipIdx = 0; cache.clips = []; cache.clipsLast = null; cache.clipsDone = false; cache.clipsBusy = false;
     loadClips(S.clipId).then(() => { if (S.view !== 'clips') return; S.clipsReady = true; S.loading = false; render(); });
@@ -838,6 +845,8 @@ function attachView() {
       const v = cache.video;
       if (!v.missing) {
         ensureUsers([v.ownerId]);
+        if (!viewedVids.has(wid)) setTimeout(() => { if (S.view === 'watch' && S.watchId === wid) countView(cache.video); }, 3000);
+        if (!(wid in cmtCount)) getCountFromServer(collection(db, 'videos', wid, 'comments')).then(c => { cmtCount[wid] = c.data().count; render(); }).catch(() => { });
         if (v.source === 'file' && !S.videoSrc && !S.videoErr && !S.videoLoading) {
           S.videoLoading = true;
           getFileUrl(v.fileId, v.type || 'video/mp4')
@@ -886,7 +895,7 @@ function attachView() {
       viewUnsubs.push(onSnapshot(doc(db, 'streams', S.liveId), s => { cache.stream = s.exists() ? data(s) : { id: S.liveId, missing: true }; if (s.exists()) ensureUsers([cache.stream.ownerId]); S.loading = false; liveOnStream(); render(); liveAttach(); }, onViewErr));
     } else {
       cache.streams = [];
-      viewUnsubs.push(onSnapshot(query(collection(db, 'streams'), where('live', '==', true), limit(30)), s => { cache.streams = s.docs.map(data); ensureUsers(cache.streams.map(x => x.ownerId)); liveCleanStale(); S.loading = false; render(); }, onViewErr));
+      viewUnsubs.push(onSnapshot(query(collection(db, 'streams'), where('live', '==', true), limit(30)), s => { cache.streams = s.docs.map(data).filter(x => x.mode !== 'call'); ensureUsers(cache.streams.map(x => x.ownerId)); liveCleanStale(); S.loading = false; render(); }, onViewErr));
     }
   } else if (S.view === 'rates') {
     S.loading = false; if (!S.rates?.v) loadRates();
@@ -1030,7 +1039,9 @@ function storyOverlay() {
       ${mine ? `<span class="small">👁 ${views}</span><button class="btn ghost light small" data-act="storydel" data-id="${esc(x.id)}">${S.confirm === 'story:' + x.id ? 'Удалить?' : 'Удалить'}</button>` : ''}
       <button class="btn ghost light" data-act="storyclose" aria-label="Закрыть">✕</button></div>
     <img src="${esc(safeImg(x.image))}" alt="История">
-    ${x.text ? `<div class="story-text">${esc(x.text)}</div>` : ''}
+    ${x.text ? `<div class="story-text ${mine ? '' : 'st-up'}">${esc(x.text)}</div>` : ''}
+    ${mine ? '' : `<div class="story-foot"><form class="story-reply" data-form="storyreply" data-id="${esc(x.id)}"><input id="stReply" maxlength="300" placeholder="Ответить ${esc((u?.name || '').split(' ')[0])}…" autocomplete="off"><button class="icon-btn" aria-label="Отправить">${I.send}</button></form>
+      <div class="story-reacts">${['❤️', '🔥', '😂', '😮', '👏'].map(e => `<button data-act="streact" data-id="${esc(x.id)}" data-e="${e}" aria-label="Реакция ${e}">${e}</button>`).join('')}</div></div>`}
     <button class="story-nav l" data-act="storystep" data-d="-1" aria-label="Назад"></button><button class="story-nav r" data-act="storystep" data-d="1" aria-label="Дальше"></button>
   </div></div>`;
 }
@@ -1046,6 +1057,75 @@ function storyShow() {
   }
   render();
   storyTimer = setTimeout(() => storyStep(1), STORY_SHOW);
+}
+/* 8.0: истории 2.0 — надписи и стикеры поверх фото (перетаскиваются пальцем и «впекаются» в картинку при публикации),
+   ответ и реакция на чужую историю приходят автору в личные сообщения с маленькой копией истории */
+const ST_STICKERS = ['😍', '🔥', '😂', '🥳', '👍', '💯', '❤️', '✨', '🌈', '⭐', '🎉', '😎'];
+const ST_COLORS = ['#FFFFFF', '#111111', '#FACC15', '#EF4444', '#22C55E', '#3B82F6', '#EC4899'];
+function storyEditor() {
+  const d = S.storyDraft, it = d.items[d.sel];
+  return `<div class="ov" data-act="ovx"><div class="ov-in modal st-modal" data-stop="1">
+      <div class="row"><b class="grow">Новая история</b><button class="icon-btn" data-act="ovx" aria-label="Закрыть">✕</button></div>
+      <div class="st-ed" id="stEd"><img src="${esc(d.image)}" alt="Предпросмотр" draggable="false">
+        ${d.items.map((x, i) => `<span class="st-it ${x.k === 'e' ? 'emo' : ''} ${d.sel === i ? 'sel' : ''}" data-i="${i}" style="left:${x.x}%;top:${x.y}%;font-size:${x.s}cqw;color:${x.c};${x.bg ? 'background:rgba(0,0,0,.55);' : ''}">${esc(x.v)}</span>`).join('')}</div>
+      <div class="st-row"><input id="stOver" class="inp" maxlength="60" placeholder="Надпись на фото" autocomplete="off"><button class="btn sec small" data-act="staddt">Добавить</button></div>
+      <div class="st-stk">${ST_STICKERS.map(e => `<button data-act="stadde" data-e="${e}" aria-label="Стикер ${e}">${e}</button>`).join('')}</div>
+      ${it ? `<div class="st-row st-sel">${it.k === 't' ? ST_COLORS.map(c => `<button class="st-c ${it.c === c ? 'on' : ''}" data-act="stcolor" data-c="${c}" style="background:${c}" aria-label="Цвет"></button>`).join('') + `<button class="btn ghost small ${it.bg ? 'on' : ''}" data-act="stbg">Фон</button>` : ''}
+        <span class="grow"></span><button class="btn ghost small" data-act="stsize" data-d="-1" aria-label="Меньше">A−</button><button class="btn ghost small" data-act="stsize" data-d="1" aria-label="Больше">A+</button>
+        <button class="btn ghost small" data-act="stdel">Убрать</button></div>` : '<p class="hint" style="margin:0">Надписи и стикеры можно двигать пальцем.</p>'}
+      <input id="stText" class="inp" maxlength="200" placeholder="Подпись внизу (необязательно)">
+      <p class="hint" style="margin:0">История исчезнет через 24 часа. Её увидят ваши друзья.</p>
+      <button class="btn" data-act="storypub" ${S.busy ? 'disabled' : ''}>${S.busy ? 'Публикуем…' : 'Опубликовать'}</button></div></div>`;
+}
+function stAdd(k, v) {
+  const d = S.storyDraft; if (!d || !v || d.items.length >= 12) return;
+  d.items.push({ k, v, x: 50, y: k === 'e' ? 35 + d.items.length * 4 % 30 : 50, s: k === 'e' ? 16 : 8, c: '#FFFFFF', bg: k === 't' });
+  d.sel = d.items.length - 1; render();
+}
+// перетаскивание надписей и стикеров (без перерисовки — только позиция, в конце выделяем)
+let stDrag = null;
+document.addEventListener('pointerdown', e => {
+  const el = e.target.closest?.('#stEd .st-it'); if (!el || !S.storyDraft) return;
+  e.preventDefault(); const r = el.parentNode.getBoundingClientRect();
+  stDrag = { el, i: +el.dataset.i, r, moved: false }; el.setPointerCapture?.(e.pointerId);
+});
+document.addEventListener('pointermove', e => {
+  const g = stDrag; if (!g) return; g.moved = true;
+  const it = S.storyDraft?.items[g.i]; if (!it) return;
+  it.x = Math.max(2, Math.min(98, (e.clientX - g.r.left) / g.r.width * 100)); it.y = Math.max(2, Math.min(98, (e.clientY - g.r.top) / g.r.height * 100));
+  g.el.style.left = it.x + '%'; g.el.style.top = it.y + '%';
+});
+document.addEventListener('pointerup', () => { const g = stDrag; stDrag = null; if (g && S.storyDraft) { S.storyDraft.sel = g.i; render(); } });
+async function storyBurn(d) {
+  const img = await new Promise((res, rej) => { const im = new Image(); im.onload = () => res(im); im.onerror = rej; im.src = d.image; });
+  const W = Math.min(1080, img.naturalWidth), H = Math.round(img.naturalHeight * W / img.naturalWidth);
+  const c = document.createElement('canvas'); c.width = W; c.height = H; const x = c.getContext('2d');
+  x.drawImage(img, 0, 0, W, H); x.textAlign = 'center'; x.textBaseline = 'middle';
+  for (const it of d.items) {
+    const fs = it.s / 100 * W, cx = it.x / 100 * W, cy = it.y / 100 * H;
+    x.font = it.k === 'e' ? `${fs}px system-ui, "Apple Color Emoji", "Segoe UI Emoji", sans-serif` : `700 ${fs}px "Google Sans", "PT Sans", system-ui, sans-serif`;
+    if (it.k === 't' && it.bg) {
+      const w = x.measureText(it.v).width + fs * 0.8, h = fs * 1.45, r = h * 0.3;
+      x.fillStyle = 'rgba(0,0,0,.55)'; x.beginPath(); x.roundRect ? x.roundRect(cx - w / 2, cy - h / 2, w, h, r) : x.rect(cx - w / 2, cy - h / 2, w, h); x.fill();
+    }
+    x.shadowColor = it.k === 't' && !it.bg ? 'rgba(0,0,0,.5)' : 'transparent'; x.shadowBlur = fs * 0.15;
+    x.fillStyle = it.c || '#FFFFFF'; x.fillText(it.v, cx, cy); x.shadowBlur = 0;
+  }
+  for (let q = 0.86; q >= 0.4; q -= 0.08) { const u = c.toDataURL('image/jpeg', q); if (u.length <= 420000) return u; }
+  return d.image;
+}
+async function storyThumb(src) {
+  try {
+    const img = await new Promise((res, rej) => { const im = new Image(); im.onload = () => res(im); im.onerror = rej; im.src = src; });
+    const W = 220, H = Math.round(img.naturalHeight * W / img.naturalWidth), c = document.createElement('canvas'); c.width = W; c.height = H;
+    c.getContext('2d').drawImage(img, 0, 0, W, H); return c.toDataURL('image/jpeg', 0.7);
+  } catch (e) { return ''; }
+}
+document.addEventListener('focusin', e => { if (e.target.id === 'stReply') clearTimeout(storyTimer); });   // пока пишешь ответ, история не листается
+async function storyReply(id, text) {
+  const x = (cache.stories || []).find(s => s.id === id); if (!x || !text) return;
+  try { await sendMessage(x.ownerId, text, await storyThumb(safeImg(x.image))); toast('Отправлено в личные сообщения'); }
+  catch (e) { toast(errText(e)); }
 }
 function storyStep(dir) {
   const st = S.story; if (!st) return;
@@ -1144,6 +1224,7 @@ function render() {
   }
   // видео эфира не пересоздаём: вынимаем и возвращаем на место, чтобы картинка не мигала
   const keepVid = document.getElementById('liveVid'); if (keepVid?.parentNode) keepVid.parentNode.removeChild(keepVid);
+  vnoteEls.forEach(v => v.remove());   // кружки вынимаем и сразу возвращаем (vnoteMount), чтобы не начинались заново
   // сохраняем то, что пользователь печатает, между перерисовками
   const active = document.activeElement, focusId = active?.id, sel = active?.selectionStart;
   const kept = {};
@@ -1166,78 +1247,26 @@ function render() {
   }
   { const ph = document.getElementById('liveVid'); if (ph && keepVid && LIVE && S.liveId === LIVE.sid) ph.replaceWith(keepVid); if (document.getElementById('liveVid')) liveAttach(); const bx = document.getElementById('liveMsgs'); if (bx) bx.scrollTop = bx.scrollHeight; }
   if (S.view === 'clips') clipsMount();
+  vnoteMount();
   { const mi = document.getElementById('msgInput'); if (mi) mi.closest('form')?.classList.toggle('has-text', !!mi.value.trim()); }
   animate();
-  syncGlass();
   if (S.fullPlayer && S.fpLyrics) { syncLyrics(); if (!lyrRaf) lyrLoop(); }
   if (S.fullPlayer && !fpRaf) fpLoop();
 }
 const resetIds = new Set();
 
-/* ---------- Liquid glass, как в iOS ----------
-   Для шапки, дока и мини-плеера строим карту преломления точно под их размер и скругление:
-   у кромки фон «затягивается» внутрь, центр чуть увеличен, а три канала цвета смещаются по-разному —
-   отсюда радужный развод по краю. Работает там, где браузер умеет SVG-фильтры в backdrop-filter (Chrome);
-   в остальных остаётся обычное размытое стекло. */
-const GLASS = [['.top', 'lgTop'], ['.nav', 'lgNav'], ['.mbar', 'lgBar']], glassKeys = {};
-function lensMap(w, h, r, scale) {
-  const c = document.createElement('canvas'); c.width = w; c.height = h;
-  const x = c.getContext('2d'), img = x.createImageData(w, h), d = img.data;
-  const cx = w / 2, cy = h / 2, hw = w / 2, hh = h / 2, band = Math.min(hh * .7, 18), maxBend = scale * 0.3;
-  for (let py = 0; py < h; py++) for (let px = 0; px < w; px++) {
-    const qx = Math.abs(px + .5 - cx) - (hw - r), qy = Math.abs(py + .5 - cy) - (hh - r);
-    const ox = Math.max(qx, 0), oy = Math.max(qy, 0), out = Math.hypot(ox, oy), sd = out + Math.min(Math.max(qx, qy), 0) - r;
-    let nx, ny; if (qx > 0 && qy > 0) { nx = ox / out; ny = oy / out; } else if (qx > qy) { nx = 1; ny = 0; } else { nx = 0; ny = 1; }
-    nx *= Math.sign(px + .5 - cx) || 1; ny *= Math.sign(py + .5 - cy) || 1;
-    const depth = Math.max(0, -sd), e = Math.max(0, 1 - depth / band), bend = e * e * maxBend;
-    const offX = -nx * bend + (cx - px) * 0.025, offY = -ny * bend + (cy - py) * 0.025;   // внутрь у кромки + лёгкая линза
-    const i = (py * w + px) * 4;
-    d[i] = Math.max(0, Math.min(255, 128 + offX / scale * 255)); d[i + 1] = Math.max(0, Math.min(255, 128 + offY / scale * 255)); d[i + 2] = 128; d[i + 3] = 255;
-  }
-  x.putImageData(img, 0, 0); return c.toDataURL();
-}
-function syncGlass() {
-  const defs = document.getElementById('lgDefs'); if (!defs || isLite()) return;
-  let changed = false;
-  for (const [sel, id] of GLASS) {
-    const el = document.querySelector(sel); if (!el) continue;
-    const rc = el.getBoundingClientRect(), w = Math.round(rc.width), h = Math.round(rc.height);
-    if (w < 20 || h < 20) continue;
-    const r = Math.min(parseFloat(getComputedStyle(el).borderTopLeftRadius) || 20, h / 2), key = w + 'x' + h + 'x' + r;
-    if (glassKeys[id] === key) continue;
-    glassKeys[id] = key; changed = true;
-    const S = Math.round(Math.min(h, 60)), map = lensMap(w, h, r, S);
-    const ch = (k, sc, m) => `<feDisplacementMap in="SourceGraphic" in2="m" scale="${sc}" xChannelSelector="R" yChannelSelector="G" result="d${k}"/><feColorMatrix in="d${k}" type="matrix" values="${m}" result="c${k}"/>`;
-    const html = `<filter id="${id}" x="0" y="0" width="${w}" height="${h}" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
-      <feImage href="${map}" x="0" y="0" width="${w}" height="${h}" preserveAspectRatio="none" result="m"/>
-      ${ch('r', S * 1.1, '1 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 1 0')}${ch('g', S, '0 0 0 0 0  0 1 0 0 0  0 0 0 0 0  0 0 0 1 0')}${ch('b', S * 0.9, '0 0 0 0 0  0 0 0 0 0  0 0 1 0 0  0 0 0 1 0')}
-      <feBlend in="cr" in2="cg" mode="screen" result="rg"/><feBlend in="rg" in2="cb" mode="screen" result="rgb"/>
-      <feGaussianBlur in="rgb" stdDeviation="0.8" result="bl"/><feColorMatrix in="bl" type="saturate" values="1.5"/></filter>`;
-    const old = document.getElementById(id); if (old) old.remove();
-    defs.insertAdjacentHTML('beforeend', html);
-  }
-  // Chrome кэширует фильтр: после замены переприсваиваем свойство, чтобы он подхватил новую карту
-  if (changed) GLASS.forEach(([sel]) => { const el = document.querySelector(sel + '>.lg'); if (el) { el.style.backdropFilter = 'none'; el.offsetWidth; el.style.backdropFilter = ''; } });
-}
-// SVG-фильтр внутри backdrop-filter понимает только Chromium (Chrome, Edge, Яндекс, Samsung); userAgentData есть только у него
-const lgOk = !!navigator.userAgentData?.brands?.some(b => /Chromium/.test(b.brand));
-/* Оформление (6.0): material — Material You (material.css), glass — «Фиолетовое стекло» / Liquid Glass (glass.css),
-   lite — классический вид первых версий (только style.css). Сразу при загрузке это делает скрипт в index.html, чтобы не мигало. */
-const SKINS = [['material', 'Material You'], ['glass', 'Liquid Glass'], ['lite', 'Классический']];
+/* Оформление: material — Material You (material.css, по умолчанию), paper — «Газета» (8.0, paper.css),
+   lite — классический вид первых версий (только style.css). Сразу при загрузке это делает скрипт в index.html, чтобы не мигало.
+   Liquid Glass убран в 8.0: у кого он был выбран, тот попадает в Material You. */
+const SKINS = [['material', 'Material You'], ['paper', 'Газета'], ['lite', 'Классический']];
 const skinNow = () => { const k = lsGet('vs_skin'); return SKINS.some(s => s[0] === k) ? k : (lsGet('vs_lite') === 'on' ? 'lite' : 'material'); };
-const isLite = () => skinNow() !== 'glass';   // всё стеклянное (карта преломления) нужно только в Liquid Glass
 function applySkin() {
-  const k = skinNow(), html = document.documentElement, glass = document.getElementById('skin'), md = document.getElementById('skinMd');
-  if (glass) glass.disabled = k !== 'glass';
+  const k = skinNow(), html = document.documentElement, paper = document.getElementById('skinPaper'), md = document.getElementById('skinMd');
+  if (paper) paper.disabled = k !== 'paper';
   if (md) md.disabled = k !== 'material';
   html.dataset.skin = k;
-  html.classList.toggle('lg-on', lgOk && k === 'glass');
-  if (k === 'glass') setTimeout(syncGlass, 400);
 }
 applySkin();
-// если glass.css был отключён с самого начала, браузер догружает его только при включении — карту стекла пересчитываем, когда он применится
-document.getElementById('skin')?.addEventListener('load', () => syncGlass());
-window.addEventListener('resize', () => setTimeout(syncGlass, 100));
 
 /* Material You: рябь от места нажатия, как у кнопок Android (только в этом оформлении) */
 const RIPPLE = '.btn,.pill,.icon-btn,.seg button,.tabs button,.tabs a,.app-tile,.ditem,.fgrid button,.mbar-play,.top-me,.top-bell,.nav a,.nav button';
@@ -1347,7 +1376,7 @@ function navHtml() {
   const on = v => (groups[v] ? groups[v].includes(S.view) : S.view === v) && (v !== 'profile' || S.profileId === me.id) ? 'on' : '';
   const nav = (v, href, icon, label, badge = 0, cls = '') => `<a class="navlink ${on(v)} ${cls}" href="#${href}">${icon}<span>${label}</span>${badge ? `<span class="badge">${badge}</span>` : ''}</a>`;
   const moreOn = ['more', 'profile', 'people', 'albums', 'album', 'disk', 'vid', 'settings', 'edit', 'notif', 'post', 'clubs', 'club', 'admin', 'guests', 'tag', 'apps', 'answers', 'question', 'mail', 'notes', 'weather', 'games', 'market', 'lot', 'saved', 'video', 'watch', 'events', 'event', 'rates', 'radio', 'horo', 'timer', 'calc', 'dice', 'live'].includes(S.view) ? 'on' : '';
-  return `<nav class="nav"><i class="lg" aria-hidden="true"></i>
+  return `<nav class="nav">
       ${nav('profile', 'id/' + me.id, I.home, 'Профиль', 0, 'm-hide')}
       ${nav('feed', 'feed', I.feed, 'Лента')}
       ${nav('music', 'music', I.music, 'Музыка')}
@@ -1379,6 +1408,7 @@ function shell() {
   else if (S.view === 'messages') main = viewMessages();
   else if (S.view === 'friends') main = viewFriends();
   else if (S.view === 'people') main = viewPeople();
+  else if (S.view === 'search') main = viewSearch();
   else if (S.view === 'edit') main = viewEdit();
   else if (S.view === 'video') main = viewVideo();
   else if (S.view === 'watch') main = viewWatch();
@@ -1420,9 +1450,9 @@ function shell() {
   const up = S.upload ? `<div class="card pad upbar" role="status"><div class="row"><span class="grow">${esc(S.upload.label)}</span><b class="tnum">${Math.round(S.upload.pct * 100)}%</b></div><div class="bar"><i style="width:${Math.round(S.upload.pct * 100)}%"></i></div><div class="hint">Не закрывайте страницу до конца загрузки</div></div>` : '';
   if (MD()) return mdShell(me, main, up);
   return `
-  <header class="top"><i class="lg" aria-hidden="true"></i><div class="top-in">
+  <header class="top"><div class="top-in">
     <a class="logo" href="#feed" aria-label="VСмске, лента"><span class="logo-mark">вс</span><span class="logo-word" style="color:var(--fg)">VСмске</span></a>
-    <form class="search" data-form="search">${I.search}<input id="q" type="search" placeholder="Поиск людей" autocomplete="off" value="${esc(S.view === 'people' ? S.query : '')}"></form>
+    <form class="search" data-form="search">${I.search}<input id="q" type="search" placeholder="Поиск по VСмске" autocomplete="off" value="${esc(S.view === 'people' ? S.query : '')}"></form>
     <a class="top-bell icon-btn ${S.view === 'notif' ? 'on' : ''}" href="#notif" aria-label="Уведомления">${I.bell}${unseenNotifs() ? `<span class="badge">${unseenNotifs()}</span>` : ''}</a>
     <a class="top-me" href="#id/${esc(me.id)}" style="color:var(--fg)">${avatar(me, 32, false)}<span>${esc(me.name.split(' ')[0])}</span></a>
   </div></header>
@@ -1439,10 +1469,10 @@ function shell() {
 /* ---------- Новый сайт (6.1, дизайн Material You) ----------
    Своя раскладка поверх тех же страниц: на компьютере — навигационная колонка (rail) с кнопкой «Создать»,
    сверху — панель с названием страницы, поиском и аватаркой; на телефоне — нижняя панель и круглая кнопка «Создать».
-   Все разделы — в боковом меню (S.drawer), новая запись — в шторке снизу (S.compose). Liquid Glass и Классический
+   Все разделы — в боковом меню (S.drawer), новая запись — в шторке снизу (S.compose). «Газета» и Классический
    собираются по-старому (shell()). */
 const MD = () => document.documentElement.dataset.skin === 'material';
-const MD_TITLES = { feed: 'Лента', messages: 'Чаты', friends: 'Друзья', notif: 'Сигналы', people: 'Люди', edit: 'Редактирование',
+const MD_TITLES = { search: 'Поиск', feed: 'Лента', messages: 'Чаты', friends: 'Друзья', notif: 'Сигналы', people: 'Люди', edit: 'Редактирование',
   video: 'Видео', watch: 'Видео', albums: 'Альбомы', album: 'Альбом', disk: 'Диск', vid: 'VС ID', settings: 'Настройки', more: 'Меню',
   post: 'Запись', clubs: 'Клубы', club: 'Клуб', guests: 'Гости', apps: 'Сервисы', market: 'Маркет', lot: 'Объявление', events: 'События',
   event: 'Событие', rates: 'Курсы', radio: 'Радио', horo: 'Гороскоп', saved: 'Закладки', music: 'Музыка', answers: 'Ответы', question: 'Вопрос',
@@ -1472,7 +1502,7 @@ function mdShell(me, main, up) {
   <header class="md-top">
     <a class="md-brand" href="#feed" aria-label="VСмске, лента"><span class="logo-mark">вс</span></a>
     <h1 class="md-title">${esc(mdTitle())}</h1>
-    <form class="search md-search" data-form="search">${I.search}<input id="q" type="search" placeholder="Поиск людей" autocomplete="off" value="${esc(v === 'people' ? S.query : '')}"></form>
+    <form class="search md-search" data-form="search">${I.search}<input id="q" type="search" placeholder="Поиск по VСмске" autocomplete="off" value="${esc(v === 'people' ? S.query : '')}"></form>
     <button class="md-icon md-pal" data-act="palopen" aria-label="Быстрый поиск" title="Быстрый поиск (Ctrl+K)">${I.search}</button>
     <a class="md-me" href="#id/${esc(me.id)}" aria-label="Моя страница">${avatar(me, 40, false)}</a>
   </header>
@@ -1645,7 +1675,7 @@ const PAL_SECTIONS = () => [
   ['settings', I.gear, 'Настройки', 'тема дизайн цвет'], ['edit', I.home, 'Редактировать страницу', 'имя фото статус'],
   ['@recap', I.star, 'Мои итоги', 'статистика wrapped'], ['music/stats', I.music, 'Моя статистика музыки', 'прослушивания любимые треки исполнители'],
   ['timer', '⏱', 'ВС Таймер', 'секундомер таймер помодоро'], ['calc', '🧮', 'ВС Калькулятор', 'посчитать'], ['dice', '🎲', 'ВС Жребий', 'монетка кубик случайное число'],
-  ['games/sudoku', '🔢', 'Судоку', 'игра головоломка'], ['@whatsnew', '✨', 'Что нового в 7.0', 'обновление версия новинки'], ['live', '🔴', 'ВС Эфир', 'стрим трансляция прямой эфир'], ['clips', '🎬', 'ВС Клипы', 'короткие видео ролики reels шортс'], ['@keys', '⌨', 'Горячие клавиши', 'сочетания клавиатура'],
+  ['games/sudoku', '🔢', 'Судоку', 'игра головоломка'], ['@whatsnew', '✨', 'Что нового в 8.0', 'обновление версия новинки'], ['live', '🔴', 'ВС Эфир', 'стрим трансляция прямой эфир'], ['clips', '🎬', 'ВС Клипы', 'короткие видео ролики reels шортс'], ['@keys', '⌨', 'Горячие клавиши', 'сочетания клавиатура'],
 ];
 const norm = t => String(t || '').toLowerCase().replace(/ё/g, 'е');
 function palItems() {
@@ -1654,7 +1684,7 @@ function palItems() {
     .map(([href, icon, t]) => ({ href, icon, t, sub: href === '@recap' ? 'Твоя статистика в стиле Wrapped' : href === '@keys' ? 'Подсказка' : 'Раздел' }));
   const people = !q ? [] : [...cache.users.values()].filter(u => u && !u.deleted && u.id !== S.me.id && (norm(u.name).includes(q) || norm(u.nick).includes(q.replace(/^@/, ''))))
     .slice(0, 6).map(u => ({ href: 'id/' + u.id, u, t: u.name, sub: '@' + (u.nick || '') }));
-  const more = q.length >= 2 ? [{ href: 'people', q: S.pal.q.trim(), icon: I.search, t: `Найти людей: «${S.pal.q.trim()}»`, sub: 'Поиск по всем' }] : [];
+  const more = q.length >= 2 ? [{ href: 'search/' + encodeURIComponent(S.pal.q.trim()), icon: I.search, t: `Искать везде: «${S.pal.q.trim()}»`, sub: 'Люди, записи, видео, музыка, клубы' }, { href: 'people', q: S.pal.q.trim(), icon: I.search, t: `Найти людей: «${S.pal.q.trim()}»`, sub: 'Поиск по всем' }] : [];
   return [...people, ...secs, ...more];
 }
 function palOverlay() {
@@ -1745,6 +1775,7 @@ function overlay() {
   if (S.recap) return recapOverlay();
   if (S.keys) return keysOverlay();
   if (S.whatsNew) return whatsNewModal();
+  if (S.vcmt) return vcmtSheet();
   if (S.liveForm) return liveFormModal();
   if (S.liveRec) return liveRecModal();
   if (S.plPick || S.plForm) return playlistModal();
@@ -1767,12 +1798,7 @@ function overlay() {
       <input id="giftText" class="inp" maxlength="200" placeholder="Подпись (необязательно)">
       <button class="btn" data-act="giftsend" ${S.giftSel ? '' : 'disabled'}>Подарить ${S.giftSel ? GIFTS[S.giftSel][0] : ''}</button></div></div>`;
   }
-  if (S.storyDraft) return `<div class="ov" data-act="ovx"><div class="ov-in modal" data-stop="1">
-      <div class="row"><b class="grow">Новая история</b><button class="icon-btn" data-act="ovx" aria-label="Закрыть">✕</button></div>
-      <img class="story-prev" src="${esc(S.storyDraft.image)}" alt="Предпросмотр">
-      <input id="stText" class="inp" maxlength="200" placeholder="Подпись (необязательно)">
-      <p class="hint" style="margin:0">История исчезнет через 24 часа. Её увидят ваши друзья.</p>
-      <button class="btn" data-act="storypub" ${S.busy ? 'disabled' : ''}>Опубликовать</button></div></div>`;
+  if (S.storyDraft) return storyEditor();
   if (S.newRoom) {
     const fr = (S.me.friends || []).map(U).filter(Boolean), sel = S.newRoom.sel;
     ensureUsers(S.me.friends || []);
@@ -1839,7 +1865,7 @@ function videoCard(v, wide = false) {
       ${v.duration ? `<span class="vdur tnum">${fmtDur(v.duration)}</span>` : v.source === 'link' ? `<span class="vdur">${provName(v)}</span>` : ''}
       <span class="vplay" aria-hidden="true">${I.play}</span></div>
     <div class="vmeta">${o ? avatar(o, 32, false) : ''}<span class="vmeta-t"><b>${esc(v.title || 'Без названия')}</b>
-      <span class="muted small">${esc(o?.name || '')}${o ? ' · ' : ''}${ago(v.createdAt)}${likes ? ` · ♥ ${likes}` : ''}</span></span></div>
+      <span class="muted small">${esc(o?.name || '')}${o ? ' · ' : ''}${ago(v.createdAt)}${v.views ? ` · ${fmtViews(v.views)} просм.` : ''}${likes ? ` · ♥ ${likes}` : ''}</span></span></div>
   </a>`;
 }
 const clipCard = v => { const th = videoThumb(v), o = U(v.ownerId);
@@ -1900,10 +1926,11 @@ function watchInfo() {
   const long = (v.description || '').length > 180, open = S.vdescOpen === v.id;
   return `<div class="card pad watch-info" id="watchInfo">
     <h1 class="h watch-title">${esc(v.title || 'Без названия')}</h1>
-    <div class="row watch-by">${avatar(o, 44)}<div class="grow" style="min-width:0">${nameLink(o)}<div class="muted small">${ago(v.createdAt)}${v.source === 'link' ? ' · ' + provName(v) : ''}</div></div>
+    <div class="row watch-by">${avatar(o, 44)}<div class="grow" style="min-width:0">${nameLink(o)}<div class="muted small">${ago(v.createdAt)}${v.views ? ' · ' + fmtViews(v.views) + ' ' + plural(v.views, 'просмотр', 'просмотра', 'просмотров') : ''}${v.source === 'link' ? ' · ' + provName(v) : ''}</div></div>
       <a class="btn ghost small" href="#videos/${esc(v.ownerId)}">Все видео</a></div>
     <div class="row watch-acts">
       <button class="pill ${liked ? 'liked' : ''}" data-act="likevideo" data-id="${esc(v.id)}" aria-pressed="${liked}">${liked ? I.heart : I.heartO}${likes.length || ''}</button>
+      <button class="pill" data-act="vcmt" data-id="${esc(v.id)}">${I.comment}Комментарии${cmtCount[v.id] ? ' ' + cmtCount[v.id] : ''}</button>
       <a class="pill" href="#clips/${esc(v.id)}">${I.play}Как клип</a>
       <button class="pill" data-act="copylink" data-id="${esc(v.id)}">${I.link}Ссылка</button>
       <span class="grow"></span>
@@ -1934,7 +1961,7 @@ document.addEventListener('ended', e => {
 /* ---------- ВС Клипы (7.0): вертикальная лента роликов — листается свайпом, играет по кругу, двойной тап — «нравится» ----------
    Страница рисуется один раз за заход: обновления сайта её не перерисовывают (иначе ролик начинался бы заново), всё меняется точечно. */
 const CLIP_PAGE = 16;
-let clipObs = null, clipTapT = 0, clipTapTimer = 0;
+let clipObs = null, clipTapT = 0, clipTapTimer = 0, clipViewT = 0;
 const clipsKey = () => S.clipsReady ? 'ready' : 'wait';
 let clipsOvHtml = '';
 async function loadClips(startId) {
@@ -1963,9 +1990,10 @@ function clipHtml(v, i) {
     <div class="clip-media" data-act="cliptap" data-id="${esc(v.id)}">${th ? `<img class="clip-poster" src="${esc(th)}" alt="" referrerpolicy="no-referrer">` : ''}</div>
     <div class="clip-paused" aria-hidden="true">${I.play}</div>
     <div class="clip-info"><a class="clip-author" href="#id/${esc(v.ownerId)}">${avatar(o, 38, false)}<b>${esc(o?.name || '')}</b></a>
-      <div class="clip-title">${esc(v.title || '')}</div>${v.description ? `<div class="clip-desc">${esc(v.description)}</div>` : ''}</div>
+      <div class="clip-title">${esc(v.title || '')}${v.views ? `<span class="clip-views">${I.eye}${fmtViews(v.views)}</span>` : ''}</div>${v.description ? `<div class="clip-desc">${esc(v.description)}</div>` : ''}</div>
     <div class="clip-side">
       <button class="clip-btn ${liked ? 'on' : ''}" data-act="cliplike" data-id="${esc(v.id)}" aria-label="Нравится" aria-pressed="${liked}"><span class="clip-ic">${liked ? I.heart : I.heartO}</span><span class="clip-n">${likes.length || ''}</span></button>
+      <button class="clip-btn" data-act="clipcmt" data-id="${esc(v.id)}" aria-label="Комментарии"><span class="clip-ic">${I.comment}</span><span class="clip-n">${cmtCount[v.id] ?? ''}</span></button>
       <a class="clip-btn" href="#video/${esc(v.id)}" aria-label="Открыть ролик"><span class="clip-ic">${I.video}</span><span class="clip-n">Открыть</span></a>
       <button class="clip-btn" data-act="clipshare" data-id="${esc(v.id)}" aria-label="Скопировать ссылку"><span class="clip-ic">${I.link}</span><span class="clip-n">Ссылка</span></button>
     </div>
@@ -2010,6 +2038,8 @@ async function clipActivate(i) {
   if (curRoute() !== 'clips/' + v.id) history.replaceState(null, '', BASE + 'clips/' + v.id);
   document.querySelectorAll('#clipsFeed .clip').forEach(el => { const k = +el.dataset.i; if (k !== i) clipPause(el, Math.abs(k - i) > 2); });
   const el = document.querySelector(`#clipsFeed .clip[data-i="${i}"]`); if (el) { el.classList.add('on'); clipPlay(el, v); }
+  clearTimeout(clipViewT); clipViewT = setTimeout(() => { if (S.view === 'clips' && S.clipIdx === i) countView(v); }, 2000);   // просмотр — после 2 секунд
+  if (!(v.id in cmtCount)) getCountFromServer(collection(db, 'videos', v.id, 'comments')).then(c => { cmtCount[v.id] = c.data().count; clipCmtUi(v.id); }).catch(() => { });
   const nx = list[i + 1]; if (nx?.source === 'file') getFileUrl(nx.fileId, nx.type || 'video/mp4').catch(() => { });   // следующий качаем заранее
   if (i >= list.length - 3 && !cache.clipsDone) { const add = await loadClips(); if (add.length) clipsAppend(add); }
 }
@@ -2077,6 +2107,37 @@ async function clipLike(id, onlyAdd) {
   });
   try { await updateDoc(doc(db, 'videos', id), { likes: has ? arrayRemove(me) : arrayUnion(me) }); }
   catch (e) { toast(errText(e)); }
+}
+/* 8.0: комментарии к видео и клипам (videos/{id}/comments) и просмотры (videos.views, только +1, раз за заход) */
+const cmtCount = {}, viewedVids = new Set();
+let vcmtUnsub = null;
+const fmtViews = n => n >= 1e6 ? (n / 1e6).toFixed(1).replace('.0', '') + ' млн' : n >= 1e4 ? Math.round(n / 1e3) + ' тыс.' : String(n);
+function countView(v) {
+  if (!v || viewedVids.has(v.id)) return; viewedVids.add(v.id);
+  updateDoc(doc(db, 'videos', v.id), { views: increment(1) }).then(() => { v.views = (v.views || 0) + 1; }).catch(() => { });
+}
+function clipCmtUi(id) { document.querySelectorAll(`#clipsFeed .clip[data-id="${CSS.escape(id)}"] [data-act=clipcmt] .clip-n`).forEach(n => { n.textContent = cmtCount[id] || ''; }); }
+function openVcmt(id) {
+  vcmtUnsub?.(); S.vcmt = { id, list: null };
+  vcmtUnsub = onSnapshot(query(collection(db, 'videos', id, 'comments'), orderBy('createdAt', 'desc'), limit(100)), s => {
+    if (S.vcmt?.id !== id) return;
+    S.vcmt.list = s.docs.map(data); cmtCount[id] = s.size; clipCmtUi(id);
+    ensureUsers(S.vcmt.list.map(c => c.authorId)); render();
+  }, e => { console.error(e); if (S.vcmt?.id === id) { S.vcmt.list = []; render(); } });
+  render(); setTimeout(() => document.getElementById('vcIn')?.focus({ preventScroll: true }), 80);
+}
+function closeVcmt() { vcmtUnsub?.(); vcmtUnsub = null; S.vcmt = null; render(); }
+function vcmtSheet() {
+  const c = S.vcmt, me = S.me, v = (cache.clips || []).find(x => x.id === c.id) || (cache.video?.id === c.id ? cache.video : null);
+  const canDel = cm => cm.authorId === me.id || v?.ownerId === me.id || isSiteAdmin();
+  return `<div class="ov vc-ov" data-act="vcclose"><div class="vc-sheet" data-stop="1" role="dialog" aria-label="Комментарии">
+    <div class="vc-head"><b>Комментарии${c.list?.length ? ` <span class="muted">${c.list.length}</span>` : ''}</b><button class="icon-btn" data-act="vcclose" aria-label="Закрыть">✕</button></div>
+    <div class="vc-list">${!c.list ? '<div class="muted small" style="padding:16px">Загружаем…</div>' : !c.list.length ? '<div class="empty"><b>Пока тихо</b><span>Напишите первым</span></div>'
+      : c.list.map(cm => { const a = U(cm.authorId); if (!a || iBlocked(cm.authorId)) return '';
+        return `<div class="comment">${avatar(a, 32)}<div class="bubble">${nameLink(a)} <span class="post-text">${linkify(cm.text)}</span>
+          <div class="muted small">${ago(cm.createdAt)}${canDel(cm) ? ` · <button class="btn ghost small" style="padding:0 4px" data-act="vcdel" data-id="${esc(cm.id)}">удалить</button>` : ''}</div></div></div>`; }).join('')}</div>
+    ${banOf(me) ? '' : `<form class="cform vc-form" data-form="vcomment">${avatar(me, 32, false)}<input id="vcIn" placeholder="Комментарий…" maxlength="1000" autocomplete="off"><button class="icon-btn" aria-label="Отправить">${I.send}</button></form>`}
+  </div></div>`;
 }
 function clipStep(d) {
   const feed = document.getElementById('clipsFeed'); if (!feed) return;
@@ -2203,9 +2264,9 @@ function viewSettings() {
     <div class="card pad set"><h2 class="h" style="font-size:16px">Оформление</h2>
       <div class="set-row"><span class="grow">Тема</span>${seg('theme', th, [['system', 'Как в системе'], ['light', 'Светлая'], ['dark', 'Тёмная']])}</div>
       <div class="set-row"><span class="grow">Цвет</span><div class="accents" role="radiogroup">${ACCENTS.map(([k, l, c]) => `<button role="radio" aria-checked="${(lsGet('vs_accent') || 'blue') === k}" aria-label="${l}" title="${l}" class="${(lsGet('vs_accent') || 'blue') === k ? 'on' : ''}" style="background:${c}" data-act="accent" data-v="${k}"></button>`).join('')}</div></div>
-      <div class="set-row"><span class="grow">Дизайн<br><span class="muted small">Material You — как на Android, Liquid Glass — фиолетовое стекло, Классический — простой и быстрый</span></span>${seg('skin', skinNow(), SKINS)}</div>
+      <div class="set-row"><span class="grow">Дизайн<br><span class="muted small">Material You — как на Android, Газета — бумага и типографика, Классический — простой и быстрый</span></span>${seg('skin', skinNow(), SKINS)}</div>
       <p class="hint" style="margin:0">Сохраняется на этом устройстве.</p></div>
-    ${androidCard()}${installCard()}
+    ${themesCard()}${androidCard()}${installCard()}
     <div class="card pad set"><h2 class="h" style="font-size:16px">Музыка</h2>
       <div class="set-row"><span class="grow">Показывать в профиле, что я слушаю</span>${seg('listen', lsGet('vs_listen') === '0' ? 'off' : 'on', [['on', 'Да'], ['off', 'Нет']])}</div>
       <div class="set-row"><span class="grow">Анимации</span>${seg('anim', lsGet('vs_anim') === 'off' ? 'off' : 'on', [['on', 'Вкл'], ['off', 'Выкл']])}</div></div>
@@ -3184,7 +3245,7 @@ function musicBar() {
   const t = curTrack(); if (!t) return '';
   const a = player.audio, pct = a.duration ? a.currentTime / a.duration * 100 : 0;
   const pal = coverPalette(t), saved = !t.radio && ((S.me.tracks || []).includes(t.id) || t.ownerId === uid());
-  return `<div class="mbar mbar3 ${a.paused ? '' : 'playing'}" role="region" aria-label="Плеер" style="--c1:${pal.c1};--c2:${pal.c2}"><i class="lg" aria-hidden="true"></i><div class="mbar-fill" id="mbarFill" style="width:${pct}%"></div>
+  return `<div class="mbar mbar3 ${a.paused ? '' : 'playing'}" role="region" aria-label="Плеер" style="--c1:${pal.c1};--c2:${pal.c2}"><div class="mbar-fill" id="mbarFill" style="width:${pct}%"></div>
     <button class="grow mbar-info" data-act="fpopen" aria-label="Открыть плеер"><span class="mbar-art">${safeImg(t.cover) ? `<img class="mbar-cover" src="${esc(t.cover)}" alt="">` : `<span class="mbar-noart">${t.radio ? '📻' : '🎵'}</span>`}</span><span class="mbar-txt"><b>${esc(t.title)}</b><span class="muted small">${esc(t.artist || (t.radio ? 'Прямой эфир' : 'Неизвестный исполнитель'))}</span></span></button>
     <span class="small muted tnum" id="mbarTime">${t.radio ? '● Прямой эфир' : fmtDur(a.currentTime) + ' / ' + fmtDur(a.duration || t.duration)}</span>
     ${t.radio || t.ownerId === uid() ? '' : `<button class="icon-btn mbar-like ${saved ? 'on' : ''}" data-act="fplike" aria-label="${saved ? 'В моей музыке' : 'В мои треки'}">${saved ? I.heart : I.heartO}</button>`}
@@ -4410,7 +4471,7 @@ async function livePublish() {
 }
 // плашка «в эфире сейчас» в ленте
 async function loadLiveNow() {
-  try { const s = await getDocs(query(collection(db, 'streams'), where('live', '==', true), limit(10))); cache.liveNow = s.docs.map(data).filter(liveFresh); ensureUsers(cache.liveNow.map(x => x.ownerId)); if (S.view === 'feed') render(); } catch (e) { }
+  try { const s = await getDocs(query(collection(db, 'streams'), where('live', '==', true), limit(10))); cache.liveNow = s.docs.map(data).filter(x => liveFresh(x) && x.mode !== 'call'); ensureUsers(cache.liveNow.map(x => x.ownerId)); if (S.view === 'feed') render(); } catch (e) { }
 }
 function liveNowCard() {
   const l = cache.liveNow || []; if (!l.length) return '';
@@ -4421,6 +4482,206 @@ async function liveCleanStale() {
   for (const s of cache.streams || []) if (s.ownerId === uid() && s.live && !liveFresh(s) && LIVE?.sid !== s.id) updateDoc(doc(db, 'streams', s.id), { live: false, endedAt: serverTimestamp() }).catch(() => { });
 }
 window.addEventListener('pagehide', () => { const L = LIVE; if (!L) return; nodeDel(L); if (L.host) updateDoc(doc(db, 'streams', L.sid), { live: false, endedAt: serverTimestamp() }).catch(() => { }); });
+
+/* ---------- 8.0: звонки один на один — голос и видео напрямую между двумя устройствами (WebRTC, как ВС Эфир) ----------
+   Звонок — запись streams с mode 'call' и to = кому звоним; позвать — уведомление type 'call' (postId = id звонка).
+   Тот, кому звонят, берёт трубку заявкой peers с offer (в ней его звук и видео), звонящий отвечает answer. «Отклонить» — заявка с offer 'no'.
+   По каналу данных: {t:'end'} — положили трубку, {t:'tog'} и {t:'mus'} — «Слушать вместе» (ведущий раз в 1,5 с шлёт трек и позицию).
+   Экран звонка живёт вне #app (#callBox) и не зависит от render() — звонок продолжается при переходах по сайту. */
+let CALL = null, ringT = 0, ringAC = null, togTimer = 0;
+const callSeen = new Set();
+const callBox = () => document.getElementById('callBox') || document.body.appendChild(Object.assign(document.createElement('div'), { id: 'callBox' }));
+const callMedia = video => navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true }, video: video ? { facingMode: 'user', width: { ideal: 640 }, height: { ideal: 480 } } : false });
+const callSend = m => { const dc = CALL?.dc; if (dc?.readyState === 'open') try { dc.send(JSON.stringify(m)); } catch (e) { } };
+function ringTone(on, kind = 'in') {
+  clearInterval(ringT); ringT = 0; if (!on) return;
+  const beep = () => {
+    try {
+      ringAC ||= new (window.AudioContext || window.webkitAudioContext)();
+      const o = ringAC.createOscillator(), g = ringAC.createGain(), t = ringAC.currentTime, len = kind === 'in' ? 0.9 : 1.2;
+      o.frequency.value = kind === 'in' ? 880 : 425; o.connect(g); g.connect(ringAC.destination);
+      g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(0.12, t + 0.03); g.gain.setValueAtTime(0.12, t + len); g.gain.linearRampToValueAtTime(0, t + len + 0.08);
+      o.start(t); o.stop(t + len + 0.1);
+    } catch (e) { }
+  };
+  beep(); ringT = setInterval(beep, kind === 'in' ? 2000 : 4000);
+}
+function callNew(o) {
+  return CALL = { local: null, remote: null, pc: null, dc: null, t0: 0, timers: [], unsubs: [], mic: true, cam: !!o.video, min: false, together: false, lead: false, ...o };
+}
+async function callStart(to, video) {
+  if (CALL) { toast('Вы уже в звонке'); return; }
+  if (LIVE) { toast('Сначала завершите эфир'); return; }
+  if (!liveCanCam()) { toast('Этот браузер не умеет звонки — попробуйте Chrome или Safari'); return; }
+  let local;
+  try { local = await callMedia(video); }
+  catch (e) { toast(e?.name === 'NotAllowedError' ? `Нет доступа к микрофону${video ? ' или камере' : ''} — разрешите его в браузере` : `Не получилось включить ${video ? 'камеру' : 'микрофон'}`); return; }
+  let ref;
+  try { ref = await addDoc(collection(db, 'streams'), { ownerId: uid(), title: video ? 'Видеозвонок' : 'Звонок', mode: 'call', to, live: true, beat: serverTimestamp(), createdAt: serverTimestamp(), endedAt: null }); }
+  catch (e) { local.getTracks().forEach(t => t.stop()); toast(errText(e)); return; }
+  const C = callNew({ sid: ref.id, host: true, peer: to, video, local, state: 'ring' });
+  notify(to, 'call', ref.id, video ? 'Видеозвонок' : 'Звонок');
+  C.unsubs.push(onSnapshot(query(collection(db, 'streams', ref.id, 'peers'), where('to', '==', uid())),
+    s => s.docChanges().forEach(ch => { if (ch.type === 'added') callAnswer(C, ch.doc); }), e => console.error(e)));
+  C.timers.push(setTimeout(() => { if (CALL === C && C.state === 'ring') callEnd('noanswer'); }, 45000));
+  C.timers.push(setInterval(() => updateDoc(doc(db, 'streams', C.sid), { beat: serverTimestamp() }).catch(() => { }), 60000));
+  ringTone(true, 'out'); liveWake(true); callDom();
+}
+async function callAnswer(C, snap) {
+  const p = snap.data(); if (!p || CALL !== C || p.uid !== C.peer || C.pc) return;   // трубку берёт только тот, кому звонили
+  if (p.offer === 'no') { callEnd('declined'); return; }
+  C.state = 'connecting'; ringTone(false); callDom();
+  const pc = C.pc = new RTCPeerConnection(ICE); callWire(C, pc);
+  pc.ondatachannel = e => callChannel(C, e.channel);
+  try {
+    await pc.setRemoteDescription({ type: 'offer', sdp: p.offer });
+    C.local.getTracks().forEach(t => pc.addTrack(t, C.local));
+    await pc.setLocalDescription(await pc.createAnswer()); await iceDone(pc);
+    await updateDoc(snap.ref, { answer: pc.localDescription.sdp });
+    C.timers.push(setTimeout(() => { if (CALL === C && C.state !== 'live') callEnd('failed'); }, 25000));
+  } catch (e) { console.error(e); callEnd('failed'); }
+}
+function callWire(C, pc) {
+  pc.ontrack = e => { C.remote ||= new MediaStream(); if (!C.remote.getTracks().includes(e.track)) C.remote.addTrack(e.track); callAttach(); };
+  pc.onconnectionstatechange = () => {
+    const st = pc.connectionState; if (CALL !== C) return;
+    if (st === 'connected' && C.state !== 'live') {
+      C.state = 'live'; C.t0 = Date.now(); callDom();
+      C.timers.push(setInterval(() => { const el = document.getElementById('callTime'); if (el) el.textContent = fmtDur((Date.now() - C.t0) / 1000); }, 1000));
+    } else if (st === 'failed') callEnd('failed');
+    else if (st === 'disconnected') setTimeout(() => { if (CALL === C && pc.connectionState !== 'connected') callEnd('lost'); }, 8000);
+  };
+}
+function callChannel(C, dc) {
+  C.dc = dc;
+  dc.onmessage = e => {
+    let m; try { m = JSON.parse(e.data); } catch (x) { return; }
+    if (CALL !== C) return;
+    if (m.t === 'end') callEnd('hangup', true);
+    else if (m.t === 'tog') { C.together = !!m.on; C.lead = false; clearInterval(togTimer); toast(m.on ? `🎧 ${(U(C.peer)?.name || 'Собеседник').split(' ')[0]} включает музыку для вас двоих` : '🎧 «Слушать вместе» выключено'); callDom(); }
+    else if (m.t === 'mus' && C.together && !C.lead) togetherRecv(C, m);
+  };
+}
+// входящий: уведомление type 'call' свежее 45 секунд, звонок ещё идёт и адресован мне
+function callCheck() {
+  for (const n of cache.notifs) {
+    if (n.type !== 'call' || n.from === uid() || callSeen.has(n.id)) continue;
+    callSeen.add(n.id);
+    if (Date.now() - ms(n.createdAt) < 45000) callIncoming(n);
+  }
+}
+async function callIncoming(n) {
+  if (CALL || LIVE?.host) return;   // занято — у звонящего будет «не отвечает»
+  let s = null; try { const d = await getDoc(doc(db, 'streams', n.postId)); s = d.exists() ? d.data() : null; } catch (e) { return; }
+  if (!s || !s.live || s.mode !== 'call' || s.to !== uid() || s.ownerId !== n.from || CALL) return;
+  ensureUsers([n.from]);
+  const C = callNew({ sid: n.postId, host: false, peer: n.from, video: s.title === 'Видеозвонок', nid: n.id, state: 'incoming', cam: false });
+  C.unsubs.push(onSnapshot(doc(db, 'streams', C.sid), d => { const x = d.data(); if (CALL === C && (!x || !x.live)) callEnd(C.state === 'live' ? 'hangup' : 'cancelled', true); }, () => { }));
+  C.timers.push(setTimeout(() => { if (CALL === C && C.state === 'incoming') callEnd('missed', true); }, 45000));
+  ringTone(true, 'in'); try { navigator.vibrate?.([500, 300, 500, 300, 500]); } catch (e) { }
+  if (document.hidden && 'Notification' in window && Notification.permission === 'granted') try { new Notification(`${U(n.from)?.name || 'Вам'} звонит`, { body: C.video ? 'Видеозвонок в VСмске' : 'Звонок в VСмске', tag: 'call' + C.sid }); } catch (e) { }
+  callDom();
+}
+async function callPick() {
+  const C = CALL; if (!C || C.host || C.state !== 'incoming') return;
+  ringTone(false); C.state = 'connecting'; callDom(); unnotify(C.nid);
+  try { C.local = await callMedia(C.video); C.cam = C.video; }
+  catch (e) { toast(`Нет доступа к микрофону${C.video ? ' или камере' : ''} — разрешите его в браузере`); callDecline(); return; }
+  if (CALL !== C) { C.local.getTracks().forEach(t => t.stop()); return; }
+  const pc = C.pc = new RTCPeerConnection(ICE); callWire(C, pc);
+  callChannel(C, pc.createDataChannel('call'));
+  C.local.getTracks().forEach(t => pc.addTrack(t, C.local));
+  callAttach(); liveWake(true);
+  try {
+    await pc.setLocalDescription(await pc.createOffer()); await iceDone(pc);
+    const ref = C.peerRef = await addDoc(collection(db, 'streams', C.sid, 'peers'), { uid: uid(), to: C.peer, offer: pc.localDescription.sdp, createdAt: serverTimestamp() });
+    C.unsubs.push(onSnapshot(ref, s => { const p = s.data(); if (p?.answer && !pc.remoteDescription) pc.setRemoteDescription({ type: 'answer', sdp: p.answer }).catch(() => callEnd('failed')); }, () => { }));
+    C.timers.push(setTimeout(() => { if (CALL === C && C.state !== 'live') callEnd('failed'); }, 25000));
+  } catch (e) { console.error(e); callEnd('failed'); }
+}
+function callDecline() {
+  const C = CALL; if (!C || C.host) return;
+  addDoc(collection(db, 'streams', C.sid, 'peers'), { uid: uid(), to: C.peer, offer: 'no', createdAt: serverTimestamp() }).catch(() => { });
+  unnotify(C.nid); callEnd('', true);
+}
+async function callEnd(why, remote = false) {
+  const C = CALL; if (!C) return; CALL = null;
+  if (!remote) callSend({ t: 'end' });
+  ringTone(false); liveWake(false); clearInterval(togTimer);
+  C.timers.forEach(t => { clearTimeout(t); clearInterval(t); }); C.unsubs.forEach(u => { try { u(); } catch (e) { } });
+  setTimeout(() => { try { C.pc?.close(); } catch (e) { } }, 300);
+  C.local?.getTracks().forEach(t => t.stop());
+  const msg = { noanswer: 'Не отвечает', declined: 'Звонок отклонён', failed: 'Не получилось соединиться', lost: 'Связь пропала', hangup: 'Звонок завершён', cancelled: 'Звонок отменён', missed: 'Пропущенный звонок' }[why];
+  if (msg) toast('📞 ' + msg);
+  callDom();
+  const dur = C.t0 ? Math.round((Date.now() - C.t0) / 1000) : 0;
+  if (C.host) {
+    try {
+      await updateDoc(doc(db, 'streams', C.sid), { live: false, endedAt: serverTimestamp() });
+      const s = await getDocs(collection(db, 'streams', C.sid, 'peers')); if (s.size) { const b = writeBatch(db); s.docs.forEach(d => b.delete(d.ref)); await b.commit(); }
+    } catch (e) { }
+    sendMessage(C.peer, dur ? `📞 ${C.video ? 'Видеозвонок' : 'Звонок'} · ${fmtDur(dur)}` : `📞 ${why === 'declined' ? 'Звонок отклонён' : 'Пропущенный звонок'}`).catch(() => { });
+  } else if (C.peerRef) deleteDoc(C.peerRef).catch(() => { });
+}
+window.addEventListener('pagehide', () => { const C = CALL; if (!C) return; callSend({ t: 'end' }); if (C.host) updateDoc(doc(db, 'streams', C.sid), { live: false, endedAt: serverTimestamp() }).catch(() => { }); });
+function callAttach() {
+  const C = CALL; if (!C) return;
+  const rv = document.getElementById('callRemote'); if (rv && C.remote && rv.srcObject !== C.remote) { rv.srcObject = C.remote; rv.play().catch(() => { }); }
+  const lv = document.getElementById('callLocal'); if (lv && C.local && lv.srcObject !== C.local) { lv.srcObject = C.local; lv.play().catch(() => { }); }
+}
+function callDom() {
+  const box = callBox(), C = CALL;
+  if (!C) { box.innerHTML = ''; box.className = ''; return; }
+  const u = U(C.peer), name = esc(u?.name || '…'), st = C.state;
+  const btn = (act, ic, label, cls = '') => `<button class="call-b ${cls}" data-act="${act}" aria-label="${label}" title="${label}"><span>${ic}</span><small>${label}</small></button>`;
+  box.className = `call ${st} ${C.min ? 'min' : ''} ${C.video ? 'video' : ''}`;
+  if (C.min) {
+    box.innerHTML = `<button class="call-pill" data-act="callmax" aria-label="Открыть звонок">${avatar(u, 30, false)}<span class="grow"><b>${name}</b><small id="callTime">${st === 'live' ? fmtDur((Date.now() - C.t0) / 1000) : 'Соединяем…'}</small></span></button>
+      <button class="call-b end sm" data-act="callhang" aria-label="Положить трубку"><span>${I.phone}</span></button>${C.video ? '' : '<audio id="callRemote" autoplay></audio>'}`;
+    if (C.video) box.insertAdjacentHTML('beforeend', '<video id="callRemote" autoplay playsinline hidden></video>');
+    callAttach(); return;
+  }
+  const label = { ring: 'Вызываем…', incoming: C.video ? 'Видеозвонок' : 'Звонок', connecting: 'Соединяем…' }[st] || '';
+  box.innerHTML = `<div class="call-in" role="dialog" aria-label="Звонок">
+    ${C.video ? `<video id="callRemote" class="call-remote" autoplay playsinline></video>` : '<audio id="callRemote" autoplay></audio>'}
+    <div class="call-who">${avatar(u, 104, false)}<b>${name}</b><span>${st === 'live' ? `<span id="callTime">${fmtDur((Date.now() - C.t0) / 1000)}</span>${C.together ? ' · 🎧 слушаем вместе' : ''}` : label}</span></div>
+    ${C.video && C.local ? '<video id="callLocal" class="call-local" autoplay playsinline muted></video>' : ''}
+    <div class="call-bar">${st === 'incoming'
+      ? btn('calldecline', I.phone, 'Отклонить', 'end') + btn('callpick', I.phone, 'Ответить', 'pick')
+      : btn('callmic', I.mic, C.mic ? 'Микрофон' : 'Без звука', C.mic ? '' : 'off')
+        + (C.video ? btn('callcam', I.video, C.cam ? 'Камера' : 'Камера выкл.', C.cam ? '' : 'off') : '')
+        + (st === 'live' ? btn('calltog', I.music, C.together ? 'Вместе' : 'Музыка', C.together ? 'on' : '') : '')
+        + btn('callmin', I.down, 'Свернуть') + btn('callhang', I.phone, 'Завершить', 'end')}</div>
+  </div>`;
+  callAttach();
+}
+// «Слушать вместе»: ведущий раз в 1,5 секунды отправляет, что играет; у второго включается тот же трек с той же секунды
+function togetherToggle() {
+  const C = CALL; if (!C || C.state !== 'live') return;
+  if (C.together && !C.lead) { C.lead = true; } else { C.together = !C.together; C.lead = C.together; }
+  callSend({ t: 'tog', on: C.together }); clearInterval(togTimer);
+  if (C.together) {
+    togTimer = setInterval(togetherSend, 1500); togetherSend();
+    toast(curTrack() ? `🎧 ${(U(C.peer)?.name || 'Собеседник').split(' ')[0]} слышит то же, что и вы` : '🎧 Включите трек в ВС Музыке — он заиграет у обоих');
+  }
+  callDom();
+}
+function togetherSend() {
+  const C = CALL, t = curTrack(); if (!C?.together || !C.lead) return;
+  callSend(!t || t.radio ? { t: 'mus', id: null } : { t: 'mus', id: t.id, pos: player.audio.currentTime || 0, paused: player.audio.paused });
+}
+async function togetherRecv(C, m) {
+  if (!m.id || typeof m.id !== 'string') return;
+  if (curTrack()?.id !== m.id) {
+    if (C.loading === m.id) return; C.loading = m.id;
+    if (!trackCache.get(m.id)) await tracksById([m.id]).catch(() => { });
+    const t = trackCache.get(m.id); C.loading = null; if (!t || CALL !== C) return;
+    player.queue = [t]; player.label = 'Слушаем вместе'; player.stream = false; player.autoNext = false; await playAt(0);
+  }
+  const a = player.audio, pos = Number(m.pos) || 0;
+  if (a.duration && Math.abs(a.currentTime - pos) > 2) a.currentTime = Math.min(pos, a.duration - 0.5);
+  if (m.paused && !a.paused) a.pause(); else if (!m.paused && a.paused) a.play().catch(() => { });
+}
 
 /* 7.0: «нравится» у записи — кнопкой или двойным тапом по фото (двойной тап только ставит, не снимает) */
 let imgTap = {};
@@ -4471,18 +4732,20 @@ document.addEventListener('touchend', () => {
 // поле сообщения: пока пусто — микрофон, когда есть текст — кнопка «отправить»
 document.addEventListener('input', e => { if (e.target.id === 'msgInput') e.target.closest('form')?.classList.toggle('has-text', !!e.target.value.trim()); });
 /* 7.0: окно «Что нового» */
-const WN_VER = '7.0';
+const WN_VER = '8.0';
 const WN_ITEMS = [
-  ['🎬', 'ВС Клипы', 'Короткие видео во весь экран: листай свайпом, двойной тап — «нравится», звук одной кнопкой.', 'clips', 'Смотреть'],
-  ['📺', 'Новое ВС Видео', 'Главная с большим роликом, полками и «Популярным», а после видео само включается следующее.', 'video', 'Открыть'],
-  ['❤️', 'Двойной тап по фото', 'В ленте теперь можно лайкнуть фото двойным касанием — вылетит сердечко.', '', ''],
-  ['✍️', 'Разметка текста', 'Пиши **жирный**, *курсив*, ~~зачёркнутый~~, ||спойлер|| и `код` — в записях, комментариях и чатах. В новой записи есть кнопка «Aa».', '', ''],
-  ['🎨', 'Обои в чатах', 'Кнопка 🎨 в шапке диалога. А свайп сообщения вправо — быстрый ответ.', 'im', 'В чаты'],
-  ['🌊', 'Плавнее и быстрее', 'Страницы сменяются плавно, а вместо крутилки — аккуратные заготовки, пока всё грузится.', '', ''],
+  ['📞', 'Звонки', 'Голосом и по видео — кнопки в шапке диалога. Звук и картинка идут напрямую между вами. А «Музыка» в звонке включает трек у обоих.', 'im', 'В чаты'],
+  ['💬', 'Комментарии к клипам', 'Обсуждайте клипы и видео, а у роликов теперь есть счётчик просмотров.', 'clips', 'Клипы'],
+  ['📸', 'Истории 2.0', 'Надписи и стикеры прямо на фото. На чужую историю можно ответить или поставить реакцию — придёт в личку.', '', ''],
+  ['🎥', 'Видеокружки и голосовые 2.0', 'Кружки до 20 секунд, а у голосовых — волна, скорость 1,5× и 2× и продолжение с того же места.', '', ''],
+  ['📰', 'Дизайн «Газета» и готовые темы', 'Новый стиль: бумага и типографика. Liquid Glass ушёл. Темой можно поделиться ссылкой.', 'settings', 'Выбрать'],
+  ['🔎', 'Поиск по всему сайту', 'Люди, записи, видео, музыка и клубы в одном месте, а при наборе @ и # — подсказки.', 'search', 'Искать'],
+  ['🗂', 'Черновики, отложенные записи, папки чатов', 'Сохраняйте записи на потом и планируйте их выход. Диалоги можно закреплять и убирать в архив.', '', ''],
+  ['⭐', 'Уровни и достижения', 'В профиле — уровень и все достижения: что уже есть и что осталось.', '', ''],
 ];
 function whatsNewModal() {
   return `<div class="ov wn-ov" data-act="wnclose"><div class="ov-in modal wn" data-stop="1" role="dialog" aria-label="Что нового">
-    <div class="wn-head"><i></i><i></i><i></i><span class="wn-kick">Обновление</span><b class="wn-title">VСмске 7.0</b><span class="wn-sub">Самое большое обновление — смотри, что нового</span>
+    <div class="wn-head"><i></i><i></i><i></i><span class="wn-kick">Обновление</span><b class="wn-title">VСмске 8.0</b><span class="wn-sub">Звонки, кружки, «Газета» и ещё много всего</span>
       <button class="icon-btn wn-x" data-act="wnclose" aria-label="Закрыть">✕</button></div>
     <div class="wn-list">${WN_ITEMS.map(([e, t, d, href, btn]) => `<div class="wn-item"><span class="wn-ic">${e}</span><span class="grow"><b>${t}</b><span>${tagify(d)}</span></span>
       ${href ? `<button class="btn sec small" data-act="wngo" data-href="${href}">${btn}</button>` : ''}</div>`).join('')}</div>
@@ -4936,13 +5199,13 @@ function viewTag() {
 }
 
 /* Уведомления */
-const NOTIF_TEXT = { like: 'оценил(а) вашу запись', comment: 'прокомментировал(а) вашу запись', wall: 'написал(а) у вас на стене', friend: 'принял(а) вашу заявку в друзья', repost: 'поделился(ась) вашей записью', mention: 'упомянул(а) вас', gift: 'сделал(а) вам подарок', answer: 'ответил(а) на ваш вопрос', best: 'выбрал(а) ваш ответ лучшим', nick: 'подарил(а) вам коллекционный юзернейм 💎' };
+const NOTIF_TEXT = { like: 'оценил(а) вашу запись', comment: 'прокомментировал(а) вашу запись', wall: 'написал(а) у вас на стене', friend: 'принял(а) вашу заявку в друзья', repost: 'поделился(ась) вашей записью', mention: 'упомянул(а) вас', gift: 'сделал(а) вам подарок', answer: 'ответил(а) на ваш вопрос', best: 'выбрал(а) ваш ответ лучшим', nick: 'подарил(а) вам коллекционный юзернейм 💎', call: 'звонил(а) вам' };
 function viewNotifs() {
   const list = cache.notifs.filter(n => n.from !== S.me.id);
   return `<div class="card"><div class="pad" style="padding-bottom:4px"><h1 class="h">Уведомления <span class="muted">${list.length}</span></h1></div>
     <div class="ulist">${list.length ? list.map(n => {
       const u = U(n.from); if (!u) return '';
-      const href = n.type === 'gift' || n.type === 'nick' ? '#id/' + uid() : n.type === 'friend' ? '#id/' + n.from : ['answer', 'best'].includes(n.type) ? '#q/' + n.postId : n.postId ? '#post/' + n.postId : '#id/' + n.from;
+      const href = n.type === 'call' ? '#im/' + n.from : n.type === 'gift' || n.type === 'nick' ? '#id/' + uid() : n.type === 'friend' ? '#id/' + n.from : ['answer', 'best'].includes(n.type) ? '#q/' + n.postId : n.postId ? '#post/' + n.postId : '#id/' + n.from;
       return `<a class="uitem notif" href="${esc(href)}" style="color:var(--fg)">${avatar(u, 46, false)}
         <div class="grow" style="min-width:0"><b>${esc(u.name)}</b> ${NOTIF_TEXT[n.type] || ''}
           ${n.text ? `<div class="muted small notif-text">«${esc(plainText(n.text))}»</div>` : ''}<div class="muted small">${ago(n.createdAt)}</div></div>
@@ -5013,10 +5276,10 @@ function composer(wallId, ph, g = null) {
       ${Array.from({ length: d.pollN }, (_, i) => `<input id="pollO${i}" maxlength="80" placeholder="Вариант ${i + 1}">`).join('')}
       <div class="row">${d.pollN < 6 ? `<button type="button" class="btn ghost small" data-act="polladd">+ Вариант</button>` : ''}<span class="grow"></span>
         <button type="button" class="btn ghost small" data-act="polltoggle">Убрать опрос</button></div></div>` : ''}
-    ${emojiPanel('postText')}${fmtPanel('postText')}
+    ${emojiPanel('postText')}${fmtPanel('postText')}${S.cmore && !g ? draftsPanel() : ''}
     <div class="composer-bar"><button type="button" class="icon-btn" data-act="attach">${I.photo}<span class="small">Фото</span></button>
       ${d.poll ? '' : `<button type="button" class="icon-btn" data-act="polltoggle">${I.poll}<span class="small">Опрос</span></button>`}
-      ${emojiBtn('postText')}${fmtBtn('postText')}
+      ${emojiBtn('postText')}${fmtBtn('postText')}${g ? '' : `<button type="button" class="icon-btn" data-act="cmore" aria-label="Черновики и отложенные записи" aria-expanded="${!!S.cmore}" title="Черновики и отложенные">🗂${draftsGet().length + schedGet().filter(x => x.uid === uid()).length ? `<span class="small">${draftsGet().length + schedGet().filter(x => x.uid === uid()).length}</span>` : ''}</button>`}
       <span class="grow"></span><button class="btn" type="submit" ${S.busy ? 'disabled' : ''}>${S.busy ? 'Публикуем…' : 'Опубликовать'}</button></div>
   </form></div>`;
 }
@@ -5145,6 +5408,55 @@ function badges(u, friends, posts, likes) {
   return out;
 }
 
+/* 8.0: уровень профиля — опыт считается на лету из того, что уже видно на странице (без записей в базу) */
+function levelOf(u, friends, posts, likes) {
+  const days = u.createdAt ? (Date.now() - ms(u.createdAt)) / 864e5 : 0;
+  const xp = Math.round(posts * 10 + likes * 3 + friends * 8 + (u.tracks || []).length * 2 + (u.groups || []).length * 2 + Math.min(days, 730) * 0.5 + (u.photo ? 15 : 0) + (u.about ? 10 : 0));
+  const lv = Math.min(99, Math.floor(Math.sqrt(xp / 25)) + 1), from = 25 * (lv - 1) ** 2, to = 25 * lv ** 2;
+  return { lv, xp, pct: lv >= 99 ? 100 : Math.round((xp - from) / (to - from) * 100), left: Math.max(0, to - xp) };
+}
+// все достижения: полученные и ещё нет (с тем, что нужно сделать)
+function allBadges(u, friends, posts, likes) {
+  const days = u.createdAt ? (Date.now() - ms(u.createdAt)) / 864e5 : 0;
+  return [
+    ['✍️', 'Первая запись', 'Опубликовать запись', posts >= 1], ['📰', 'Писатель', '20 записей на стене', posts >= 20], ['📚', 'Летописец', '100 записей', posts >= 100],
+    ['👋', 'Общительный', '10 друзей', friends >= 10], ['🤝', 'Душа компании', '50 друзей', friends >= 50], ['🏟', 'Звезда района', '200 друзей', friends >= 200],
+    ['❤️', 'Любимчик', '20 лайков на стене', likes >= 20], ['🌟', 'Звезда', '100 лайков', likes >= 100], ['💫', 'Легенда', '1000 лайков', likes >= 1000],
+    ['🖼', 'Лицо с обложки', 'Поставить фото профиля', !!u.photo], ['📝', 'О себе', 'Рассказать о себе', !!u.about],
+    ['🎧', 'Меломан', '10 треков в музыке', (u.tracks || []).length >= 10], ['🏘', 'Активист', '5 сообществ', (u.groups || []).length >= 5],
+    ['🏛', 'Старожил', 'Год на VСмске', days >= 365],
+  ];
+}
+// готовые темы оформления: дизайн + цвет + тема + обои чатов; своей можно поделиться ссылкой /theme/<код>
+const THEMES = [
+  ['brand', 'Фирменная', { s: 'material', a: 'blue', t: 'system', w: 'none' }, ['#F4EFFF', '#7C3AED']],
+  ['night', 'Ночной город', { s: 'material', a: 'violet', t: 'dark', w: 'night' }, ['#141024', '#A98BFF']],
+  ['forest', 'Лес', { s: 'material', a: 'green', t: 'light', w: 'mint' }, ['#EEF7F0', '#1F8A5B']],
+  ['sunset', 'Закат', { s: 'material', a: 'orange', t: 'dark', w: 'sunset' }, ['#24150E', '#FF9A57']],
+  ['candy', 'Карамель', { s: 'material', a: 'pink', t: 'light', w: 'hearts' }, ['#FFF0F6', '#C2357A']],
+  ['paper', 'Утренняя газета', { s: 'paper', a: 'blue', t: 'light', w: 'none' }, ['#EFE9DC', '#A3261B']],
+  ['ink', 'Ночная газета', { s: 'paper', a: 'blue', t: 'dark', w: 'none' }, ['#15130F', '#E8836F']],
+  ['retro', 'Классика', { s: 'lite', a: 'blue', t: 'light', w: 'dots' }, ['#ECEFF5', '#2F44D0']],
+];
+const themeNow = () => ({ s: skinNow(), a: lsGet('vs_accent') || 'blue', t: lsGet('vs_theme') || 'system', w: wallsGet()['*'] || 'none' });
+const themeOk = o => o && SKINS.some(x => x[0] === o.s) && ACCENTS.some(x => x[0] === o.a) && ['system', 'light', 'dark'].includes(o.t) && WALLS.some(x => x[0] === o.w);
+function themeApply(o) {
+  if (!themeOk(o)) return;
+  lsSet('vs_skin', o.s); lsSet('vs_accent', o.a); lsSet('vs_theme', o.t);
+  const w = wallsGet(); w['*'] = o.w; lsSet('vs_walls', JSON.stringify(w));
+  applySkin(); applyAccent(o.a); applyTheme(o.t); render();
+}
+const themeCode = o => btoa(JSON.stringify(o)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+const themeParse = c => { try { const o = JSON.parse(atob(String(c).replace(/-/g, '+').replace(/_/g, '/'))); return themeOk(o) ? { s: o.s, a: o.a, t: o.t, w: o.w } : null; } catch (e) { return null; } };
+function themesCard() {
+  const cur = JSON.stringify(themeNow()), offer = S.themeOffer;
+  return `<div class="card pad set">${offer ? `<div class="th-offer"><b>Вам прислали тему</b><span class="muted small">${esc(SKINS.find(x => x[0] === offer.s)[1])} · ${esc(ACCENTS.find(x => x[0] === offer.a)[1])} · ${offer.t === 'dark' ? 'тёмная' : offer.t === 'light' ? 'светлая' : 'как в системе'} · обои «${esc(WALLS.find(x => x[0] === offer.w)[1])}»</span>
+      <div class="row" style="gap:8px"><button class="btn small" data-act="themetake">Применить</button><button class="btn ghost small" data-act="themeno">Не надо</button></div></div>` : ''}
+    <h2 class="h" style="font-size:16px">Готовые темы</h2>
+    <div class="th-grid">${THEMES.map(([k, l, o, [bg, ac]]) => `<button class="th-it ${JSON.stringify(o) === cur ? 'on' : ''}" data-act="themeset" data-v="${k}"><span class="th-sw" style="background:${bg}"><i style="background:${ac}"></i><i style="background:${ac};opacity:.45"></i></span><span>${l}</span></button>`).join('')}</div>
+    <div class="row" style="justify-content:space-between;gap:8px;flex-wrap:wrap"><span class="hint" style="margin:0">Дизайн, цвет, тема и обои чатов — одной кнопкой</span><button class="btn sec small" data-act="themeshare">${I.link}<span>Поделиться моей темой</span></button></div></div>`;
+}
+
 /* Отношения с человеком */
 function relation(id) {
   if (id === S.me.id) return 'me';
@@ -5225,7 +5537,11 @@ function viewProfile() {
       <div><b>${posts.length}</b><span>${plural(posts.length, 'пост', 'поста', 'постов')}</span></div>
       <div><b>${likes}</b><span>${plural(likes, 'лайк', 'лайка', 'лайков')}</span></div>
     </div>
-    ${(() => { const b = badges(u, friendIds.length, posts.length, likes); return b.length ? `<div class="badges">${b.map(([e, t, d]) => `<span class="badge-a" title="${esc(d)}">${e} ${esc(t)}</span>`).join('')}</div>` : ''; })()}
+    ${(() => { const b = badges(u, friendIds.length, posts.length, likes), L = levelOf(u, friendIds.length, posts.length, likes), own = u.id === S.me.id;
+      return `<div class="lvl" title="Опыт: ${L.xp}"><span class="lvl-n">${L.lv}</span><span class="grow"><b>Уровень ${L.lv}</b><span class="lvl-bar"><i style="width:${L.pct}%"></i></span>${own ? `<span class="muted small">До ${L.lv + 1}-го уровня — ${L.left} опыта · записи, лайки и друзья прибавляют опыт</span>` : ''}</span>
+        <button class="btn ghost small" data-act="achall">${S.achAll ? 'Свернуть' : 'Достижения'}</button></div>
+      ${S.achAll ? `<div class="ach-all">${allBadges(u, friendIds.length, posts.length, likes).map(([e, t, d, ok]) => `<div class="ach ${ok ? 'ok' : ''}"><span class="ach-e">${e}</span><b>${esc(t)}</b><span class="muted small">${ok ? 'Получено' : esc(d)}</span></div>`).join('')}</div>`
+        : b.length ? `<div class="badges">${b.map(([e, t, d]) => `<span class="badge-a" title="${esc(d)}">${e} ${esc(t)}</span>`).join('')}</div>` : ''}`; })()}
   </div>
   <div class="two">
     <div>
@@ -5344,7 +5660,7 @@ function msgHtml(m, id, peerRead, room = false) {
   const who = room && !mine ? `<a class="msg-from" href="#id/${esc(m.from)}">${esc(U(m.from)?.name || '…')}</a>` : '';
   const fwd = fw ? `<div class="fwd"><div class="small">↪ Переслано${fw.name ? ` от <b>${esc(fw.name)}</b>` : ''}</div>${fw.text ? `<span>${linkify(fw.text)}</span>` : ''}</div>` : '';
   const jumbo = !img && !m.audio && !fw && !rp && isJumbo(m.text);
-  return `<div class="msg ${mine ? 'me' : ''} ${img ? 'has-img' : ''} ${sel ? 'sel' : ''} ${jumbo ? 'jumbo' : ''}" data-act="selmsg" data-id="${esc(m.id)}">${who}${quote}${fwd}${img ? `<img class="msg-img" src="${esc(img)}" alt="Фото" data-act="viewimg" data-kind="msg" data-id="${esc(m.id)}">` : ''}${typeof m.audio === 'string' && m.audio.startsWith('data:audio/') ? voiceHtml(m) : ''}${m.text ? `<span>${linkify(m.text)}</span>${trackEmbed(m.text)}` : ''}${reactsHtml(m, id)}<time>${m.edited ? 'изменено · ' : ''}${hm(new Date(ms(m.createdAt)))}${ticks}</time>${sel ? `<div class="react-pick">${REACTS.map(e => `<button data-act="react" data-id="${esc(m.id)}" data-e="${e}" aria-label="Реакция ${e}">${e}</button>`).join('')}</div><div class="msg-acts"><button data-act="replymsg" data-id="${esc(m.id)}">${I.reply}Ответить</button><button data-act="fwdmsg" data-id="${esc(m.id)}">↪ Переслать</button>${mine && m.text && !fw ? `<button data-act="editmsg" data-id="${esc(m.id)}">✏️ Изменить</button>` : ''}${mine ? `<button data-act="delmsg" data-id="${esc(m.id)}">${S.confirm === 'msg:' + m.id ? 'Удалить у всех?' : 'Удалить'}</button>` : ''}</div>` : ''}</div>`;
+  return `<div class="msg ${mine ? 'me' : ''} ${img ? 'has-img' : ''} ${sel ? 'sel' : ''} ${jumbo ? 'jumbo' : ''}" data-act="selmsg" data-id="${esc(m.id)}">${who}${quote}${fwd}${img ? `<img class="msg-img" src="${esc(img)}" alt="Фото" data-act="viewimg" data-kind="msg" data-id="${esc(m.id)}">` : ''}${typeof m.audio === 'string' && m.audio.startsWith('data:audio/') ? voiceHtml(m) : typeof m.audio === 'string' && m.audio.startsWith('data:video/') ? vnoteHtml(m) : ''}${m.text ? `<span>${linkify(m.text)}</span>${trackEmbed(m.text)}` : ''}${reactsHtml(m, id)}<time>${m.edited ? 'изменено · ' : ''}${hm(new Date(ms(m.createdAt)))}${ticks}</time>${sel ? `<div class="react-pick">${REACTS.map(e => `<button data-act="react" data-id="${esc(m.id)}" data-e="${e}" aria-label="Реакция ${e}">${e}</button>`).join('')}</div><div class="msg-acts"><button data-act="replymsg" data-id="${esc(m.id)}">${I.reply}Ответить</button><button data-act="fwdmsg" data-id="${esc(m.id)}">↪ Переслать</button>${mine && m.text && !fw ? `<button data-act="editmsg" data-id="${esc(m.id)}">✏️ Изменить</button>` : ''}${mine ? `<button data-act="delmsg" data-id="${esc(m.id)}">${S.confirm === 'msg:' + m.id ? 'Удалить у всех?' : 'Удалить'}</button>` : ''}</div>` : ''}</div>`;
 }
 const searchBar = () => `<div class="msg-search">${I.search}<input id="mq" type="search" placeholder="Поиск в этом диалоге" autocomplete="off" value="${esc(S.mq || '')}"><button class="icon-btn" data-act="mqtoggle" aria-label="Закрыть поиск">✕</button></div>`;
 const roomAvatar = (c, size) => `<span class="av room-av" style="width:${size}px;height:${size}px;font-size:${Math.round(size * .38)}px">${esc(initials(c?.name || 'Б'))}</span>`;
@@ -5354,7 +5670,7 @@ function chatForm(key) {
   if (banOf(S.me)) return `<div class="chat-form muted small" style="justify-content:center">Ваш аккаунт заблокирован — писать сообщения нельзя</div>`;
   if (S.rec) return `<div class="chat-form rec-bar"><span class="rec-dot"></span><b id="recTime" class="tnum">${fmtDur((Date.now() - S.rec.started) / 1000)}</b><span class="grow muted small">Идёт запись, до 1 минуты</span>
           <button type="button" class="btn ghost" data-act="reccancel">Отмена</button><button type="button" class="btn" data-act="recsend">${I.send}</button></div>`;
-  return `<form class="chat-form" data-form="msg" data-to="${esc(key)}"><button type="button" class="icon-btn" data-act="msgphoto" aria-label="Отправить фото" ${S.busy ? 'disabled' : ''}>${I.photo}</button>${emojiBtn('msgInput')}<input id="msgInput" placeholder="Сообщение" maxlength="2000" autocomplete="off"><button type="button" class="icon-btn" data-act="mic" aria-label="Записать голосовое">${I.mic}</button><button class="btn" aria-label="Отправить">${I.send}</button></form>`;
+  return `<form class="chat-form" data-form="msg" data-to="${esc(key)}"><button type="button" class="icon-btn" data-act="msgphoto" aria-label="Отправить фото" ${S.busy ? 'disabled' : ''}>${I.photo}</button>${emojiBtn('msgInput')}<input id="msgInput" placeholder="Сообщение" maxlength="2000" autocomplete="off"><button type="button" class="icon-btn" data-act="vnote" aria-label="Видеокружок" title="Видеокружок">${I.video}</button><button type="button" class="icon-btn" data-act="mic" aria-label="Записать голосовое">${I.mic}</button><button class="btn" aria-label="Отправить">${I.send}</button></form>`;
 }
 
 function roomPanel(c) {
@@ -5414,6 +5730,7 @@ function viewMessages() {
       const peerRead = self ? null : chat?.read?.[key] ? ms(chat.read[key]) : 0;
       chatHtml = `<div class="chat-head"><a class="icon-btn back" href="#im" aria-label="К диалогам">${I.back}</a>${self ? `<span class="av fav" style="width:38px;height:38px">★</span>` : avatar(o, 38)}
         <div class="grow">${self ? '<b>Избранное</b>' : nameLink(o)}<div class="small seen ${!self && isOnline(o) ? 'on' : ''}">${self ? 'Только для вас' : esc(seenText(o) || o.city || '@' + (o.nick || ''))}</div></div>
+        ${!self && !o.deleted && !iBlocked(o.id) && !blockedMe(o) ? `<button class="icon-btn" data-act="call" data-id="${esc(o.id)}" data-v="0" aria-label="Позвонить" title="Позвонить">${I.phone}</button><button class="icon-btn" data-act="call" data-id="${esc(o.id)}" data-v="1" aria-label="Видеозвонок" title="Видеозвонок">${I.video}</button>` : ''}
         <button class="icon-btn" data-act="wallpick" aria-label="Обои чата" aria-expanded="${!!S.wallPick}" title="Обои чата">🎨</button>
         <button class="icon-btn" data-act="mqtoggle" aria-label="Поиск по сообщениям">${I.search}</button></div>
         ${S.wallPick ? wallPanel(key) : ''}${S.mqOpen ? searchBar() : ''}<div class="msgs ${wallCls(key)}">${mq ? found() : body(peerRead, self ? 'Сохраняйте сюда заметки, ссылки и фото — их видите только вы' : 'Напишите ' + esc(o.name.split(' ')[0]) + ' первым')}</div>
@@ -5426,22 +5743,30 @@ function viewMessages() {
     }
   }
   const q = S.dq.trim().toLowerCase();
-  const items = list.map(c => {
+  const pins = lsList('vs_chatpins'), arch = lsList('vs_chatarch'), fld = S.chatFolder || 'all', keyOf = c => c.group ? c.id : (c.members.find(m => m !== id) || id);
+  const shown = list.filter(c => c.fresh || (fld === 'arch' ? arch.includes(keyOf(c)) : !arch.includes(keyOf(c)) && (fld === 'all' || (fld === 'dm' ? !c.group : fld === 'rooms' ? c.group : isUnread(c)))))
+    .sort((a, b) => pins.includes(keyOf(b)) - pins.includes(keyOf(a)));
+  const fcount = f => f === 'unread' ? list.filter(c => !c.fresh && isUnread(c) && !arch.includes(keyOf(c))).length : f === 'arch' ? list.filter(c => arch.includes(keyOf(c))).length : 0;
+  const folders = `<div class="dfolders">${CHAT_FOLDERS.filter(([f]) => f !== 'arch' || arch.length).map(([f, l]) => `<button class="${fld === f ? 'on' : ''}" data-act="chatfolder" data-v="${f}">${l}${fcount(f) ? ` <b>${fcount(f)}</b>` : ''}</button>`).join('')}</div>`;
+  const items = shown.map(c => {
     const k = c.group ? c.id : (c.members.find(m => m !== id) || id), ou = c.group ? null : U(k), me1 = k === id;
     if (!c.group && !ou) return '';
     const name = c.group ? c.name : dialogName(ou, me1);
     if (q && !name.toLowerCase().includes(q) && !(c.lastText || '').toLowerCase().includes(q)) return '';
     const unread = !c.fresh && isUnread(c);
     const prefix = c.lastFrom === id && !me1 ? 'Вы: ' : c.group && c.lastFrom && U(c.lastFrom) ? U(c.lastFrom).name.split(' ')[0] + ': ' : '';
-    return `<a class="ditem ${S.chatWith === k ? 'on' : ''}" href="#im/${esc(k)}">${c.group ? roomAvatar(c, 46) : me1 ? `<span class="av fav" style="width:46px;height:46px">★</span>` : avatar(ou, 46, false)}
+    const pin = pins.includes(k), menu = S.chatMenu === k;
+    return `<div class="ditem-w ${menu ? 'menu' : ''}"><a class="ditem ${S.chatWith === k ? 'on' : ''} ${pin ? 'pinned' : ''}" href="#im/${esc(k)}">${c.group ? roomAvatar(c, 46) : me1 ? `<span class="av fav" style="width:46px;height:46px">★</span>` : avatar(ou, 46, false)}
       <div class="grow"><div class="row" style="gap:6px"><b class="grow" style="font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(name)}</b>${c.lastAt ? `<span class="muted small">${ms(c.lastAt) >= startOfDay() ? hm(new Date(ms(c.lastAt))) : dayLabel(c.lastAt)}</span>` : ''}</div>
-      <div class="last">${c.fresh ? 'Новый диалог' : esc(prefix + plainText(c.lastText))}</div></div>${unread ? '<span class="dot" aria-label="Непрочитано"></span>' : ''}</a>`;
+      <div class="last">${pin ? '📌 ' : ''}${c.fresh ? 'Новый диалог' : esc(prefix + plainText(c.lastText))}</div></div>${unread ? '<span class="dot" aria-label="Непрочитано"></span>' : ''}</a>
+      ${c.fresh ? '' : `<button class="ditem-more" data-act="chatmenu" data-id="${esc(k)}" aria-label="Действия с диалогом" aria-expanded="${menu}">⋯</button>`}
+      ${menu ? `<div class="ditem-menu"><button data-act="chatpin" data-id="${esc(k)}">📌 ${pin ? 'Открепить' : 'Закрепить'}</button><button data-act="chatarch" data-id="${esc(k)}">🗄 ${arch.includes(k) ? 'Вернуть из архива' : 'В архив'}</button></div>` : ''}</div>`;
   }).join('');
   return `${S.chatsError ? errBox(S.chatsError) : ''}<div class="card im ${S.chatWith ? 'open' : ''}">
     <div class="dlist"><div class="dsearch">${I.search}<input id="dq" type="search" placeholder="Поиск по диалогам" autocomplete="off" value="${esc(S.dq)}">
         <button class="icon-btn" data-act="newroom" aria-label="Создать беседу" title="Создать беседу">${I.friends}</button>
         ${cache.chats.some(c => c.id === chatId(id, id)) ? '' : `<a class="icon-btn" href="#im/${esc(id)}" aria-label="Избранное" title="Избранное">★</a>`}</div>
-      ${items || `<div class="empty">${q ? 'Ничего не нашли' : 'Диалогов пока нет'}</div>`}</div>
+      ${list.length > 1 || arch.length ? folders : ''}${items || `<div class="empty">${q ? 'Ничего не нашли' : 'Диалогов пока нет'}</div>`}</div>
     <div class="chat">${chatHtml}</div></div>`;
 }
 
@@ -5450,6 +5775,154 @@ document.addEventListener('input', e => {
   if (e.target.id === 'fpSeek') { const a = player.audio; if (a.duration) { a.currentTime = Number(e.target.value) / 1000 * a.duration; e.target.style.setProperty('--p', (Number(e.target.value) / 10) + '%'); } }
 });
 document.addEventListener('input', e => { if (e.target.id === 'cvAmt') { S.cvAmt = e.target.value; render(); return; } if (e.target.id === 'dq') { S.dq = e.target.value; render(); } else if (e.target.id === 'mq') { S.mq = e.target.value; render(); } });
+
+/* ---------- 8.0: удобства ---------- */
+const lsList = k => { try { const v = JSON.parse(lsGet(k) || '[]'); return Array.isArray(v) ? v : []; } catch (e) { return []; } };
+// подсказки при наборе: @ — люди (сначала друзья), # — теги из загруженных записей
+const AC_FIELD = el => !!el?.id && (el.id === 'postText' || el.id === 'msgInput' || el.id === 'vcIn' || el.id === 'stReply' || el.id.startsWith('c_'));
+let AC = null;   // {id, start, kind, items, sel}
+const acBox = () => document.getElementById('acPop') || document.body.appendChild(Object.assign(document.createElement('div'), { id: 'acPop', className: 'ac-pop', hidden: true }));
+function acClose() { AC = null; const b = document.getElementById('acPop'); if (b) b.hidden = true; }
+function acFind(el) {
+  const pos = el.selectionStart ?? el.value.length, m = /(^|[\s(,.!?])([@#])([\p{L}\d._]{0,30})$/u.exec(el.value.slice(0, pos));
+  if (!m) return acClose();
+  const kind = m[2], q = norm(m[3]), start = pos - m[3].length - 1;
+  let items = [];
+  if (kind === '@') {
+    const seen = new Set(), all = [...(S.me.friends || []).map(U), ...cache.users.values()];
+    for (const u of all) {
+      if (!u || u.deleted || !u.nick || seen.has(u.id) || u.id === uid()) continue;
+      if (q && !u.nick.startsWith(q) && !norm(u.name).split(/\s+/).some(w => w.startsWith(q))) continue;
+      seen.add(u.id); items.push({ v: '@' + u.nick, u }); if (items.length >= 6) break;
+    }
+  } else {
+    const n = new Map();
+    for (const p of [...cache.feed.values()].flat().concat(cache.wall || [], cache.tagPosts || [])) for (const t of p.tags || []) n.set(t, (n.get(t) || 0) + 1);
+    items = [...n].filter(([t]) => !q || norm(t).startsWith(q)).sort((a, b) => b[1] - a[1]).slice(0, 6).map(([t, c]) => ({ v: '#' + t, c }));
+  }
+  if (!items.length) return acClose();
+  AC = { id: el.id, start, kind, items, sel: 0 }; acDraw(el);
+}
+function acDraw(el) {
+  const box = acBox(), r = el.getBoundingClientRect(), up = r.top > 240;
+  box.innerHTML = AC.items.map((x, i) => `<button class="ac-it ${i === AC.sel ? 'on' : ''}" data-act="acpick" data-i="${i}">${x.u ? avatar(x.u, 28, false) + `<span class="grow"><b>${esc(x.u.name)}</b><span class="muted small">${esc(x.v)}</span></span>` : `<span class="ac-hash">#</span><span class="grow"><b>${esc(x.v.slice(1))}</b><span class="muted small">${x.c} ${plural(x.c, 'запись', 'записи', 'записей')}</span></span>`}</button>`).join('');
+  box.hidden = false;
+  box.style.left = Math.max(8, Math.min(r.left, innerWidth - 300)) + 'px'; box.style.width = Math.min(320, Math.max(220, r.width)) + 'px';
+  box.style.top = up ? '' : (r.bottom + 6) + 'px'; box.style.bottom = up ? (innerHeight - r.top + 6) + 'px' : '';
+}
+function acPick(i) {
+  const a = AC, el = a && document.getElementById(a.id), x = a?.items[i]; if (!el || !x) return acClose();
+  const pos = el.selectionStart ?? el.value.length, ins = x.v + ' ';
+  el.value = el.value.slice(0, a.start) + ins + el.value.slice(pos);
+  el.focus(); el.setSelectionRange(a.start + ins.length, a.start + ins.length); acClose();
+  el.dispatchEvent(new Event('input', { bubbles: true }));
+}
+document.addEventListener('input', e => { if (AC_FIELD(e.target)) acFind(e.target); else if (AC) acClose(); });
+document.addEventListener('keydown', e => {
+  if (!AC || e.target.id !== AC.id) return;
+  if (e.key === 'ArrowDown' || e.key === 'ArrowUp') { e.preventDefault(); AC.sel = (AC.sel + (e.key === 'ArrowDown' ? 1 : AC.items.length - 1)) % AC.items.length; acDraw(e.target); }
+  else if (e.key === 'Enter' || e.key === 'Tab') { e.preventDefault(); e.stopPropagation(); acPick(AC.sel); }
+  else if (e.key === 'Escape') { e.stopPropagation(); acClose(); }
+}, true);
+document.addEventListener('pointerdown', e => { if (e.target.closest?.('#acPop')) e.preventDefault(); else if (AC) acClose(); });
+document.addEventListener('focusout', e => { if (AC && e.target.id === AC.id) setTimeout(() => { if (document.activeElement?.id !== AC?.id) acClose(); }, 150); });
+
+// черновики (несколько) и отложенные записи — хранятся на этом устройстве; отложенную публикует сам сайт, когда время пришло и он открыт
+const draftsGet = () => lsList('vs_drafts'), schedGet = () => lsList('vs_sched');
+function draftsPanel() {
+  const dr = draftsGet(), sc = schedGet().filter(x => x.uid === uid());
+  const soon = new Date(Date.now() + 3600e3), iso = new Date(soon - soon.getTimezoneOffset() * 6e4).toISOString().slice(0, 16);
+  return `<div class="cmore">
+    <div class="row cmore-row"><button type="button" class="btn sec small" data-act="draftsave">💾 В черновики</button>
+      <span class="grow"></span><input type="datetime-local" id="schedAt" class="inp" value="${iso}" aria-label="Когда опубликовать"><button type="button" class="btn sec small" data-act="schedpost">⏰ Запланировать</button></div>
+    ${dr.length ? `<div class="cmore-h">Черновики</div>${dr.map(x => `<div class="cmore-it"><span class="grow">${esc(x.text.slice(0, 90))}</span><span class="muted small">${ago(x.at)}</span>
+      <button type="button" class="btn ghost small" data-act="draftuse" data-id="${esc(x.id)}">Взять</button><button type="button" class="icon-btn" data-act="draftdel" data-id="${esc(x.id)}" aria-label="Удалить черновик">✕</button></div>`).join('')}` : ''}
+    ${sc.length ? `<div class="cmore-h">Запланировано</div>${sc.map(x => `<div class="cmore-it"><span class="grow">${esc(x.text.slice(0, 90))}</span><span class="muted small">⏰ ${esc(new Date(x.at).toLocaleString('ru-RU', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }))}</span>
+      <button type="button" class="icon-btn" data-act="scheddel" data-id="${esc(x.id)}" aria-label="Отменить">✕</button></div>`).join('')}` : ''}
+    <p class="hint" style="margin:0">Отложенная запись — только текст; она выйдет, когда VСмске открыт на этом устройстве (если в нужное время сайт закрыт — сразу при следующем входе).</p></div>`;
+}
+async function schedTick() {
+  if (S.phase !== 'app') return;
+  const all = schedGet(), due = all.filter(x => x.uid === uid() && x.at <= Date.now()); if (!due.length) return;
+  lsSet('vs_sched', JSON.stringify(all.filter(x => !due.includes(x))));
+  for (const x of due) {
+    try {
+      const post = { authorId: uid(), wallId: uid(), text: x.text, image: '', likes: [], commentCount: 0, createdAt: serverTimestamp() };
+      const tags = extractTags(x.text); if (tags.length) post.tags = tags;
+      const ref = await addDoc(collection(db, 'posts'), post); notifyMentions(x.text, ref.id, [uid()]);
+      toast('⏰ Отложенная запись опубликована');
+    } catch (e) { console.error(e); toast('Отложенная запись не вышла: ' + errText(e)); }
+  }
+}
+setInterval(schedTick, 20000);
+
+// папки, закреп и архив диалогов (на этом устройстве)
+const CHAT_FOLDERS = [['all', 'Все'], ['dm', 'Личные'], ['rooms', 'Беседы'], ['unread', 'Непрочитанные'], ['arch', 'Архив']];
+function lsToggle(k, v) { const l = lsList(k), i = l.indexOf(v); if (i >= 0) l.splice(i, 1); else l.unshift(v); lsSet(k, JSON.stringify(l.slice(0, 200))); return i < 0; }
+
+/* ---------- 8.0: поиск по всему сайту (/search/<запрос>) ----------
+   Люди — по полю search (как раньше); записи, видео, музыка и клубы — среди последних загруженных (раз в 5 минут, без новых индексов). */
+const SRCH = { at: 0, busy: null, posts: [], videos: [], tracks: [], groups: [], people: [], pq: null };
+const SR_TABS = [['all', 'Всё'], ['people', 'Люди'], ['posts', 'Записи'], ['videos', 'Видео'], ['tracks', 'Музыка'], ['groups', 'Клубы']];
+function searchLoad() {
+  if (!SRCH.busy && Date.now() - SRCH.at > 5 * 60e3) SRCH.busy = Promise.all([
+    getDocs(query(collection(db, 'posts'), orderBy('createdAt', 'desc'), limit(150))).then(s => { SRCH.posts = s.docs.map(data); }),
+    getDocs(query(collection(db, 'videos'), orderBy('createdAt', 'desc'), limit(100))).then(s => { SRCH.videos = s.docs.map(data); }),
+    getDocs(query(collection(db, 'tracks'), orderBy('createdAt', 'desc'), limit(200))).then(s => { SRCH.tracks = keepTracks(s.docs.map(data)); }),
+    getDocs(query(collection(db, 'groups'), limit(100))).then(s => { SRCH.groups = s.docs.map(data); }),
+  ].map(p => p.catch(console.error))).then(() => {
+    SRCH.at = Date.now(); SRCH.busy = null;
+    ensureUsers([...SRCH.posts.map(p => p.authorId), ...SRCH.videos.map(v => v.ownerId)]); if (S.view === 'search') render();
+  });
+  searchPeople();
+}
+let srT = 0;
+function searchPeople() {
+  const words = norm(S.sq).trim().replace(/^[@#]/, '').split(/\s+/).filter(Boolean), token = words[0] || '';
+  if (token === SRCH.pq) return; SRCH.pq = token; SRCH.people = [];
+  if (!token || S.sq.trim().startsWith('#')) return;
+  getDocs(query(collection(db, 'users'), where('search', 'array-contains', token.slice(0, 15)), limit(30))).then(s => {
+    if (SRCH.pq !== token) return;
+    const rest = norm(S.sq).trim().split(/\s+/).slice(1);
+    SRCH.people = s.docs.map(data).filter(u => !u.deleted && rest.every(w => (u.search || []).includes(w.slice(0, 15))));
+    SRCH.people.forEach(u => cache.users.set(u.id, u)); if (S.view === 'search') render();
+  }).catch(console.error);
+}
+const hl = (text, q) => {   // кусочек текста вокруг найденного, найденное подсвечено
+  const t = plainText(String(text || '')), i = norm(t).indexOf(q);
+  if (!q || i < 0) return esc(t.slice(0, 140)) + (t.length > 140 ? '…' : '');
+  const a = Math.max(0, i - 50), b = Math.min(t.length, i + q.length + 80);
+  return (a ? '…' : '') + esc(t.slice(a, i)) + '<mark>' + esc(t.slice(i, i + q.length)) + '</mark>' + esc(t.slice(i + q.length, b)) + (b < t.length ? '…' : '');
+};
+function viewSearch() {
+  const raw = S.sq.trim(), q = norm(raw), tag = q.startsWith('#') ? q.slice(1) : null, tab = S.stab || 'all';
+  const has = (...xs) => xs.some(x => norm(x).includes(q));
+  const R = {
+    people: tag ? [] : SRCH.people,
+    posts: !q ? [] : SRCH.posts.filter(p => tag ? (p.tags || []).includes(tag) : has(p.text || '')),
+    videos: !q || tag ? [] : SRCH.videos.filter(v => has(v.title || '', v.description || '')),
+    tracks: !q || tag ? [] : SRCH.tracks.filter(t => has(t.title || '', t.artist || '')),
+    groups: !q || tag ? [] : SRCH.groups.filter(g => has(g.name || '', g.about || '')),
+  };
+  const n = Object.values(R).reduce((s, l) => s + l.length, 0), lim = k => tab === 'all' ? R[k].slice(0, k === 'videos' ? 4 : 5) : R[k];
+  const sec = (k, title, html) => R[k].length && (tab === 'all' || tab === k) ? `<section class="card sr-sec"><div class="sr-h"><h2 class="h">${title} <span class="muted">${R[k].length}</span></h2>${tab === 'all' && R[k].length > (k === 'videos' ? 4 : 5) ? `<button class="linkbtn" data-act="stab" data-v="${k}">Все</button>` : ''}</div>${html}</section>` : '';
+  const qq = tag ? '' : q;
+  return `<div class="card pad sr-top"><h1 class="h brandh">Поиск</h1>
+      <div class="sr-box">${I.search}<input id="gsq" type="search" placeholder="Люди, записи, видео, музыка, клубы или #тег" autocomplete="off" value="${esc(S.sq)}"></div>
+      ${q ? `<div class="tabs scroll-x sr-tabs">${SR_TABS.map(([k, l]) => `<button class="${tab === k ? 'on' : ''}" data-act="stab" data-v="${k}">${l}${k !== 'all' && R[k].length ? ` <span class="muted">${R[k].length}</span>` : ''}</button>`).join('')}</div>` : ''}</div>
+    ${!q ? `<div class="card empty"><b>Что ищем?</b><span>Имя, ник, слово из записи, название трека или клуба. С «#» — записи с тегом.</span></div>`
+      : SRCH.busy && !SRCH.at ? loadingBox(2) : !n ? `<div class="card empty"><b>Ничего не нашли</b><span>Попробуйте другое слово${tag ? '' : ' или #тег'}</span></div>` : ''}
+    ${sec('people', 'Люди', `<div class="ulist">${lim('people').map(u => `<a class="uitem" href="#id/${esc(u.id)}" style="color:var(--fg)">${avatar(u, 42, false)}<span class="grow"><b>${esc(u.name)}</b><span class="muted small"> @${esc(u.nick || '')}</span></span></a>`).join('')}</div>`)}
+    ${sec('posts', tag ? 'Записи с #' + esc(tag) : 'Записи', lim('posts').map(p => { const a = U(p.authorId); return `<a class="sr-post" href="#post/${esc(p.id)}">${avatar(a, 36, false)}<span class="grow"><b>${esc(a?.name || '…')}</b> <span class="muted small">${ago(p.createdAt)}</span><span class="sr-snip">${hl(p.text || (p.poll ? p.poll.q : 'Фото'), qq)}</span></span></a>`; }).join(''))}
+    ${sec('videos', 'Видео', `<div class="vgrid sr-vgrid">${lim('videos').map(v => videoCard(v)).join('')}</div>`)}
+    ${sec('tracks', 'Музыка', lim('tracks').map(t => `<div class="sr-track"><button class="tembed-play" data-act="tplayid" data-id="${esc(t.id)}" aria-label="Играть">${trackCover(t)}<span class="tembed-ic">${I.play}</span></button><a class="grow" href="#music/t_${esc(t.id)}"><b>${hl(t.title, qq)}</b><span class="muted small">${hl(t.artist || 'Неизвестный исполнитель', qq)}</span></a></div>`).join(''))}
+    ${sec('groups', 'Клубы', `<div class="ulist">${lim('groups').map(g => `<a class="uitem" href="#club/${esc(g.id)}" style="color:var(--fg)">${groupAvatar(g, 42, false)}<span class="grow"><b>${hl(g.name, qq)}</b><span class="muted small"> · ${g.membersCount || 0} ${plural(g.membersCount || 0, 'участник', 'участника', 'участников')}</span></span></a>`).join('')}</div>`)}`;
+}
+document.addEventListener('input', e => {
+  if (e.target.id !== 'gsq') return;
+  S.sq = e.target.value; history.replaceState(null, '', BASE + 'search' + (S.sq.trim() ? '/' + encodeURIComponent(S.sq.trim()) : ''));
+  clearTimeout(srT); srT = setTimeout(searchPeople, 350); render();
+});
 
 /* ---------- Действия ---------- */
 let pickTarget = null;
@@ -5541,6 +6014,18 @@ document.addEventListener('click', async e => {
         clipTapT = now; clearTimeout(clipTapTimer); clipTapTimer = setTimeout(() => clipToggle(el), 300); break;
       }
       case 'cliplike': clipLike(id); break;
+      case 'call': callStart(id, b.dataset.v === '1'); break;
+      case 'callpick': callPick(); break;
+      case 'calldecline': callDecline(); break;
+      case 'callhang': callEnd(CALL?.state === 'ring' ? 'cancelled' : 'hangup'); break;
+      case 'callmin': if (CALL) { CALL.min = true; callDom(); } break;
+      case 'callmax': if (CALL) { CALL.min = false; callDom(); } break;
+      case 'calltog': togetherToggle(); break;
+      case 'callmic': if (CALL?.local) { CALL.mic = !CALL.mic; CALL.local.getAudioTracks().forEach(t => { t.enabled = CALL.mic; }); callDom(); } break;
+      case 'callcam': if (CALL?.local) { CALL.cam = !CALL.cam; CALL.local.getVideoTracks().forEach(t => { t.enabled = CALL.cam; }); callDom(); } break;
+      case 'clipcmt': case 'vcmt': openVcmt(id); break;
+      case 'vcclose': closeVcmt(); break;
+      case 'vcdel': if (S.vcmt) await deleteDoc(doc(db, 'videos', S.vcmt.id, 'comments', id)); break;
       case 'clipshare': await copyText(siteUrl('clips/' + id), 'Ссылка на клип скопирована'); break;
       case 'clipmute': { S.clipMuted = !S.clipMuted; document.querySelectorAll('#clipsFeed video').forEach(v => { v.muted = S.clipMuted; }); clipMuteUi();
         const v = document.querySelector('#clipsFeed .clip.on video'); if (v && !S.clipMuted) { v.play().catch(() => { }); if (!player.audio.paused) player.audio.pause(); } break; }
@@ -5643,6 +6128,29 @@ document.addEventListener('click', async e => {
       case 'polltoggle': S.draft.poll = !S.draft.poll; S.draft.pollN = 2; render(); if (S.draft.poll) document.getElementById('pollQ')?.focus(); break;
       case 'polladd': S.draft.pollN = Math.min(6, S.draft.pollN + 1); render(); document.getElementById('pollO' + (S.draft.pollN - 1))?.focus(); break;
       case 'emojis': S.emoji = S.emoji === b.dataset.t ? null : b.dataset.t; render(); break;
+      case 'acpick': acPick(Number(b.dataset.i)); break;
+      case 'stab': S.stab = b.dataset.v; render(); window.scrollTo(0, 0); break;
+      case 'achall': S.achAll = !S.achAll; render(); break;
+      case 'themeset': { const t = THEMES.find(x => x[0] === b.dataset.v); if (t) { themeApply(t[2]); toast('🎨 Тема «' + t[1] + '»'); } break; }
+      case 'themetake': themeApply(S.themeOffer); S.themeOffer = null; toast('🎨 Тема применена'); render(); break;
+      case 'themeno': S.themeOffer = null; render(); break;
+      case 'themeshare': await copyText(siteUrl('theme/' + themeCode(themeNow())), 'Ссылка на тему скопирована — отправьте её другу'); break;
+      case 'cmore': S.cmore = !S.cmore; render(); break;
+      case 'draftsave': { const el = document.getElementById('postText'), t = el?.value.trim(); if (!t) { toast('Сначала напишите текст'); break; }
+        lsSet('vs_drafts', JSON.stringify([{ id: rid(), text: t.slice(0, 4000), at: Date.now() }, ...draftsGet()].slice(0, 20))); el.value = ''; lsSet('vs_draft', ''); resetIds.add('postText'); toast('💾 Сохранено в черновики'); render(); break; }
+      case 'draftuse': { const x = draftsGet().find(d => d.id === id), el = document.getElementById('postText'); if (!x || !el) break;
+        el.value = x.text; lsSet('vs_draft', x.text); lsSet('vs_drafts', JSON.stringify(draftsGet().filter(d => d.id !== id))); S.cmore = false; render(); document.getElementById('postText')?.focus(); break; }
+      case 'draftdel': lsSet('vs_drafts', JSON.stringify(draftsGet().filter(d => d.id !== id))); render(); break;
+      case 'schedpost': { const el = document.getElementById('postText'), t = el?.value.trim(), at = new Date(document.getElementById('schedAt')?.value || '').getTime();
+        if (!t) { toast('Сначала напишите текст'); break; }
+        if (!(at > Date.now() + 30000)) { toast('Выберите время в будущем'); break; }
+        lsSet('vs_sched', JSON.stringify([...schedGet(), { id: rid(), uid: uid(), text: t.slice(0, 4000), at }].slice(-30)));
+        el.value = ''; lsSet('vs_draft', ''); resetIds.add('postText'); S.compose = false; toast('⏰ Запись выйдет ' + new Date(at).toLocaleString('ru-RU', { day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' })); render(); break; }
+      case 'scheddel': lsSet('vs_sched', JSON.stringify(schedGet().filter(x => x.id !== id))); render(); break;
+      case 'chatfolder': S.chatFolder = b.dataset.v; S.chatMenu = null; render(); break;
+      case 'chatmenu': S.chatMenu = S.chatMenu === id ? null : id; render(); break;
+      case 'chatpin': toast(lsToggle('vs_chatpins', id) ? '📌 Закреплено' : 'Откреплено'); S.chatMenu = null; render(); break;
+      case 'chatarch': toast(lsToggle('vs_chatarch', id) ? '🗄 Диалог в архиве' : 'Диалог вернулся из архива'); S.chatMenu = null; render(); break;
       case 'fmts': S.fmt = S.fmt === b.dataset.t ? null : b.dataset.t; render(); break;
       case 'fmtwrap': fmtWrap(b.dataset.t, b.dataset.m); break;
       case 'emoji': {
@@ -5673,6 +6181,14 @@ document.addEventListener('click', async e => {
       case 'recsend': recStop(true); break;
       case 'reccancel': recStop(false); break;
       case 'playvoice': { const m = cache.messages.find(x => x.id === id); if (m?.audio) playVoice(m); break; }
+      case 'vseek': { const m = cache.messages.find(x => x.id === id), r = b.getBoundingClientRect(); if (m?.audio) playVoice(m, Math.max(0, Math.min(1, (e.clientX - r.left) / r.width))); break; }
+      case 'vspeed': { const n = { 1: 1.5, 1.5: 2, 2: 1 }[vSpeed()]; lsSet('vs_vspeed', String(n)); players.forEach(p => { p.playbackRate = n; }); render(); break; }
+      case 'vnote': vnoteOpen(); break;
+      case 'vnotego': vnoteGo(); break;
+      case 'vnotex': vnoteClose(false); break;
+      case 'vnoteplay': { const v = vnoteEls.get(id); if (!v) break; const on = !v.muted && !v.paused;
+        vnoteEls.forEach(x => { if (x !== v) { x.muted = true; x.closest('.vnote')?.classList.remove('on'); } });
+        if (on) { v.muted = true; b.classList.remove('on'); } else { v.muted = false; v.currentTime = 0; v.play().catch(() => { }); b.classList.add('on'); } break; }
       case 'editpost': S.editPost = id || null; render(); if (id) document.getElementById('ep_' + id)?.focus(); break;
       case 'pfilter': S.draft.filter = b.dataset.f; render(); break;
       case 'unattach': { const f = S.draft.files.splice(Number(b.dataset.i) || 0, 1)[0]; if (f) URL.revokeObjectURL(f.url); render(); break; }
@@ -5975,15 +6491,24 @@ document.addEventListener('click', async e => {
       case 'storyadd': pick('story', 'image/*', false); break;
       case 'storypub': {
         if (!S.storyDraft || S.busy) return;
+        const cap = (document.getElementById('stText')?.value || '').trim().slice(0, 200);
         S.busy = true; render();
         try {
-          await addDoc(collection(db, 'stories'), { ownerId: uid(), image: S.storyDraft.image, text: (document.getElementById('stText')?.value || '').trim().slice(0, 200), views: {}, createdAt: serverTimestamp() });
+          const image = S.storyDraft.items.length ? await storyBurn(S.storyDraft) : S.storyDraft.image;
+          await addDoc(collection(db, 'stories'), { ownerId: uid(), image, text: cap, views: {}, createdAt: serverTimestamp() });
           S.storyDraft = null; toast('История опубликована'); loadStories();
         } finally { S.busy = false; render(); }
         break;
       }
       case 'storyopen': { const { order } = storyOwners(), oi = order.indexOf(id); if (oi < 0) return; S.story = { oi, si: 0 }; storyShow(); break; }
       case 'storystep': storyStep(Number(b.dataset.d)); break;
+      case 'staddt': { const el = document.getElementById('stOver'), t = el?.value.trim(); if (t) { el.value = ''; stAdd('t', t.slice(0, 60)); } break; }
+      case 'stadde': stAdd('e', b.dataset.e); break;
+      case 'stcolor': { const it = S.storyDraft?.items[S.storyDraft.sel]; if (it) { it.c = b.dataset.c; render(); } break; }
+      case 'stbg': { const it = S.storyDraft?.items[S.storyDraft.sel]; if (it) { it.bg = !it.bg; render(); } break; }
+      case 'stsize': { const it = S.storyDraft?.items[S.storyDraft.sel]; if (it) { it.s = Math.max(4, Math.min(40, it.s + Number(b.dataset.d) * (it.k === 'e' ? 3 : 1.5))); render(); } break; }
+      case 'stdel': { const d = S.storyDraft; if (d && d.sel >= 0) { d.items.splice(d.sel, 1); d.sel = -1; render(); } break; }
+      case 'streact': { clearTimeout(storyTimer); await storyReply(id, `Реакция на вашу историю: ${b.dataset.e}`); storyStep(1); break; }
       case 'storyclose': clearTimeout(storyTimer); S.story = null; render(); break;
       case 'storydel': {
         if (!twoStep('story:' + id)) { clearTimeout(storyTimer); return; }
@@ -6122,7 +6647,7 @@ async function sendMessage(to, text, image = '', extra = {}) {
   if (image) msg.image = image;
   if (S.replyTo && S.chatWith === to) { msg.replyTo = S.replyTo; S.replyTo = null; }
   bt.set(doc(collection(db, 'chats', cid, 'messages')), msg);
-  const last = { lastText: (text || (extra.audio ? '🎤 Голосовое' : extra.fwd ? '↪ Пересланное сообщение' : '📷 Фото')).slice(0, 200), lastFrom: me, lastAt: serverTimestamp(), read: { [me]: serverTimestamp() } };
+  const last = { lastText: (text || (extra.audio ? (extra.audio.startsWith('data:video/') ? '🎥 Видеокружок' : '🎤 Голосовое') : extra.fwd ? '↪ Пересланное сообщение' : '📷 Фото')).slice(0, 200), lastFrom: me, lastAt: serverTimestamp(), read: { [me]: serverTimestamp() } };
   bt.set(doc(db, 'chats', cid), isRoom(to) ? last : { members: [me, to].sort(), ...last }, { merge: true });
   await bt.commit();
   const box = app.querySelector('.msgs'); if (box) box.scrollTop = box.scrollHeight;
@@ -6171,31 +6696,119 @@ async function recStart() {
 }
 function recStop(send) { if (recorder && recorder.state !== 'inactive') { recSend = send; recorder.stop(); } }
 
-// Плеер голосовых живёт вне DOM, поэтому перерисовка страницы его не прерывает
-const players = new Map();
-function voiceHtml(m) {
-  const pl = players.get(m.id), playing = pl && !pl.paused;
-  const pct = pl && pl.duration && isFinite(pl.duration) ? pl.currentTime / pl.duration * 100 : 0;
-  return `<div class="voice"><button class="voice-btn" data-act="playvoice" data-id="${esc(m.id)}" aria-label="${playing ? 'Пауза' : 'Слушать'}">${playing ? I.pause : I.play}</button>
-    <div class="voice-bar"><i data-vbar="${esc(m.id)}" style="width:${pct}%"></i></div><span class="small tnum" data-vtime="${esc(m.id)}">${fmtDur(pl && pct ? pl.currentTime : m.dur)}</span></div>`;
+// Плеер голосовых живёт вне DOM, поэтому перерисовка страницы его не прерывает.
+// 8.0: волна (считается из самой записи), скорость 1× / 1,5× / 2× для всех голосовых, продолжение с того места, где остановились (vs_vpos)
+const players = new Map(), voicePeaks = new Map(), VOICE_BARS = 36;
+const vSpeed = () => [1, 1.5, 2].includes(Number(lsGet('vs_vspeed'))) ? Number(lsGet('vs_vspeed')) : 1;
+const vPosAll = () => { try { return JSON.parse(lsGet('vs_vpos') || '{}') || {}; } catch (e) { return {}; } };
+function vPosSave(id, t) { const all = vPosAll(); if (t > 1) all[id] = Math.round(t * 10) / 10; else delete all[id]; const k = Object.keys(all); if (k.length > 60) delete all[k[0]]; lsSet('vs_vpos', JSON.stringify(all)); }
+let peakAC = null;
+function voiceWave(m) {
+  if (voicePeaks.has(m.id)) return;
+  voicePeaks.set(m.id, null);
+  setTimeout(async () => {
+    try {
+      const buf = await (await fetch(m.audio)).arrayBuffer();
+      peakAC ||= new (window.OfflineAudioContext || window.webkitOfflineAudioContext)(1, 2, 8000);
+      const ab = await peakAC.decodeAudioData(buf), d = ab.getChannelData(0), step = Math.max(1, Math.floor(d.length / VOICE_BARS)), out = [];
+      for (let b = 0; b < VOICE_BARS; b++) { let sum = 0, n = 0; for (let i = b * step, e = Math.min(d.length, i + step); i < e; i += 4) { sum += d[i] * d[i]; n++; } out.push(Math.sqrt(sum / (n || 1))); }   // громкость (RMS) кусочка
+      const top = Math.max(...out) || 1; voicePeaks.set(m.id, out.map(x => Math.max(0.12, x / top)));
+    } catch (e) { voicePeaks.set(m.id, Array.from({ length: VOICE_BARS }, (_, i) => 0.3 + 0.5 * Math.abs(Math.sin(i * 1.7 + m.id.length)))); }
+    document.querySelectorAll(`[data-vw="${CSS.escape(m.id)}"]`).forEach(el => { el.outerHTML = voiceWaveHtml(m); });
+  }, 30);
 }
-function playVoice(m) {
+const voiceWaveHtml = m => {
+  const pk = voicePeaks.get(m.id) || Array(VOICE_BARS).fill(0.18), pl = players.get(m.id);
+  const pct = pl && pl.duration && isFinite(pl.duration) ? pl.currentTime / pl.duration * 100 : (vPosAll()[m.id] || 0) / (m.dur || 1) * 100;
+  const bars = pk.map(h => `<i style="height:${Math.round(h * 100)}%"></i>`).join('');
+  return `<div class="voice-wave" data-vw="${esc(m.id)}" data-act="vseek" data-id="${esc(m.id)}"><span class="vw-base">${bars}</span><span class="vw-fill" data-vbar="${esc(m.id)}" style="clip-path:inset(0 ${100 - Math.min(100, pct)}% 0 0)">${bars}</span></div>`;
+};
+function voiceHtml(m) {
+  const pl = players.get(m.id), playing = pl && !pl.paused; voiceWave(m);
+  return `<div class="voice"><button class="voice-btn" data-act="playvoice" data-id="${esc(m.id)}" aria-label="${playing ? 'Пауза' : 'Слушать'}">${playing ? I.pause : I.play}</button>
+    ${voiceWaveHtml(m)}<span class="voice-side"><span class="small tnum" data-vtime="${esc(m.id)}">${fmtDur(pl && pl.currentTime ? pl.currentTime : m.dur)}</span>
+    <button class="voice-sp" data-act="vspeed" aria-label="Скорость">${String(vSpeed()).replace('.', ',')}×</button></span></div>`;
+}
+function playVoice(m, at = null) {
   let pl = players.get(m.id);
   if (!pl) {
     pl = new Audio(m.audio); players.set(m.id, pl);
     const sync = () => {
-      const bar = document.querySelector(`[data-vbar="${m.id}"]`), t = document.querySelector(`[data-vtime="${m.id}"]`);
+      const bar = document.querySelector(`[data-vbar="${CSS.escape(m.id)}"]`), t = document.querySelector(`[data-vtime="${CSS.escape(m.id)}"]`);
       const d = isFinite(pl.duration) && pl.duration ? pl.duration : m.dur;
-      if (bar) bar.style.width = (pl.currentTime / d * 100) + '%';
+      if (bar) bar.style.clipPath = `inset(0 ${100 - Math.min(100, pl.currentTime / d * 100)}% 0 0)`;
       if (t) t.textContent = fmtDur(pl.currentTime || m.dur);
     };
-    pl.ontimeupdate = sync;
-    pl.onplay = pl.onpause = render;
-    pl.onended = () => { pl.currentTime = 0; render(); };
+    pl.ontimeupdate = () => { sync(); if (Math.floor(pl.currentTime) % 2 === 0) vPosSave(m.id, pl.currentTime); };
+    pl.onplay = pl.onpause = () => { if (pl.paused) vPosSave(m.id, pl.currentTime); render(); };
+    pl.onended = () => { vPosSave(m.id, 0); pl.currentTime = 0; render(); };
     pl.onerror = () => toast('Не получилось воспроизвести запись в этом браузере');
+    const saved = vPosAll()[m.id]; if (saved && at === null) pl.currentTime = saved;
   }
+  pl.playbackRate = vSpeed();
   players.forEach((p, id) => { if (id !== m.id && !p.paused) p.pause(); });
+  if (at !== null) { const d = isFinite(pl.duration) && pl.duration ? pl.duration : m.dur; pl.currentTime = Math.max(0, Math.min(d - 0.2, at * d)); if (pl.paused) pl.play().catch(console.error); return; }
   if (pl.paused) pl.play().catch(e => console.error(e)); else pl.pause();
+}
+
+/* 8.0: видеокружки — до 20 секунд с фронтальной камеры, хранятся в самом сообщении (data:video, как голосовые) */
+const VNOTE_MAX = 20, VNOTE_BYTES = 510000;
+let VN = null;   // {stream, rec, chunks, started, to, timer, send}
+const vnoteEls = new Map();   // элементы <video> кружков переживают перерисовку (вынимаем и возвращаем, как видео эфира)
+async function vnoteOpen() {
+  if (VN) return;
+  if (!navigator.mediaDevices?.getUserMedia || !window.MediaRecorder) { toast('Этот браузер не умеет записывать видео'); return; }
+  let stream;
+  try { stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user', width: { ideal: 320 }, height: { ideal: 320 }, frameRate: { ideal: 24 } }, audio: { echoCancellation: true, noiseSuppression: true } }); }
+  catch (e) { toast('Нет доступа к камере или микрофону — разрешите их в браузере'); return; }
+  VN = { stream, to: S.chatWith, rec: null, chunks: [], started: 0, timer: 0, send: false };
+  const box = document.getElementById('vnoteBox') || document.body.appendChild(Object.assign(document.createElement('div'), { id: 'vnoteBox' }));
+  box.className = 'vnote-ov';
+  box.innerHTML = `<div class="vnote-rec"><video id="vnPrev" autoplay playsinline muted></video><svg class="vn-ring" viewBox="0 0 100 100"><circle cx="50" cy="50" r="48"/></svg></div>
+    <b id="vnTime" class="tnum">0:00</b><span class="small">Видеокружок до ${VNOTE_MAX} секунд</span>
+    <div class="row" style="gap:12px"><button class="btn ghost light" data-act="vnotex">Отмена</button><button class="btn" id="vnGo" data-act="vnotego">● Записать</button></div>`;
+  const v = document.getElementById('vnPrev'); v.srcObject = stream; v.play().catch(() => { });
+}
+function vnoteGo() {
+  if (!VN) return;
+  if (VN.rec) { vnoteClose(true); return; }
+  const type = ['video/webm;codecs=vp8,opus', 'video/webm', 'video/mp4'].find(t => MediaRecorder.isTypeSupported?.(t)) || '';
+  VN.rec = new MediaRecorder(VN.stream, { ...(type ? { mimeType: type } : {}), videoBitsPerSecond: 150000, audioBitsPerSecond: 32000 });
+  VN.rec.ondataavailable = e => { if (e.data.size) VN?.chunks.push(e.data); };
+  const me = VN; VN.rec.onstop = () => vnoteDone(me);
+  VN.rec.start(500); VN.started = Date.now();
+  document.getElementById('vnoteBox')?.classList.add('rec');
+  const go = document.getElementById('vnGo'); if (go) go.textContent = '■ Отправить';
+  VN.timer = setInterval(() => {
+    const s = (Date.now() - me.started) / 1000, el = document.getElementById('vnTime'); if (el) el.textContent = fmtDur(s);
+    document.querySelector('.vn-ring circle')?.style.setProperty('stroke-dashoffset', String(302 * (1 - Math.min(1, s / VNOTE_MAX))));
+    if (s >= VNOTE_MAX) vnoteClose(true);
+  }, 200);
+}
+function vnoteClose(send) {
+  const me = VN; if (!me) return; me.send = send; clearInterval(me.timer);
+  if (me.rec && me.rec.state !== 'inactive') me.rec.stop(); else vnoteDone(me);
+}
+async function vnoteDone(me) {
+  me.stream.getTracks().forEach(t => t.stop()); if (VN === me) VN = null;
+  const box = document.getElementById('vnoteBox'); if (box) { box.innerHTML = ''; box.className = ''; }
+  if (!me.send || !me.rec) return;
+  const dur = Math.min(VNOTE_MAX, (Date.now() - me.started) / 1000);
+  if (dur < 1) { toast('Слишком коротко'); return; }
+  const blob = new Blob(me.chunks, { type: me.rec.mimeType || 'video/webm' });
+  if (blob.size > VNOTE_BYTES) { toast('Кружок получился слишком большим — попробуйте короче'); return; }
+  const url = await new Promise(res => { const r = new FileReader(); r.onload = () => res(String(r.result)); r.readAsDataURL(blob); });
+  try { await sendMessage(me.to, '', '', { audio: url.replace(/^data:[^;,]*/, 'data:' + (blob.type.split(';')[0] || 'video/webm')), dur: Math.round(dur * 10) / 10 }); }
+  catch (e) { console.error(e); toast(errText(e)); }
+}
+const vnoteHtml = m => `<span class="vnote" data-vnote="${esc(m.id)}" data-act="vnoteplay" data-id="${esc(m.id)}"><span class="vnote-dur small tnum">${fmtDur(m.dur)}</span></span>`;
+function vnoteMount() {   // после render(): вставляем живые <video> на место заготовок
+  document.querySelectorAll('[data-vnote]').forEach(ph => {
+    const id = ph.dataset.vnote, m = cache.messages.find(x => x.id === id); if (!m) return;
+    let v = vnoteEls.get(id);
+    if (!v) { v = document.createElement('video'); v.src = m.audio; v.playsInline = true; v.muted = true; v.loop = true; v.preload = 'metadata'; v.className = 'vnote-v'; vnoteEls.set(id, v); v.play().catch(() => { }); }
+    if (v.parentNode !== ph) ph.prepend(v);
+  });
 }
 
 /* Дружба: заявка → принять / отклонить */
@@ -6240,8 +6853,10 @@ async function openLightbox(i) {
   catch (e) { console.error(e); }
 }
 document.addEventListener('keydown', e => {
+  if (S.story && e.target.matches?.('input')) { if (e.key === 'Escape') { clearTimeout(storyTimer); S.story = null; render(); } return; }
   if (S.story) { if (e.key === 'Escape') { clearTimeout(storyTimer); S.story = null; render(); } else if (e.key === 'ArrowRight') storyStep(1); else if (e.key === 'ArrowLeft') storyStep(-1); return; }
   if (e.key === 'Escape' && S.trackForm) { S.trackForm = null; render(); return; }
+  if (e.key === 'Escape' && S.vcmt) { closeVcmt(); return; }
   if (e.key === 'Escape' && S.whatsNew) { lsSet('vs_seen_ver', WN_VER); S.whatsNew = false; render(); return; }
   if (S.fullPlayer && curTrack() && !e.target.matches?.('input,textarea,select,[contenteditable]') && !e.ctrlKey && !e.metaKey && !e.altKey) {
     const a = player.audio, t = curTrack();
@@ -6297,7 +6912,7 @@ document.getElementById('filePick').addEventListener('change', async e => {
     else if (pickTarget === 'evcover') { S.evCover = await compress(f, 1280, 420000); render(); }
     else if (pickTarget === 'lot') { S.lotImage = await compress(f, 1080, 420000); render(); }
     else if (pickTarget === 'music') { if (files.length > 1) await uploadTracksBatch(files.slice(0, 30)); else await uploadTrack(f); }
-    else if (pickTarget === 'story') { S.storyDraft = { image: await compress(f, 1080, 420000) }; render(); document.getElementById('stText')?.focus(); }
+    else if (pickTarget === 'story') { S.storyDraft = { image: await compress(f, 1080, 420000), items: [], sel: -1 }; render(); }
     else if (pickTarget === 'gphoto') { S.editGroupPhoto = await compress(f, 256, MAX_AVATAR, true); render(); }
     else if (pickTarget === 'msgphoto') {
       if (!S.chatWith || S.busy) return;
@@ -6357,7 +6972,7 @@ document.addEventListener('submit', async e => {
         } catch (err) { S.authBusy = false; S.authError = err.message === 'nick-taken' ? 'Короткое имя уже занято, выберите другое.' : errText(err); render(); }
         break;
       }
-      case 'search': S.query = v('q'); go('people'); break;
+      case 'search': { const t = v('q'); S.query = t; go('search' + (t ? '/' + encodeURIComponent(t) : '')); break; }
       case 'videolink': {
         const p = parseVideoLink(v('vlUrl'));
         if (!p) { toast('Не узнали ссылку. Подходят YouTube, Rutube, VK Видео или прямая ссылка на .mp4'); return; }
@@ -6408,6 +7023,18 @@ document.addEventListener('submit', async e => {
           lsSet('vs_draft', ''); ['postText', 'pollQ', 'pollO0', 'pollO1', 'pollO2', 'pollO3', 'pollO4', 'pollO5'].forEach(clear); S.compose = false; toast('Опубликовано');
         } catch (err) { toast(err.message === 'too-big' ? 'Фото слишком большое даже после сжатия' : errText(err)); }
         finally { S.busy = false; render(); }
+        break;
+      }
+      case 'storyreply': {
+        const text = v('stReply'); if (!text) return;
+        clear('stReply'); clearTimeout(storyTimer);
+        await storyReply(f.dataset.id, `↩ Ответ на вашу историю: ${text}`.slice(0, 2000)); storyStep(1);
+        break;
+      }
+      case 'vcomment': {
+        const text = v('vcIn'), vid = S.vcmt?.id; if (!text || !vid) return;
+        clear('vcIn');
+        await addDoc(collection(db, 'videos', vid, 'comments'), { authorId: uid(), text: text.slice(0, 1000), createdAt: serverTimestamp() });
         break;
       }
       case 'comment': {

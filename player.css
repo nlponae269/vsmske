@@ -1,4 +1,4 @@
-/* Плеер 2.0 (5.1) — отдельным файлом после glass.css: нужен и в облегчённой версии (там glass.css отключён). */
+/* Плеер 2.0 (5.1) — отдельным файлом: нужен во всех дизайнах. */
 @keyframes orbA{0%{transform:translate(0,0) rotate(0)}50%{transform:translate(18vw,10vh) rotate(120deg)}100%{transform:translate(6vw,26vh) rotate(240deg)}}
 @keyframes orbB{0%{transform:translate(0,0)}50%{transform:translate(-22vw,18vh) scale(1.15)}100%{transform:translate(-8vw,44vh) scale(.9)}}
 @keyframes orbC{0%{transform:translate(0,0) scale(1)}50%{transform:translate(20vw,-16vh) scale(1.2)}100%{transform:translate(-14vw,-28vh) scale(.95)}}

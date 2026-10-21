@@ -739,7 +739,7 @@ test('6.8: заявки зрителей: offer пишет зритель, answe
   const peer = doc(collection(db(B), 'streams', s.id, 'peers'));
   await assertSucceeds(setDoc(peer, { uid: B, to: A, offer: sdp, createdAt: serverTimestamp() }));
   await assertFails(setDoc(doc(collection(db(B), 'streams', s.id, 'peers')), { uid: C, to: A, offer: sdp, createdAt: serverTimestamp() }));   // чужим именем
-  await assertFails(setDoc(doc(collection(db(B), 'streams', s.id, 'peers')), { uid: B, to: A, offer: 'x', createdAt: serverTimestamp() }));    // слишком короткий
+  await assertFails(setDoc(doc(collection(db(B), 'streams', s.id, 'peers')), { uid: B, to: A, offer: '', createdAt: serverTimestamp() }));     // пустой (8.0: короткий «no» — отказ от звонка)
   await assertFails(setDoc(doc(collection(db(B), 'streams', s.id, 'peers')), { uid: B, to: A, offer: sdp, createdAt: serverTimestamp(), answer: sdp }));
   await assertSucceeds(getDoc(doc(db(A), 'streams', s.id, 'peers', peer.id)));        // тот, кому адресовано
   await assertSucceeds(getDoc(doc(db(B), 'streams', s.id, 'peers', peer.id)));        // автор
@@ -773,4 +773,45 @@ test('6.8: узлы цепочки пишет и стирает только с�
   await assertFails(deleteDoc(doc(db(C), 'streams', s.id, 'nodes', B)));
   await assertSucceeds(deleteDoc(doc(db(A), 'streams', s.id, 'nodes', B)));                   // хозяин эфира
   await assertFails(setDoc(doc(anon(), 'streams', s.id, 'nodes', B), node(B)));
+});
+
+/* ---------- 8.0: комментарии и просмотры видео, звонки, видеокружки ---------- */
+test('видео: комментарии, удаление автором видео, просмотры только +1', async () => {
+  const c = doc(collection(db(B), 'videos', 'v1', 'comments'));
+  await assertSucceeds(setDoc(c, { authorId: B, text: 'класс', createdAt: serverTimestamp() }));
+  await assertFails(setDoc(doc(collection(db(B), 'videos', 'v1', 'comments')), { authorId: C, text: 'чужим именем', createdAt: serverTimestamp() }));
+  await assertFails(setDoc(doc(collection(db(B), 'videos', 'v1', 'comments')), { authorId: B, text: '', createdAt: serverTimestamp() }));
+  await assertFails(setDoc(doc(collection(db(B), 'videos', 'v1', 'comments')), { authorId: B, text: 'x', likes: [B], createdAt: serverTimestamp() }));
+  await assertFails(setDoc(doc(collection(anon(), 'videos', 'v1', 'comments')), { authorId: B, text: 'x', createdAt: serverTimestamp() }));
+  await assertSucceeds(getDoc(doc(db(C), 'videos', 'v1', 'comments', c.id)));
+  await assertFails(deleteDoc(doc(db(C), 'videos', 'v1', 'comments', c.id)));                 // чужой
+  await assertSucceeds(deleteDoc(doc(db(A), 'videos', 'v1', 'comments', c.id)));              // автор видео
+  await assertSucceeds(updateDoc(doc(db(B), 'videos', 'v1'), { views: 1 }));
+  await assertSucceeds(updateDoc(doc(db(C), 'videos', 'v1'), { views: increment(1) }));
+  await assertFails(updateDoc(doc(db(C), 'videos', 'v1'), { views: 10 }));
+  await assertFails(updateDoc(doc(db(C), 'videos', 'v1'), { views: increment(1), title: 'взлом' }));
+});
+test('заблокированный не комментирует видео', async () => {
+  await env.withSecurityRulesDisabled(ctx => updateDoc(doc(ctx.firestore(), 'users', A), { blocked: [B] }));
+  await assertFails(setDoc(doc(collection(db(B), 'videos', 'v1', 'comments')), { authorId: B, text: 'привет', createdAt: serverTimestamp() }));
+});
+test('звонок: эфир mode call, заявка, отказ, уведомление', async () => {
+  const s = doc(collection(db(A), 'streams'));
+  const call = (x = {}) => ({ ownerId: A, title: 'Звонок', mode: 'call', to: B, live: true, beat: serverTimestamp(), createdAt: serverTimestamp(), endedAt: null, ...x });
+  await assertSucceeds(setDoc(s, call()));
+  await assertFails(setDoc(doc(collection(db(A), 'streams')), call({ to: 'x'.repeat(41) })));
+  await assertFails(setDoc(doc(collection(db(A), 'streams')), call({ mode: 'phone' })));
+  const p = doc(collection(db(B), 'streams', s.id, 'peers'));
+  await assertSucceeds(setDoc(p, { uid: B, to: A, offer: 'no', createdAt: serverTimestamp() }));   // «отклонить»
+  await assertSucceeds(getDoc(doc(db(A), 'streams', s.id, 'peers', p.id)));
+  await assertSucceeds(setDoc(doc(collection(db(A), 'notifs')), { to: B, from: A, type: 'call', postId: s.id, text: 'Звонок', createdAt: serverTimestamp() }));
+  await assertFails(setDoc(doc(collection(db(A), 'notifs')), { to: B, from: A, type: 'ring', postId: s.id, text: 'Звонок', createdAt: serverTimestamp() }));
+});
+test('видеокружок в сообщении (data:video), но не другие типы', async () => {
+  const cid = [A, C].sort().join('_');
+  const m = x => ({ from: A, text: '', audio: x, dur: 12, createdAt: serverTimestamp() });
+  await assertSucceeds(setDoc(doc(collection(db(A), 'chats', cid, 'messages')), m('data:video/webm;base64,AAAA')));
+  await assertSucceeds(setDoc(doc(collection(db(A), 'chats', cid, 'messages')), m('data:audio/webm;base64,AAAA')));
+  await assertFails(setDoc(doc(collection(db(A), 'chats', cid, 'messages')), m('data:text/html;base64,AAAA')));
+  await assertFails(setDoc(doc(collection(db(A), 'chats', cid, 'messages')), m('https://evil.example/v.webm')));
 });

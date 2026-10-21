@@ -93,7 +93,7 @@ a{color:var(--md-p)}
 .h{font:500 20px/1.25 var(--f-display);letter-spacing:0}
 h1,h2,h3{font-family:var(--f-display);font-weight:500}
 .brandh{font:500 28px/1.2 var(--f-display);letter-spacing:-.01em;color:var(--md-on-s)}
-.lg,.orbs{display:none}
+
 *{scrollbar-width:thin;scrollbar-color:var(--md-olv) transparent}
 
 /* рябь по нажатию и слой состояния (наведение) — как у кнопок Android */
