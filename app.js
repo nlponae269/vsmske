@@ -712,7 +712,8 @@ function route() {
   S.newRoom = null; S.fwd = null; S.roomInfo = false; S.story = null; S.storyDraft = null; clearTimeout(storyTimer); S.clubEdit = false; S.editGroupPhoto = undefined; S.editGroupCover = null;
   if (S.view !== 'messages') S.replyTo = null;
   S.editMsg = null; S.mqOpen = false; S.mq = ''; S.wallPick = false;
-  recStop(false); players.forEach(p => p.pause()); players.clear();
+  recStop(false); players.forEach(p => p.pause()); players.clear(); vnoteClose(false);
+  vnoteEls.forEach(v => { v.pause(); v.removeAttribute("src"); v.load(); }); vnoteEls.clear();
   if (S.view !== 'video') { S.videoDraft = null; S.videoAdd = false; }
   attachView();
   window.scrollTo(0, 0);
@@ -1034,7 +1035,9 @@ function storyOverlay() {
       ${mine ? `<span class="small">👁 ${views}</span><button class="btn ghost light small" data-act="storydel" data-id="${esc(x.id)}">${S.confirm === 'story:' + x.id ? 'Удалить?' : 'Удалить'}</button>` : ''}
       <button class="btn ghost light" data-act="storyclose" aria-label="Закрыть">✕</button></div>
     <img src="${esc(safeImg(x.image))}" alt="История">
-    ${x.text ? `<div class="story-text">${esc(x.text)}</div>` : ''}
+    ${x.text ? `<div class="story-text ${mine ? '' : 'st-up'}">${esc(x.text)}</div>` : ''}
+    ${mine ? '' : `<div class="story-foot"><form class="story-reply" data-form="storyreply" data-id="${esc(x.id)}"><input id="stReply" maxlength="300" placeholder="Ответить ${esc((u?.name || '').split(' ')[0])}…" autocomplete="off"><button class="icon-btn" aria-label="Отправить">${I.send}</button></form>
+      <div class="story-reacts">${['❤️', '🔥', '😂', '😮', '👏'].map(e => `<button data-act="streact" data-id="${esc(x.id)}" data-e="${e}" aria-label="Реакция ${e}">${e}</button>`).join('')}</div></div>`}
     <button class="story-nav l" data-act="storystep" data-d="-1" aria-label="Назад"></button><button class="story-nav r" data-act="storystep" data-d="1" aria-label="Дальше"></button>
   </div></div>`;
 }
@@ -1050,6 +1053,75 @@ function storyShow() {
   }
   render();
   storyTimer = setTimeout(() => storyStep(1), STORY_SHOW);
+}
+/* 8.0: истории 2.0 — надписи и стикеры поверх фото (перетаскиваются пальцем и «впекаются» в картинку при публикации),
+   ответ и реакция на чужую историю приходят автору в личные сообщения с маленькой копией истории */
+const ST_STICKERS = ['😍', '🔥', '😂', '🥳', '👍', '💯', '❤️', '✨', '🌈', '⭐', '🎉', '😎'];
+const ST_COLORS = ['#FFFFFF', '#111111', '#FACC15', '#EF4444', '#22C55E', '#3B82F6', '#EC4899'];
+function storyEditor() {
+  const d = S.storyDraft, it = d.items[d.sel];
+  return `<div class="ov" data-act="ovx"><div class="ov-in modal st-modal" data-stop="1">
+      <div class="row"><b class="grow">Новая история</b><button class="icon-btn" data-act="ovx" aria-label="Закрыть">✕</button></div>
+      <div class="st-ed" id="stEd"><img src="${esc(d.image)}" alt="Предпросмотр" draggable="false">
+        ${d.items.map((x, i) => `<span class="st-it ${x.k === 'e' ? 'emo' : ''} ${d.sel === i ? 'sel' : ''}" data-i="${i}" style="left:${x.x}%;top:${x.y}%;font-size:${x.s}cqw;color:${x.c};${x.bg ? 'background:rgba(0,0,0,.55);' : ''}">${esc(x.v)}</span>`).join('')}</div>
+      <div class="st-row"><input id="stOver" class="inp" maxlength="60" placeholder="Надпись на фото" autocomplete="off"><button class="btn sec small" data-act="staddt">Добавить</button></div>
+      <div class="st-stk">${ST_STICKERS.map(e => `<button data-act="stadde" data-e="${e}" aria-label="Стикер ${e}">${e}</button>`).join('')}</div>
+      ${it ? `<div class="st-row st-sel">${it.k === 't' ? ST_COLORS.map(c => `<button class="st-c ${it.c === c ? 'on' : ''}" data-act="stcolor" data-c="${c}" style="background:${c}" aria-label="Цвет"></button>`).join('') + `<button class="btn ghost small ${it.bg ? 'on' : ''}" data-act="stbg">Фон</button>` : ''}
+        <span class="grow"></span><button class="btn ghost small" data-act="stsize" data-d="-1" aria-label="Меньше">A−</button><button class="btn ghost small" data-act="stsize" data-d="1" aria-label="Больше">A+</button>
+        <button class="btn ghost small" data-act="stdel">Убрать</button></div>` : '<p class="hint" style="margin:0">Надписи и стикеры можно двигать пальцем.</p>'}
+      <input id="stText" class="inp" maxlength="200" placeholder="Подпись внизу (необязательно)">
+      <p class="hint" style="margin:0">История исчезнет через 24 часа. Её увидят ваши друзья.</p>
+      <button class="btn" data-act="storypub" ${S.busy ? 'disabled' : ''}>${S.busy ? 'Публикуем…' : 'Опубликовать'}</button></div></div>`;
+}
+function stAdd(k, v) {
+  const d = S.storyDraft; if (!d || !v || d.items.length >= 12) return;
+  d.items.push({ k, v, x: 50, y: k === 'e' ? 35 + d.items.length * 4 % 30 : 50, s: k === 'e' ? 16 : 8, c: '#FFFFFF', bg: k === 't' });
+  d.sel = d.items.length - 1; render();
+}
+// перетаскивание надписей и стикеров (без перерисовки — только позиция, в конце выделяем)
+let stDrag = null;
+document.addEventListener('pointerdown', e => {
+  const el = e.target.closest?.('#stEd .st-it'); if (!el || !S.storyDraft) return;
+  e.preventDefault(); const r = el.parentNode.getBoundingClientRect();
+  stDrag = { el, i: +el.dataset.i, r, moved: false }; el.setPointerCapture?.(e.pointerId);
+});
+document.addEventListener('pointermove', e => {
+  const g = stDrag; if (!g) return; g.moved = true;
+  const it = S.storyDraft?.items[g.i]; if (!it) return;
+  it.x = Math.max(2, Math.min(98, (e.clientX - g.r.left) / g.r.width * 100)); it.y = Math.max(2, Math.min(98, (e.clientY - g.r.top) / g.r.height * 100));
+  g.el.style.left = it.x + '%'; g.el.style.top = it.y + '%';
+});
+document.addEventListener('pointerup', () => { const g = stDrag; stDrag = null; if (g && S.storyDraft) { S.storyDraft.sel = g.i; render(); } });
+async function storyBurn(d) {
+  const img = await new Promise((res, rej) => { const im = new Image(); im.onload = () => res(im); im.onerror = rej; im.src = d.image; });
+  const W = Math.min(1080, img.naturalWidth), H = Math.round(img.naturalHeight * W / img.naturalWidth);
+  const c = document.createElement('canvas'); c.width = W; c.height = H; const x = c.getContext('2d');
+  x.drawImage(img, 0, 0, W, H); x.textAlign = 'center'; x.textBaseline = 'middle';
+  for (const it of d.items) {
+    const fs = it.s / 100 * W, cx = it.x / 100 * W, cy = it.y / 100 * H;
+    x.font = it.k === 'e' ? `${fs}px system-ui, "Apple Color Emoji", "Segoe UI Emoji", sans-serif` : `700 ${fs}px "Google Sans", "PT Sans", system-ui, sans-serif`;
+    if (it.k === 't' && it.bg) {
+      const w = x.measureText(it.v).width + fs * 0.8, h = fs * 1.45, r = h * 0.3;
+      x.fillStyle = 'rgba(0,0,0,.55)'; x.beginPath(); x.roundRect ? x.roundRect(cx - w / 2, cy - h / 2, w, h, r) : x.rect(cx - w / 2, cy - h / 2, w, h); x.fill();
+    }
+    x.shadowColor = it.k === 't' && !it.bg ? 'rgba(0,0,0,.5)' : 'transparent'; x.shadowBlur = fs * 0.15;
+    x.fillStyle = it.c || '#FFFFFF'; x.fillText(it.v, cx, cy); x.shadowBlur = 0;
+  }
+  for (let q = 0.86; q >= 0.4; q -= 0.08) { const u = c.toDataURL('image/jpeg', q); if (u.length <= 420000) return u; }
+  return d.image;
+}
+async function storyThumb(src) {
+  try {
+    const img = await new Promise((res, rej) => { const im = new Image(); im.onload = () => res(im); im.onerror = rej; im.src = src; });
+    const W = 220, H = Math.round(img.naturalHeight * W / img.naturalWidth), c = document.createElement('canvas'); c.width = W; c.height = H;
+    c.getContext('2d').drawImage(img, 0, 0, W, H); return c.toDataURL('image/jpeg', 0.7);
+  } catch (e) { return ''; }
+}
+document.addEventListener('focusin', e => { if (e.target.id === 'stReply') clearTimeout(storyTimer); });   // пока пишешь ответ, история не листается
+async function storyReply(id, text) {
+  const x = (cache.stories || []).find(s => s.id === id); if (!x || !text) return;
+  try { await sendMessage(x.ownerId, text, await storyThumb(safeImg(x.image))); toast('Отправлено в личные сообщения'); }
+  catch (e) { toast(errText(e)); }
 }
 function storyStep(dir) {
   const st = S.story; if (!st) return;
@@ -1148,6 +1220,7 @@ function render() {
   }
   // видео эфира не пересоздаём: вынимаем и возвращаем на место, чтобы картинка не мигала
   const keepVid = document.getElementById('liveVid'); if (keepVid?.parentNode) keepVid.parentNode.removeChild(keepVid);
+  vnoteEls.forEach(v => v.remove());   // кружки вынимаем и сразу возвращаем (vnoteMount), чтобы не начинались заново
   // сохраняем то, что пользователь печатает, между перерисовками
   const active = document.activeElement, focusId = active?.id, sel = active?.selectionStart;
   const kept = {};
@@ -1170,6 +1243,7 @@ function render() {
   }
   { const ph = document.getElementById('liveVid'); if (ph && keepVid && LIVE && S.liveId === LIVE.sid) ph.replaceWith(keepVid); if (document.getElementById('liveVid')) liveAttach(); const bx = document.getElementById('liveMsgs'); if (bx) bx.scrollTop = bx.scrollHeight; }
   if (S.view === 'clips') clipsMount();
+  vnoteMount();
   { const mi = document.getElementById('msgInput'); if (mi) mi.closest('form')?.classList.toggle('has-text', !!mi.value.trim()); }
   animate();
   if (S.fullPlayer && S.fpLyrics) { syncLyrics(); if (!lyrRaf) lyrLoop(); }
@@ -1719,12 +1793,7 @@ function overlay() {
       <input id="giftText" class="inp" maxlength="200" placeholder="Подпись (необязательно)">
       <button class="btn" data-act="giftsend" ${S.giftSel ? '' : 'disabled'}>Подарить ${S.giftSel ? GIFTS[S.giftSel][0] : ''}</button></div></div>`;
   }
-  if (S.storyDraft) return `<div class="ov" data-act="ovx"><div class="ov-in modal" data-stop="1">
-      <div class="row"><b class="grow">Новая история</b><button class="icon-btn" data-act="ovx" aria-label="Закрыть">✕</button></div>
-      <img class="story-prev" src="${esc(S.storyDraft.image)}" alt="Предпросмотр">
-      <input id="stText" class="inp" maxlength="200" placeholder="Подпись (необязательно)">
-      <p class="hint" style="margin:0">История исчезнет через 24 часа. Её увидят ваши друзья.</p>
-      <button class="btn" data-act="storypub" ${S.busy ? 'disabled' : ''}>Опубликовать</button></div></div>`;
+  if (S.storyDraft) return storyEditor();
   if (S.newRoom) {
     const fr = (S.me.friends || []).map(U).filter(Boolean), sel = S.newRoom.sel;
     ensureUsers(S.me.friends || []);
@@ -5531,7 +5600,7 @@ function msgHtml(m, id, peerRead, room = false) {
   const who = room && !mine ? `<a class="msg-from" href="#id/${esc(m.from)}">${esc(U(m.from)?.name || '…')}</a>` : '';
   const fwd = fw ? `<div class="fwd"><div class="small">↪ Переслано${fw.name ? ` от <b>${esc(fw.name)}</b>` : ''}</div>${fw.text ? `<span>${linkify(fw.text)}</span>` : ''}</div>` : '';
   const jumbo = !img && !m.audio && !fw && !rp && isJumbo(m.text);
-  return `<div class="msg ${mine ? 'me' : ''} ${img ? 'has-img' : ''} ${sel ? 'sel' : ''} ${jumbo ? 'jumbo' : ''}" data-act="selmsg" data-id="${esc(m.id)}">${who}${quote}${fwd}${img ? `<img class="msg-img" src="${esc(img)}" alt="Фото" data-act="viewimg" data-kind="msg" data-id="${esc(m.id)}">` : ''}${typeof m.audio === 'string' && m.audio.startsWith('data:audio/') ? voiceHtml(m) : ''}${m.text ? `<span>${linkify(m.text)}</span>${trackEmbed(m.text)}` : ''}${reactsHtml(m, id)}<time>${m.edited ? 'изменено · ' : ''}${hm(new Date(ms(m.createdAt)))}${ticks}</time>${sel ? `<div class="react-pick">${REACTS.map(e => `<button data-act="react" data-id="${esc(m.id)}" data-e="${e}" aria-label="Реакция ${e}">${e}</button>`).join('')}</div><div class="msg-acts"><button data-act="replymsg" data-id="${esc(m.id)}">${I.reply}Ответить</button><button data-act="fwdmsg" data-id="${esc(m.id)}">↪ Переслать</button>${mine && m.text && !fw ? `<button data-act="editmsg" data-id="${esc(m.id)}">✏️ Изменить</button>` : ''}${mine ? `<button data-act="delmsg" data-id="${esc(m.id)}">${S.confirm === 'msg:' + m.id ? 'Удалить у всех?' : 'Удалить'}</button>` : ''}</div>` : ''}</div>`;
+  return `<div class="msg ${mine ? 'me' : ''} ${img ? 'has-img' : ''} ${sel ? 'sel' : ''} ${jumbo ? 'jumbo' : ''}" data-act="selmsg" data-id="${esc(m.id)}">${who}${quote}${fwd}${img ? `<img class="msg-img" src="${esc(img)}" alt="Фото" data-act="viewimg" data-kind="msg" data-id="${esc(m.id)}">` : ''}${typeof m.audio === 'string' && m.audio.startsWith('data:audio/') ? voiceHtml(m) : typeof m.audio === 'string' && m.audio.startsWith('data:video/') ? vnoteHtml(m) : ''}${m.text ? `<span>${linkify(m.text)}</span>${trackEmbed(m.text)}` : ''}${reactsHtml(m, id)}<time>${m.edited ? 'изменено · ' : ''}${hm(new Date(ms(m.createdAt)))}${ticks}</time>${sel ? `<div class="react-pick">${REACTS.map(e => `<button data-act="react" data-id="${esc(m.id)}" data-e="${e}" aria-label="Реакция ${e}">${e}</button>`).join('')}</div><div class="msg-acts"><button data-act="replymsg" data-id="${esc(m.id)}">${I.reply}Ответить</button><button data-act="fwdmsg" data-id="${esc(m.id)}">↪ Переслать</button>${mine && m.text && !fw ? `<button data-act="editmsg" data-id="${esc(m.id)}">✏️ Изменить</button>` : ''}${mine ? `<button data-act="delmsg" data-id="${esc(m.id)}">${S.confirm === 'msg:' + m.id ? 'Удалить у всех?' : 'Удалить'}</button>` : ''}</div>` : ''}</div>`;
 }
 const searchBar = () => `<div class="msg-search">${I.search}<input id="mq" type="search" placeholder="Поиск в этом диалоге" autocomplete="off" value="${esc(S.mq || '')}"><button class="icon-btn" data-act="mqtoggle" aria-label="Закрыть поиск">✕</button></div>`;
 const roomAvatar = (c, size) => `<span class="av room-av" style="width:${size}px;height:${size}px;font-size:${Math.round(size * .38)}px">${esc(initials(c?.name || 'Б'))}</span>`;
@@ -5541,7 +5610,7 @@ function chatForm(key) {
   if (banOf(S.me)) return `<div class="chat-form muted small" style="justify-content:center">Ваш аккаунт заблокирован — писать сообщения нельзя</div>`;
   if (S.rec) return `<div class="chat-form rec-bar"><span class="rec-dot"></span><b id="recTime" class="tnum">${fmtDur((Date.now() - S.rec.started) / 1000)}</b><span class="grow muted small">Идёт запись, до 1 минуты</span>
           <button type="button" class="btn ghost" data-act="reccancel">Отмена</button><button type="button" class="btn" data-act="recsend">${I.send}</button></div>`;
-  return `<form class="chat-form" data-form="msg" data-to="${esc(key)}"><button type="button" class="icon-btn" data-act="msgphoto" aria-label="Отправить фото" ${S.busy ? 'disabled' : ''}>${I.photo}</button>${emojiBtn('msgInput')}<input id="msgInput" placeholder="Сообщение" maxlength="2000" autocomplete="off"><button type="button" class="icon-btn" data-act="mic" aria-label="Записать голосовое">${I.mic}</button><button class="btn" aria-label="Отправить">${I.send}</button></form>`;
+  return `<form class="chat-form" data-form="msg" data-to="${esc(key)}"><button type="button" class="icon-btn" data-act="msgphoto" aria-label="Отправить фото" ${S.busy ? 'disabled' : ''}>${I.photo}</button>${emojiBtn('msgInput')}<input id="msgInput" placeholder="Сообщение" maxlength="2000" autocomplete="off"><button type="button" class="icon-btn" data-act="vnote" aria-label="Видеокружок" title="Видеокружок">${I.video}</button><button type="button" class="icon-btn" data-act="mic" aria-label="Записать голосовое">${I.mic}</button><button class="btn" aria-label="Отправить">${I.send}</button></form>`;
 }
 
 function roomPanel(c) {
@@ -5873,6 +5942,14 @@ document.addEventListener('click', async e => {
       case 'recsend': recStop(true); break;
       case 'reccancel': recStop(false); break;
       case 'playvoice': { const m = cache.messages.find(x => x.id === id); if (m?.audio) playVoice(m); break; }
+      case 'vseek': { const m = cache.messages.find(x => x.id === id), r = b.getBoundingClientRect(); if (m?.audio) playVoice(m, Math.max(0, Math.min(1, (e.clientX - r.left) / r.width))); break; }
+      case 'vspeed': { const n = { 1: 1.5, 1.5: 2, 2: 1 }[vSpeed()]; lsSet('vs_vspeed', String(n)); players.forEach(p => { p.playbackRate = n; }); render(); break; }
+      case 'vnote': vnoteOpen(); break;
+      case 'vnotego': vnoteGo(); break;
+      case 'vnotex': vnoteClose(false); break;
+      case 'vnoteplay': { const v = vnoteEls.get(id); if (!v) break; const on = !v.muted && !v.paused;
+        vnoteEls.forEach(x => { if (x !== v) { x.muted = true; x.closest('.vnote')?.classList.remove('on'); } });
+        if (on) { v.muted = true; b.classList.remove('on'); } else { v.muted = false; v.currentTime = 0; v.play().catch(() => { }); b.classList.add('on'); } break; }
       case 'editpost': S.editPost = id || null; render(); if (id) document.getElementById('ep_' + id)?.focus(); break;
       case 'pfilter': S.draft.filter = b.dataset.f; render(); break;
       case 'unattach': { const f = S.draft.files.splice(Number(b.dataset.i) || 0, 1)[0]; if (f) URL.revokeObjectURL(f.url); render(); break; }
@@ -6175,15 +6252,24 @@ document.addEventListener('click', async e => {
       case 'storyadd': pick('story', 'image/*', false); break;
       case 'storypub': {
         if (!S.storyDraft || S.busy) return;
+        const cap = (document.getElementById('stText')?.value || '').trim().slice(0, 200);
         S.busy = true; render();
         try {
-          await addDoc(collection(db, 'stories'), { ownerId: uid(), image: S.storyDraft.image, text: (document.getElementById('stText')?.value || '').trim().slice(0, 200), views: {}, createdAt: serverTimestamp() });
+          const image = S.storyDraft.items.length ? await storyBurn(S.storyDraft) : S.storyDraft.image;
+          await addDoc(collection(db, 'stories'), { ownerId: uid(), image, text: cap, views: {}, createdAt: serverTimestamp() });
           S.storyDraft = null; toast('История опубликована'); loadStories();
         } finally { S.busy = false; render(); }
         break;
       }
       case 'storyopen': { const { order } = storyOwners(), oi = order.indexOf(id); if (oi < 0) return; S.story = { oi, si: 0 }; storyShow(); break; }
       case 'storystep': storyStep(Number(b.dataset.d)); break;
+      case 'staddt': { const el = document.getElementById('stOver'), t = el?.value.trim(); if (t) { el.value = ''; stAdd('t', t.slice(0, 60)); } break; }
+      case 'stadde': stAdd('e', b.dataset.e); break;
+      case 'stcolor': { const it = S.storyDraft?.items[S.storyDraft.sel]; if (it) { it.c = b.dataset.c; render(); } break; }
+      case 'stbg': { const it = S.storyDraft?.items[S.storyDraft.sel]; if (it) { it.bg = !it.bg; render(); } break; }
+      case 'stsize': { const it = S.storyDraft?.items[S.storyDraft.sel]; if (it) { it.s = Math.max(4, Math.min(40, it.s + Number(b.dataset.d) * (it.k === 'e' ? 3 : 1.5))); render(); } break; }
+      case 'stdel': { const d = S.storyDraft; if (d && d.sel >= 0) { d.items.splice(d.sel, 1); d.sel = -1; render(); } break; }
+      case 'streact': { clearTimeout(storyTimer); await storyReply(id, `Реакция на вашу историю: ${b.dataset.e}`); storyStep(1); break; }
       case 'storyclose': clearTimeout(storyTimer); S.story = null; render(); break;
       case 'storydel': {
         if (!twoStep('story:' + id)) { clearTimeout(storyTimer); return; }
@@ -6322,7 +6408,7 @@ async function sendMessage(to, text, image = '', extra = {}) {
   if (image) msg.image = image;
   if (S.replyTo && S.chatWith === to) { msg.replyTo = S.replyTo; S.replyTo = null; }
   bt.set(doc(collection(db, 'chats', cid, 'messages')), msg);
-  const last = { lastText: (text || (extra.audio ? '🎤 Голосовое' : extra.fwd ? '↪ Пересланное сообщение' : '📷 Фото')).slice(0, 200), lastFrom: me, lastAt: serverTimestamp(), read: { [me]: serverTimestamp() } };
+  const last = { lastText: (text || (extra.audio ? (extra.audio.startsWith('data:video/') ? '🎥 Видеокружок' : '🎤 Голосовое') : extra.fwd ? '↪ Пересланное сообщение' : '📷 Фото')).slice(0, 200), lastFrom: me, lastAt: serverTimestamp(), read: { [me]: serverTimestamp() } };
   bt.set(doc(db, 'chats', cid), isRoom(to) ? last : { members: [me, to].sort(), ...last }, { merge: true });
   await bt.commit();
   const box = app.querySelector('.msgs'); if (box) box.scrollTop = box.scrollHeight;
@@ -6371,31 +6457,119 @@ async function recStart() {
 }
 function recStop(send) { if (recorder && recorder.state !== 'inactive') { recSend = send; recorder.stop(); } }
 
-// Плеер голосовых живёт вне DOM, поэтому перерисовка страницы его не прерывает
-const players = new Map();
-function voiceHtml(m) {
-  const pl = players.get(m.id), playing = pl && !pl.paused;
-  const pct = pl && pl.duration && isFinite(pl.duration) ? pl.currentTime / pl.duration * 100 : 0;
-  return `<div class="voice"><button class="voice-btn" data-act="playvoice" data-id="${esc(m.id)}" aria-label="${playing ? 'Пауза' : 'Слушать'}">${playing ? I.pause : I.play}</button>
-    <div class="voice-bar"><i data-vbar="${esc(m.id)}" style="width:${pct}%"></i></div><span class="small tnum" data-vtime="${esc(m.id)}">${fmtDur(pl && pct ? pl.currentTime : m.dur)}</span></div>`;
+// Плеер голосовых живёт вне DOM, поэтому перерисовка страницы его не прерывает.
+// 8.0: волна (считается из самой записи), скорость 1× / 1,5× / 2× для всех голосовых, продолжение с того места, где остановились (vs_vpos)
+const players = new Map(), voicePeaks = new Map(), VOICE_BARS = 36;
+const vSpeed = () => [1, 1.5, 2].includes(Number(lsGet('vs_vspeed'))) ? Number(lsGet('vs_vspeed')) : 1;
+const vPosAll = () => { try { return JSON.parse(lsGet('vs_vpos') || '{}') || {}; } catch (e) { return {}; } };
+function vPosSave(id, t) { const all = vPosAll(); if (t > 1) all[id] = Math.round(t * 10) / 10; else delete all[id]; const k = Object.keys(all); if (k.length > 60) delete all[k[0]]; lsSet('vs_vpos', JSON.stringify(all)); }
+let peakAC = null;
+function voiceWave(m) {
+  if (voicePeaks.has(m.id)) return;
+  voicePeaks.set(m.id, null);
+  setTimeout(async () => {
+    try {
+      const buf = await (await fetch(m.audio)).arrayBuffer();
+      peakAC ||= new (window.OfflineAudioContext || window.webkitOfflineAudioContext)(1, 2, 8000);
+      const ab = await peakAC.decodeAudioData(buf), d = ab.getChannelData(0), step = Math.max(1, Math.floor(d.length / VOICE_BARS)), out = [];
+      for (let b = 0; b < VOICE_BARS; b++) { let sum = 0, n = 0; for (let i = b * step, e = Math.min(d.length, i + step); i < e; i += 4) { sum += d[i] * d[i]; n++; } out.push(Math.sqrt(sum / (n || 1))); }   // громкость (RMS) кусочка
+      const top = Math.max(...out) || 1; voicePeaks.set(m.id, out.map(x => Math.max(0.12, x / top)));
+    } catch (e) { voicePeaks.set(m.id, Array.from({ length: VOICE_BARS }, (_, i) => 0.3 + 0.5 * Math.abs(Math.sin(i * 1.7 + m.id.length)))); }
+    document.querySelectorAll(`[data-vw="${CSS.escape(m.id)}"]`).forEach(el => { el.outerHTML = voiceWaveHtml(m); });
+  }, 30);
 }
-function playVoice(m) {
+const voiceWaveHtml = m => {
+  const pk = voicePeaks.get(m.id) || Array(VOICE_BARS).fill(0.18), pl = players.get(m.id);
+  const pct = pl && pl.duration && isFinite(pl.duration) ? pl.currentTime / pl.duration * 100 : (vPosAll()[m.id] || 0) / (m.dur || 1) * 100;
+  const bars = pk.map(h => `<i style="height:${Math.round(h * 100)}%"></i>`).join('');
+  return `<div class="voice-wave" data-vw="${esc(m.id)}" data-act="vseek" data-id="${esc(m.id)}"><span class="vw-base">${bars}</span><span class="vw-fill" data-vbar="${esc(m.id)}" style="clip-path:inset(0 ${100 - Math.min(100, pct)}% 0 0)">${bars}</span></div>`;
+};
+function voiceHtml(m) {
+  const pl = players.get(m.id), playing = pl && !pl.paused; voiceWave(m);
+  return `<div class="voice"><button class="voice-btn" data-act="playvoice" data-id="${esc(m.id)}" aria-label="${playing ? 'Пауза' : 'Слушать'}">${playing ? I.pause : I.play}</button>
+    ${voiceWaveHtml(m)}<span class="voice-side"><span class="small tnum" data-vtime="${esc(m.id)}">${fmtDur(pl && pl.currentTime ? pl.currentTime : m.dur)}</span>
+    <button class="voice-sp" data-act="vspeed" aria-label="Скорость">${String(vSpeed()).replace('.', ',')}×</button></span></div>`;
+}
+function playVoice(m, at = null) {
   let pl = players.get(m.id);
   if (!pl) {
     pl = new Audio(m.audio); players.set(m.id, pl);
     const sync = () => {
-      const bar = document.querySelector(`[data-vbar="${m.id}"]`), t = document.querySelector(`[data-vtime="${m.id}"]`);
+      const bar = document.querySelector(`[data-vbar="${CSS.escape(m.id)}"]`), t = document.querySelector(`[data-vtime="${CSS.escape(m.id)}"]`);
       const d = isFinite(pl.duration) && pl.duration ? pl.duration : m.dur;
-      if (bar) bar.style.width = (pl.currentTime / d * 100) + '%';
+      if (bar) bar.style.clipPath = `inset(0 ${100 - Math.min(100, pl.currentTime / d * 100)}% 0 0)`;
       if (t) t.textContent = fmtDur(pl.currentTime || m.dur);
     };
-    pl.ontimeupdate = sync;
-    pl.onplay = pl.onpause = render;
-    pl.onended = () => { pl.currentTime = 0; render(); };
+    pl.ontimeupdate = () => { sync(); if (Math.floor(pl.currentTime) % 2 === 0) vPosSave(m.id, pl.currentTime); };
+    pl.onplay = pl.onpause = () => { if (pl.paused) vPosSave(m.id, pl.currentTime); render(); };
+    pl.onended = () => { vPosSave(m.id, 0); pl.currentTime = 0; render(); };
     pl.onerror = () => toast('Не получилось воспроизвести запись в этом браузере');
+    const saved = vPosAll()[m.id]; if (saved && at === null) pl.currentTime = saved;
   }
+  pl.playbackRate = vSpeed();
   players.forEach((p, id) => { if (id !== m.id && !p.paused) p.pause(); });
+  if (at !== null) { const d = isFinite(pl.duration) && pl.duration ? pl.duration : m.dur; pl.currentTime = Math.max(0, Math.min(d - 0.2, at * d)); if (pl.paused) pl.play().catch(console.error); return; }
   if (pl.paused) pl.play().catch(e => console.error(e)); else pl.pause();
+}
+
+/* 8.0: видеокружки — до 20 секунд с фронтальной камеры, хранятся в самом сообщении (data:video, как голосовые) */
+const VNOTE_MAX = 20, VNOTE_BYTES = 510000;
+let VN = null;   // {stream, rec, chunks, started, to, timer, send}
+const vnoteEls = new Map();   // элементы <video> кружков переживают перерисовку (вынимаем и возвращаем, как видео эфира)
+async function vnoteOpen() {
+  if (VN) return;
+  if (!navigator.mediaDevices?.getUserMedia || !window.MediaRecorder) { toast('Этот браузер не умеет записывать видео'); return; }
+  let stream;
+  try { stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user', width: { ideal: 320 }, height: { ideal: 320 }, frameRate: { ideal: 24 } }, audio: { echoCancellation: true, noiseSuppression: true } }); }
+  catch (e) { toast('Нет доступа к камере или микрофону — разрешите их в браузере'); return; }
+  VN = { stream, to: S.chatWith, rec: null, chunks: [], started: 0, timer: 0, send: false };
+  const box = document.getElementById('vnoteBox') || document.body.appendChild(Object.assign(document.createElement('div'), { id: 'vnoteBox' }));
+  box.className = 'vnote-ov';
+  box.innerHTML = `<div class="vnote-rec"><video id="vnPrev" autoplay playsinline muted></video><svg class="vn-ring" viewBox="0 0 100 100"><circle cx="50" cy="50" r="48"/></svg></div>
+    <b id="vnTime" class="tnum">0:00</b><span class="small">Видеокружок до ${VNOTE_MAX} секунд</span>
+    <div class="row" style="gap:12px"><button class="btn ghost light" data-act="vnotex">Отмена</button><button class="btn" id="vnGo" data-act="vnotego">● Записать</button></div>`;
+  const v = document.getElementById('vnPrev'); v.srcObject = stream; v.play().catch(() => { });
+}
+function vnoteGo() {
+  if (!VN) return;
+  if (VN.rec) { vnoteClose(true); return; }
+  const type = ['video/webm;codecs=vp8,opus', 'video/webm', 'video/mp4'].find(t => MediaRecorder.isTypeSupported?.(t)) || '';
+  VN.rec = new MediaRecorder(VN.stream, { ...(type ? { mimeType: type } : {}), videoBitsPerSecond: 150000, audioBitsPerSecond: 32000 });
+  VN.rec.ondataavailable = e => { if (e.data.size) VN?.chunks.push(e.data); };
+  const me = VN; VN.rec.onstop = () => vnoteDone(me);
+  VN.rec.start(500); VN.started = Date.now();
+  document.getElementById('vnoteBox')?.classList.add('rec');
+  const go = document.getElementById('vnGo'); if (go) go.textContent = '■ Отправить';
+  VN.timer = setInterval(() => {
+    const s = (Date.now() - me.started) / 1000, el = document.getElementById('vnTime'); if (el) el.textContent = fmtDur(s);
+    document.querySelector('.vn-ring circle')?.style.setProperty('stroke-dashoffset', String(302 * (1 - Math.min(1, s / VNOTE_MAX))));
+    if (s >= VNOTE_MAX) vnoteClose(true);
+  }, 200);
+}
+function vnoteClose(send) {
+  const me = VN; if (!me) return; me.send = send; clearInterval(me.timer);
+  if (me.rec && me.rec.state !== 'inactive') me.rec.stop(); else vnoteDone(me);
+}
+async function vnoteDone(me) {
+  me.stream.getTracks().forEach(t => t.stop()); if (VN === me) VN = null;
+  const box = document.getElementById('vnoteBox'); if (box) { box.innerHTML = ''; box.className = ''; }
+  if (!me.send || !me.rec) return;
+  const dur = Math.min(VNOTE_MAX, (Date.now() - me.started) / 1000);
+  if (dur < 1) { toast('Слишком коротко'); return; }
+  const blob = new Blob(me.chunks, { type: me.rec.mimeType || 'video/webm' });
+  if (blob.size > VNOTE_BYTES) { toast('Кружок получился слишком большим — попробуйте короче'); return; }
+  const url = await new Promise(res => { const r = new FileReader(); r.onload = () => res(String(r.result)); r.readAsDataURL(blob); });
+  try { await sendMessage(me.to, '', '', { audio: url.replace(/^data:[^;,]*/, 'data:' + (blob.type.split(';')[0] || 'video/webm')), dur: Math.round(dur * 10) / 10 }); }
+  catch (e) { console.error(e); toast(errText(e)); }
+}
+const vnoteHtml = m => `<span class="vnote" data-vnote="${esc(m.id)}" data-act="vnoteplay" data-id="${esc(m.id)}"><span class="vnote-dur small tnum">${fmtDur(m.dur)}</span></span>`;
+function vnoteMount() {   // после render(): вставляем живые <video> на место заготовок
+  document.querySelectorAll('[data-vnote]').forEach(ph => {
+    const id = ph.dataset.vnote, m = cache.messages.find(x => x.id === id); if (!m) return;
+    let v = vnoteEls.get(id);
+    if (!v) { v = document.createElement('video'); v.src = m.audio; v.playsInline = true; v.muted = true; v.loop = true; v.preload = 'metadata'; v.className = 'vnote-v'; vnoteEls.set(id, v); v.play().catch(() => { }); }
+    if (v.parentNode !== ph) ph.prepend(v);
+  });
 }
 
 /* Дружба: заявка → принять / отклонить */
@@ -6440,6 +6614,7 @@ async function openLightbox(i) {
   catch (e) { console.error(e); }
 }
 document.addEventListener('keydown', e => {
+  if (S.story && e.target.matches?.('input')) { if (e.key === 'Escape') { clearTimeout(storyTimer); S.story = null; render(); } return; }
   if (S.story) { if (e.key === 'Escape') { clearTimeout(storyTimer); S.story = null; render(); } else if (e.key === 'ArrowRight') storyStep(1); else if (e.key === 'ArrowLeft') storyStep(-1); return; }
   if (e.key === 'Escape' && S.trackForm) { S.trackForm = null; render(); return; }
   if (e.key === 'Escape' && S.vcmt) { closeVcmt(); return; }
@@ -6498,7 +6673,7 @@ document.getElementById('filePick').addEventListener('change', async e => {
     else if (pickTarget === 'evcover') { S.evCover = await compress(f, 1280, 420000); render(); }
     else if (pickTarget === 'lot') { S.lotImage = await compress(f, 1080, 420000); render(); }
     else if (pickTarget === 'music') { if (files.length > 1) await uploadTracksBatch(files.slice(0, 30)); else await uploadTrack(f); }
-    else if (pickTarget === 'story') { S.storyDraft = { image: await compress(f, 1080, 420000) }; render(); document.getElementById('stText')?.focus(); }
+    else if (pickTarget === 'story') { S.storyDraft = { image: await compress(f, 1080, 420000), items: [], sel: -1 }; render(); }
     else if (pickTarget === 'gphoto') { S.editGroupPhoto = await compress(f, 256, MAX_AVATAR, true); render(); }
     else if (pickTarget === 'msgphoto') {
       if (!S.chatWith || S.busy) return;
@@ -6609,6 +6784,12 @@ document.addEventListener('submit', async e => {
           lsSet('vs_draft', ''); ['postText', 'pollQ', 'pollO0', 'pollO1', 'pollO2', 'pollO3', 'pollO4', 'pollO5'].forEach(clear); S.compose = false; toast('Опубликовано');
         } catch (err) { toast(err.message === 'too-big' ? 'Фото слишком большое даже после сжатия' : errText(err)); }
         finally { S.busy = false; render(); }
+        break;
+      }
+      case 'storyreply': {
+        const text = v('stReply'); if (!text) return;
+        clear('stReply'); clearTimeout(storyTimer);
+        await storyReply(f.dataset.id, `↩ Ответ на вашу историю: ${text}`.slice(0, 2000)); storyStep(1);
         break;
       }
       case 'vcomment': {
