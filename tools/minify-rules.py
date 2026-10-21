@@ -73,14 +73,6 @@ adm = re.search(r'function (\w+)\(\)\{return \w+\(' + me + r'\(\)\)\.get\(\'admi
 first = r'(ro\(\)|rd\(\)\.\w+==' + me + r'\(\)|get\([^()]*\([^()]*\)\)\.data\.\w+==' + me + r'\(\))'
 text = re.sub(r':if ' + signed + r'\(\)&&(?=\(' + first + r'\|\||' + first + r'(&&|;))', ':if ', text)
 if adm: text = re.sub(r':if ' + signed + r'\(\)&&(?=' + adm.group(1) + r'\(\)(&&|;))', ':if ', text)
-# несколько allow одного вида подряд → одно условие через || (разрешено, если подходит любое — как и раньше)
-def merge_allows(t):
-    pat = re.compile(r'allow ([a-z, ]+):if ([^;]*);(?:allow \1:if [^;]*;)+')
-    def one(m):
-        conds = re.findall(r'allow ' + re.escape(m.group(1)) + r':if ([^;]*);', m.group(0))
-        return 'allow ' + m.group(1) + ':if ' + '||'.join('(' + c + ')' for c in conds) + ';'
-    return pat.sub(one, t)
-text = merge_allows(text)
 text = text.rstrip('\n') + '\n'
 (root / 'firestore.min.rules').write_text(text, encoding='utf-8')
 print(f'{len(src)} → {len(text)} символов, {text.count(chr(10))} строк')
