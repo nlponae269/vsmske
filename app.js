@@ -12,7 +12,7 @@ import {
 import {
   getFirestore, doc, collection, query, where, orderBy, limit, limitToLast,
   getDoc, getDocs, addDoc, setDoc, updateDoc, deleteDoc, onSnapshot, writeBatch,
-  serverTimestamp, arrayUnion, arrayRemove, increment, deleteField, startAfter
+  serverTimestamp, arrayUnion, arrayRemove, increment, deleteField, startAfter, getCountFromServer
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
 const firebaseConfig = {
@@ -334,6 +334,7 @@ function errBox(e) {
 const ic = (w, body) => `<svg width="${w}" height="${w}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">${body}</svg>`;
 const du = d => `<path d="${d}" fill="currentColor" fill-opacity=".2" stroke="none"/>`;   // заливка-подложка
 const I = {
+  phone: ic(20, '<path d="M5 3.5h3.2l1.6 4.2-2.2 1.5a11 11 0 0 0 7.2 7.2l1.5-2.2 4.2 1.6V19a1.8 1.8 0 0 1-1.9 1.8A16.6 16.6 0 0 1 3.2 5.4 1.8 1.8 0 0 1 5 3.5z"/>'),
   pen: ic(24, '<path d="M4 20h4L19 9a2.8 2.8 0 0 0-4-4L4 16z"/><path d="M13.5 6.5l4 4"/>'),
   video: ic(20, du('M5.5 5h13a3 3 0 0 1 3 3v8a3 3 0 0 1-3 3h-13a3 3 0 0 1-3-3V8a3 3 0 0 1 3-3z') + '<path d="M5.5 5h13a3 3 0 0 1 3 3v8a3 3 0 0 1-3 3h-13a3 3 0 0 1-3-3V8a3 3 0 0 1 3-3z"/><path d="M10.2 9.2v5.6l4.8-2.8z" fill="currentColor"/>'),
   album: ic(20, '<path d="M7 3.5h11a2.5 2.5 0 0 1 2.5 2.5v11"/>' + du('M5 6.5h10a2.5 2.5 0 0 1 2.5 2.5v10a2.5 2.5 0 0 1-2.5 2.5H5A2.5 2.5 0 0 1 2.5 19V9A2.5 2.5 0 0 1 5 6.5z') + '<rect x="2.5" y="6.5" width="15" height="15" rx="2.5"/><path d="M2.8 18l4.2-4 3 3 2.5-2.2 4.8 4.4"/><circle cx="12.5" cy="10.8" r="1.2"/>'),
@@ -648,7 +649,7 @@ function startSession() {
   }, console.error));
   globalUnsubs.push(onSnapshot(query(collection(db, 'notifs'), where('to', '==', id), limit(NOTIF_KEEP + 50)), s => {
     cache.notifs = s.docs.map(data).sort((a, b) => ms(b.createdAt) - ms(a.createdAt));
-    ensureUsers(cache.notifs.map(n => n.from));
+    ensureUsers(cache.notifs.map(n => n.from)); callCheck();
     if (S.view === 'notif' && unseenNotifs()) updateDoc(doc(db, 'users', id), { notifSeenAt: serverTimestamp() }).catch(console.error);
     render();
     // старые уведомления удаляем, чтобы коллекция не росла
@@ -664,6 +665,7 @@ function startSession() {
 function route() {
   if (S.phase !== 'app') return;
   S.drawer = false; S.compose = false; clipsStop(); clearInterval(vNextTimer);
+  if (S.vcmt) { vcmtUnsub?.(); vcmtUnsub = null; S.vcmt = null; }
   // «Что нового» — один раз после обновления и только тем, кто был с нами до 7.0 (новичкам не мешаем)
   if (!S.wnChecked && S.me) { S.wnChecked = true; if (lsGet('vs_seen_ver') !== WN_VER && Date.now() - ms(S.me.createdAt) > 864e5) S.whatsNew = true; else lsSet('vs_seen_ver', WN_VER); }
   const [v, arg] = (curRoute() || 'feed').split('/');
@@ -838,6 +840,8 @@ function attachView() {
       const v = cache.video;
       if (!v.missing) {
         ensureUsers([v.ownerId]);
+        if (!viewedVids.has(wid)) setTimeout(() => { if (S.view === 'watch' && S.watchId === wid) countView(cache.video); }, 3000);
+        if (!(wid in cmtCount)) getCountFromServer(collection(db, 'videos', wid, 'comments')).then(c => { cmtCount[wid] = c.data().count; render(); }).catch(() => { });
         if (v.source === 'file' && !S.videoSrc && !S.videoErr && !S.videoLoading) {
           S.videoLoading = true;
           getFileUrl(v.fileId, v.type || 'video/mp4')
@@ -886,7 +890,7 @@ function attachView() {
       viewUnsubs.push(onSnapshot(doc(db, 'streams', S.liveId), s => { cache.stream = s.exists() ? data(s) : { id: S.liveId, missing: true }; if (s.exists()) ensureUsers([cache.stream.ownerId]); S.loading = false; liveOnStream(); render(); liveAttach(); }, onViewErr));
     } else {
       cache.streams = [];
-      viewUnsubs.push(onSnapshot(query(collection(db, 'streams'), where('live', '==', true), limit(30)), s => { cache.streams = s.docs.map(data); ensureUsers(cache.streams.map(x => x.ownerId)); liveCleanStale(); S.loading = false; render(); }, onViewErr));
+      viewUnsubs.push(onSnapshot(query(collection(db, 'streams'), where('live', '==', true), limit(30)), s => { cache.streams = s.docs.map(data).filter(x => x.mode !== 'call'); ensureUsers(cache.streams.map(x => x.ownerId)); liveCleanStale(); S.loading = false; render(); }, onViewErr));
     }
   } else if (S.view === 'rates') {
     S.loading = false; if (!S.rates?.v) loadRates();
@@ -1692,6 +1696,7 @@ function overlay() {
   if (S.recap) return recapOverlay();
   if (S.keys) return keysOverlay();
   if (S.whatsNew) return whatsNewModal();
+  if (S.vcmt) return vcmtSheet();
   if (S.liveForm) return liveFormModal();
   if (S.liveRec) return liveRecModal();
   if (S.plPick || S.plForm) return playlistModal();
@@ -1786,7 +1791,7 @@ function videoCard(v, wide = false) {
       ${v.duration ? `<span class="vdur tnum">${fmtDur(v.duration)}</span>` : v.source === 'link' ? `<span class="vdur">${provName(v)}</span>` : ''}
       <span class="vplay" aria-hidden="true">${I.play}</span></div>
     <div class="vmeta">${o ? avatar(o, 32, false) : ''}<span class="vmeta-t"><b>${esc(v.title || 'Без названия')}</b>
-      <span class="muted small">${esc(o?.name || '')}${o ? ' · ' : ''}${ago(v.createdAt)}${likes ? ` · ♥ ${likes}` : ''}</span></span></div>
+      <span class="muted small">${esc(o?.name || '')}${o ? ' · ' : ''}${ago(v.createdAt)}${v.views ? ` · ${fmtViews(v.views)} просм.` : ''}${likes ? ` · ♥ ${likes}` : ''}</span></span></div>
   </a>`;
 }
 const clipCard = v => { const th = videoThumb(v), o = U(v.ownerId);
@@ -1847,10 +1852,11 @@ function watchInfo() {
   const long = (v.description || '').length > 180, open = S.vdescOpen === v.id;
   return `<div class="card pad watch-info" id="watchInfo">
     <h1 class="h watch-title">${esc(v.title || 'Без названия')}</h1>
-    <div class="row watch-by">${avatar(o, 44)}<div class="grow" style="min-width:0">${nameLink(o)}<div class="muted small">${ago(v.createdAt)}${v.source === 'link' ? ' · ' + provName(v) : ''}</div></div>
+    <div class="row watch-by">${avatar(o, 44)}<div class="grow" style="min-width:0">${nameLink(o)}<div class="muted small">${ago(v.createdAt)}${v.views ? ' · ' + fmtViews(v.views) + ' ' + plural(v.views, 'просмотр', 'просмотра', 'просмотров') : ''}${v.source === 'link' ? ' · ' + provName(v) : ''}</div></div>
       <a class="btn ghost small" href="#videos/${esc(v.ownerId)}">Все видео</a></div>
     <div class="row watch-acts">
       <button class="pill ${liked ? 'liked' : ''}" data-act="likevideo" data-id="${esc(v.id)}" aria-pressed="${liked}">${liked ? I.heart : I.heartO}${likes.length || ''}</button>
+      <button class="pill" data-act="vcmt" data-id="${esc(v.id)}">${I.comment}Комментарии${cmtCount[v.id] ? ' ' + cmtCount[v.id] : ''}</button>
       <a class="pill" href="#clips/${esc(v.id)}">${I.play}Как клип</a>
       <button class="pill" data-act="copylink" data-id="${esc(v.id)}">${I.link}Ссылка</button>
       <span class="grow"></span>
@@ -1881,7 +1887,7 @@ document.addEventListener('ended', e => {
 /* ---------- ВС Клипы (7.0): вертикальная лента роликов — листается свайпом, играет по кругу, двойной тап — «нравится» ----------
    Страница рисуется один раз за заход: обновления сайта её не перерисовывают (иначе ролик начинался бы заново), всё меняется точечно. */
 const CLIP_PAGE = 16;
-let clipObs = null, clipTapT = 0, clipTapTimer = 0;
+let clipObs = null, clipTapT = 0, clipTapTimer = 0, clipViewT = 0;
 const clipsKey = () => S.clipsReady ? 'ready' : 'wait';
 let clipsOvHtml = '';
 async function loadClips(startId) {
@@ -1910,9 +1916,10 @@ function clipHtml(v, i) {
     <div class="clip-media" data-act="cliptap" data-id="${esc(v.id)}">${th ? `<img class="clip-poster" src="${esc(th)}" alt="" referrerpolicy="no-referrer">` : ''}</div>
     <div class="clip-paused" aria-hidden="true">${I.play}</div>
     <div class="clip-info"><a class="clip-author" href="#id/${esc(v.ownerId)}">${avatar(o, 38, false)}<b>${esc(o?.name || '')}</b></a>
-      <div class="clip-title">${esc(v.title || '')}</div>${v.description ? `<div class="clip-desc">${esc(v.description)}</div>` : ''}</div>
+      <div class="clip-title">${esc(v.title || '')}${v.views ? `<span class="clip-views">${I.eye}${fmtViews(v.views)}</span>` : ''}</div>${v.description ? `<div class="clip-desc">${esc(v.description)}</div>` : ''}</div>
     <div class="clip-side">
       <button class="clip-btn ${liked ? 'on' : ''}" data-act="cliplike" data-id="${esc(v.id)}" aria-label="Нравится" aria-pressed="${liked}"><span class="clip-ic">${liked ? I.heart : I.heartO}</span><span class="clip-n">${likes.length || ''}</span></button>
+      <button class="clip-btn" data-act="clipcmt" data-id="${esc(v.id)}" aria-label="Комментарии"><span class="clip-ic">${I.comment}</span><span class="clip-n">${cmtCount[v.id] ?? ''}</span></button>
       <a class="clip-btn" href="#video/${esc(v.id)}" aria-label="Открыть ролик"><span class="clip-ic">${I.video}</span><span class="clip-n">Открыть</span></a>
       <button class="clip-btn" data-act="clipshare" data-id="${esc(v.id)}" aria-label="Скопировать ссылку"><span class="clip-ic">${I.link}</span><span class="clip-n">Ссылка</span></button>
     </div>
@@ -1957,6 +1964,8 @@ async function clipActivate(i) {
   if (curRoute() !== 'clips/' + v.id) history.replaceState(null, '', BASE + 'clips/' + v.id);
   document.querySelectorAll('#clipsFeed .clip').forEach(el => { const k = +el.dataset.i; if (k !== i) clipPause(el, Math.abs(k - i) > 2); });
   const el = document.querySelector(`#clipsFeed .clip[data-i="${i}"]`); if (el) { el.classList.add('on'); clipPlay(el, v); }
+  clearTimeout(clipViewT); clipViewT = setTimeout(() => { if (S.view === 'clips' && S.clipIdx === i) countView(v); }, 2000);   // просмотр — после 2 секунд
+  if (!(v.id in cmtCount)) getCountFromServer(collection(db, 'videos', v.id, 'comments')).then(c => { cmtCount[v.id] = c.data().count; clipCmtUi(v.id); }).catch(() => { });
   const nx = list[i + 1]; if (nx?.source === 'file') getFileUrl(nx.fileId, nx.type || 'video/mp4').catch(() => { });   // следующий качаем заранее
   if (i >= list.length - 3 && !cache.clipsDone) { const add = await loadClips(); if (add.length) clipsAppend(add); }
 }
@@ -2024,6 +2033,37 @@ async function clipLike(id, onlyAdd) {
   });
   try { await updateDoc(doc(db, 'videos', id), { likes: has ? arrayRemove(me) : arrayUnion(me) }); }
   catch (e) { toast(errText(e)); }
+}
+/* 8.0: комментарии к видео и клипам (videos/{id}/comments) и просмотры (videos.views, только +1, раз за заход) */
+const cmtCount = {}, viewedVids = new Set();
+let vcmtUnsub = null;
+const fmtViews = n => n >= 1e6 ? (n / 1e6).toFixed(1).replace('.0', '') + ' млн' : n >= 1e4 ? Math.round(n / 1e3) + ' тыс.' : String(n);
+function countView(v) {
+  if (!v || viewedVids.has(v.id)) return; viewedVids.add(v.id);
+  updateDoc(doc(db, 'videos', v.id), { views: increment(1) }).then(() => { v.views = (v.views || 0) + 1; }).catch(() => { });
+}
+function clipCmtUi(id) { document.querySelectorAll(`#clipsFeed .clip[data-id="${CSS.escape(id)}"] [data-act=clipcmt] .clip-n`).forEach(n => { n.textContent = cmtCount[id] || ''; }); }
+function openVcmt(id) {
+  vcmtUnsub?.(); S.vcmt = { id, list: null };
+  vcmtUnsub = onSnapshot(query(collection(db, 'videos', id, 'comments'), orderBy('createdAt', 'desc'), limit(100)), s => {
+    if (S.vcmt?.id !== id) return;
+    S.vcmt.list = s.docs.map(data); cmtCount[id] = s.size; clipCmtUi(id);
+    ensureUsers(S.vcmt.list.map(c => c.authorId)); render();
+  }, e => { console.error(e); if (S.vcmt?.id === id) { S.vcmt.list = []; render(); } });
+  render(); setTimeout(() => document.getElementById('vcIn')?.focus({ preventScroll: true }), 80);
+}
+function closeVcmt() { vcmtUnsub?.(); vcmtUnsub = null; S.vcmt = null; render(); }
+function vcmtSheet() {
+  const c = S.vcmt, me = S.me, v = (cache.clips || []).find(x => x.id === c.id) || (cache.video?.id === c.id ? cache.video : null);
+  const canDel = cm => cm.authorId === me.id || v?.ownerId === me.id || isSiteAdmin();
+  return `<div class="ov vc-ov" data-act="vcclose"><div class="vc-sheet" data-stop="1" role="dialog" aria-label="Комментарии">
+    <div class="vc-head"><b>Комментарии${c.list?.length ? ` <span class="muted">${c.list.length}</span>` : ''}</b><button class="icon-btn" data-act="vcclose" aria-label="Закрыть">✕</button></div>
+    <div class="vc-list">${!c.list ? '<div class="muted small" style="padding:16px">Загружаем…</div>' : !c.list.length ? '<div class="empty"><b>Пока тихо</b><span>Напишите первым</span></div>'
+      : c.list.map(cm => { const a = U(cm.authorId); if (!a || iBlocked(cm.authorId)) return '';
+        return `<div class="comment">${avatar(a, 32)}<div class="bubble">${nameLink(a)} <span class="post-text">${linkify(cm.text)}</span>
+          <div class="muted small">${ago(cm.createdAt)}${canDel(cm) ? ` · <button class="btn ghost small" style="padding:0 4px" data-act="vcdel" data-id="${esc(cm.id)}">удалить</button>` : ''}</div></div></div>`; }).join('')}</div>
+    ${banOf(me) ? '' : `<form class="cform vc-form" data-form="vcomment">${avatar(me, 32, false)}<input id="vcIn" placeholder="Комментарий…" maxlength="1000" autocomplete="off"><button class="icon-btn" aria-label="Отправить">${I.send}</button></form>`}
+  </div></div>`;
 }
 function clipStep(d) {
   const feed = document.getElementById('clipsFeed'); if (!feed) return;
@@ -4357,7 +4397,7 @@ async function livePublish() {
 }
 // плашка «в эфире сейчас» в ленте
 async function loadLiveNow() {
-  try { const s = await getDocs(query(collection(db, 'streams'), where('live', '==', true), limit(10))); cache.liveNow = s.docs.map(data).filter(liveFresh); ensureUsers(cache.liveNow.map(x => x.ownerId)); if (S.view === 'feed') render(); } catch (e) { }
+  try { const s = await getDocs(query(collection(db, 'streams'), where('live', '==', true), limit(10))); cache.liveNow = s.docs.map(data).filter(x => liveFresh(x) && x.mode !== 'call'); ensureUsers(cache.liveNow.map(x => x.ownerId)); if (S.view === 'feed') render(); } catch (e) { }
 }
 function liveNowCard() {
   const l = cache.liveNow || []; if (!l.length) return '';
@@ -4368,6 +4408,206 @@ async function liveCleanStale() {
   for (const s of cache.streams || []) if (s.ownerId === uid() && s.live && !liveFresh(s) && LIVE?.sid !== s.id) updateDoc(doc(db, 'streams', s.id), { live: false, endedAt: serverTimestamp() }).catch(() => { });
 }
 window.addEventListener('pagehide', () => { const L = LIVE; if (!L) return; nodeDel(L); if (L.host) updateDoc(doc(db, 'streams', L.sid), { live: false, endedAt: serverTimestamp() }).catch(() => { }); });
+
+/* ---------- 8.0: звонки один на один — голос и видео напрямую между двумя устройствами (WebRTC, как ВС Эфир) ----------
+   Звонок — запись streams с mode 'call' и to = кому звоним; позвать — уведомление type 'call' (postId = id звонка).
+   Тот, кому звонят, берёт трубку заявкой peers с offer (в ней его звук и видео), звонящий отвечает answer. «Отклонить» — заявка с offer 'no'.
+   По каналу данных: {t:'end'} — положили трубку, {t:'tog'} и {t:'mus'} — «Слушать вместе» (ведущий раз в 1,5 с шлёт трек и позицию).
+   Экран звонка живёт вне #app (#callBox) и не зависит от render() — звонок продолжается при переходах по сайту. */
+let CALL = null, ringT = 0, ringAC = null, togTimer = 0;
+const callSeen = new Set();
+const callBox = () => document.getElementById('callBox') || document.body.appendChild(Object.assign(document.createElement('div'), { id: 'callBox' }));
+const callMedia = video => navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true }, video: video ? { facingMode: 'user', width: { ideal: 640 }, height: { ideal: 480 } } : false });
+const callSend = m => { const dc = CALL?.dc; if (dc?.readyState === 'open') try { dc.send(JSON.stringify(m)); } catch (e) { } };
+function ringTone(on, kind = 'in') {
+  clearInterval(ringT); ringT = 0; if (!on) return;
+  const beep = () => {
+    try {
+      ringAC ||= new (window.AudioContext || window.webkitAudioContext)();
+      const o = ringAC.createOscillator(), g = ringAC.createGain(), t = ringAC.currentTime, len = kind === 'in' ? 0.9 : 1.2;
+      o.frequency.value = kind === 'in' ? 880 : 425; o.connect(g); g.connect(ringAC.destination);
+      g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(0.12, t + 0.03); g.gain.setValueAtTime(0.12, t + len); g.gain.linearRampToValueAtTime(0, t + len + 0.08);
+      o.start(t); o.stop(t + len + 0.1);
+    } catch (e) { }
+  };
+  beep(); ringT = setInterval(beep, kind === 'in' ? 2000 : 4000);
+}
+function callNew(o) {
+  return CALL = { local: null, remote: null, pc: null, dc: null, t0: 0, timers: [], unsubs: [], mic: true, cam: !!o.video, min: false, together: false, lead: false, ...o };
+}
+async function callStart(to, video) {
+  if (CALL) { toast('Вы уже в звонке'); return; }
+  if (LIVE) { toast('Сначала завершите эфир'); return; }
+  if (!liveCanCam()) { toast('Этот браузер не умеет звонки — попробуйте Chrome или Safari'); return; }
+  let local;
+  try { local = await callMedia(video); }
+  catch (e) { toast(e?.name === 'NotAllowedError' ? `Нет доступа к микрофону${video ? ' или камере' : ''} — разрешите его в браузере` : `Не получилось включить ${video ? 'камеру' : 'микрофон'}`); return; }
+  let ref;
+  try { ref = await addDoc(collection(db, 'streams'), { ownerId: uid(), title: video ? 'Видеозвонок' : 'Звонок', mode: 'call', to, live: true, beat: serverTimestamp(), createdAt: serverTimestamp(), endedAt: null }); }
+  catch (e) { local.getTracks().forEach(t => t.stop()); toast(errText(e)); return; }
+  const C = callNew({ sid: ref.id, host: true, peer: to, video, local, state: 'ring' });
+  notify(to, 'call', ref.id, video ? 'Видеозвонок' : 'Звонок');
+  C.unsubs.push(onSnapshot(query(collection(db, 'streams', ref.id, 'peers'), where('to', '==', uid())),
+    s => s.docChanges().forEach(ch => { if (ch.type === 'added') callAnswer(C, ch.doc); }), e => console.error(e)));
+  C.timers.push(setTimeout(() => { if (CALL === C && C.state === 'ring') callEnd('noanswer'); }, 45000));
+  C.timers.push(setInterval(() => updateDoc(doc(db, 'streams', C.sid), { beat: serverTimestamp() }).catch(() => { }), 60000));
+  ringTone(true, 'out'); liveWake(true); callDom();
+}
+async function callAnswer(C, snap) {
+  const p = snap.data(); if (!p || CALL !== C || p.uid !== C.peer || C.pc) return;   // трубку берёт только тот, кому звонили
+  if (p.offer === 'no') { callEnd('declined'); return; }
+  C.state = 'connecting'; ringTone(false); callDom();
+  const pc = C.pc = new RTCPeerConnection(ICE); callWire(C, pc);
+  pc.ondatachannel = e => callChannel(C, e.channel);
+  try {
+    await pc.setRemoteDescription({ type: 'offer', sdp: p.offer });
+    C.local.getTracks().forEach(t => pc.addTrack(t, C.local));
+    await pc.setLocalDescription(await pc.createAnswer()); await iceDone(pc);
+    await updateDoc(snap.ref, { answer: pc.localDescription.sdp });
+    C.timers.push(setTimeout(() => { if (CALL === C && C.state !== 'live') callEnd('failed'); }, 25000));
+  } catch (e) { console.error(e); callEnd('failed'); }
+}
+function callWire(C, pc) {
+  pc.ontrack = e => { C.remote ||= new MediaStream(); if (!C.remote.getTracks().includes(e.track)) C.remote.addTrack(e.track); callAttach(); };
+  pc.onconnectionstatechange = () => {
+    const st = pc.connectionState; if (CALL !== C) return;
+    if (st === 'connected' && C.state !== 'live') {
+      C.state = 'live'; C.t0 = Date.now(); callDom();
+      C.timers.push(setInterval(() => { const el = document.getElementById('callTime'); if (el) el.textContent = fmtDur((Date.now() - C.t0) / 1000); }, 1000));
+    } else if (st === 'failed') callEnd('failed');
+    else if (st === 'disconnected') setTimeout(() => { if (CALL === C && pc.connectionState !== 'connected') callEnd('lost'); }, 8000);
+  };
+}
+function callChannel(C, dc) {
+  C.dc = dc;
+  dc.onmessage = e => {
+    let m; try { m = JSON.parse(e.data); } catch (x) { return; }
+    if (CALL !== C) return;
+    if (m.t === 'end') callEnd('hangup', true);
+    else if (m.t === 'tog') { C.together = !!m.on; C.lead = false; clearInterval(togTimer); toast(m.on ? `🎧 ${(U(C.peer)?.name || 'Собеседник').split(' ')[0]} включает музыку для вас двоих` : '🎧 «Слушать вместе» выключено'); callDom(); }
+    else if (m.t === 'mus' && C.together && !C.lead) togetherRecv(C, m);
+  };
+}
+// входящий: уведомление type 'call' свежее 45 секунд, звонок ещё идёт и адресован мне
+function callCheck() {
+  for (const n of cache.notifs) {
+    if (n.type !== 'call' || n.from === uid() || callSeen.has(n.id)) continue;
+    callSeen.add(n.id);
+    if (Date.now() - ms(n.createdAt) < 45000) callIncoming(n);
+  }
+}
+async function callIncoming(n) {
+  if (CALL || LIVE?.host) return;   // занято — у звонящего будет «не отвечает»
+  let s = null; try { const d = await getDoc(doc(db, 'streams', n.postId)); s = d.exists() ? d.data() : null; } catch (e) { return; }
+  if (!s || !s.live || s.mode !== 'call' || s.to !== uid() || s.ownerId !== n.from || CALL) return;
+  ensureUsers([n.from]);
+  const C = callNew({ sid: n.postId, host: false, peer: n.from, video: s.title === 'Видеозвонок', nid: n.id, state: 'incoming', cam: false });
+  C.unsubs.push(onSnapshot(doc(db, 'streams', C.sid), d => { const x = d.data(); if (CALL === C && (!x || !x.live)) callEnd(C.state === 'live' ? 'hangup' : 'cancelled', true); }, () => { }));
+  C.timers.push(setTimeout(() => { if (CALL === C && C.state === 'incoming') callEnd('missed', true); }, 45000));
+  ringTone(true, 'in'); try { navigator.vibrate?.([500, 300, 500, 300, 500]); } catch (e) { }
+  if (document.hidden && 'Notification' in window && Notification.permission === 'granted') try { new Notification(`${U(n.from)?.name || 'Вам'} звонит`, { body: C.video ? 'Видеозвонок в VСмске' : 'Звонок в VСмске', tag: 'call' + C.sid }); } catch (e) { }
+  callDom();
+}
+async function callPick() {
+  const C = CALL; if (!C || C.host || C.state !== 'incoming') return;
+  ringTone(false); C.state = 'connecting'; callDom(); unnotify(C.nid);
+  try { C.local = await callMedia(C.video); C.cam = C.video; }
+  catch (e) { toast(`Нет доступа к микрофону${C.video ? ' или камере' : ''} — разрешите его в браузере`); callDecline(); return; }
+  if (CALL !== C) { C.local.getTracks().forEach(t => t.stop()); return; }
+  const pc = C.pc = new RTCPeerConnection(ICE); callWire(C, pc);
+  callChannel(C, pc.createDataChannel('call'));
+  C.local.getTracks().forEach(t => pc.addTrack(t, C.local));
+  callAttach(); liveWake(true);
+  try {
+    await pc.setLocalDescription(await pc.createOffer()); await iceDone(pc);
+    const ref = C.peerRef = await addDoc(collection(db, 'streams', C.sid, 'peers'), { uid: uid(), to: C.peer, offer: pc.localDescription.sdp, createdAt: serverTimestamp() });
+    C.unsubs.push(onSnapshot(ref, s => { const p = s.data(); if (p?.answer && !pc.remoteDescription) pc.setRemoteDescription({ type: 'answer', sdp: p.answer }).catch(() => callEnd('failed')); }, () => { }));
+    C.timers.push(setTimeout(() => { if (CALL === C && C.state !== 'live') callEnd('failed'); }, 25000));
+  } catch (e) { console.error(e); callEnd('failed'); }
+}
+function callDecline() {
+  const C = CALL; if (!C || C.host) return;
+  addDoc(collection(db, 'streams', C.sid, 'peers'), { uid: uid(), to: C.peer, offer: 'no', createdAt: serverTimestamp() }).catch(() => { });
+  unnotify(C.nid); callEnd('', true);
+}
+async function callEnd(why, remote = false) {
+  const C = CALL; if (!C) return; CALL = null;
+  if (!remote) callSend({ t: 'end' });
+  ringTone(false); liveWake(false); clearInterval(togTimer);
+  C.timers.forEach(t => { clearTimeout(t); clearInterval(t); }); C.unsubs.forEach(u => { try { u(); } catch (e) { } });
+  setTimeout(() => { try { C.pc?.close(); } catch (e) { } }, 300);
+  C.local?.getTracks().forEach(t => t.stop());
+  const msg = { noanswer: 'Не отвечает', declined: 'Звонок отклонён', failed: 'Не получилось соединиться', lost: 'Связь пропала', hangup: 'Звонок завершён', cancelled: 'Звонок отменён', missed: 'Пропущенный звонок' }[why];
+  if (msg) toast('📞 ' + msg);
+  callDom();
+  const dur = C.t0 ? Math.round((Date.now() - C.t0) / 1000) : 0;
+  if (C.host) {
+    try {
+      await updateDoc(doc(db, 'streams', C.sid), { live: false, endedAt: serverTimestamp() });
+      const s = await getDocs(collection(db, 'streams', C.sid, 'peers')); if (s.size) { const b = writeBatch(db); s.docs.forEach(d => b.delete(d.ref)); await b.commit(); }
+    } catch (e) { }
+    sendMessage(C.peer, dur ? `📞 ${C.video ? 'Видеозвонок' : 'Звонок'} · ${fmtDur(dur)}` : `📞 ${why === 'declined' ? 'Звонок отклонён' : 'Пропущенный звонок'}`).catch(() => { });
+  } else if (C.peerRef) deleteDoc(C.peerRef).catch(() => { });
+}
+window.addEventListener('pagehide', () => { const C = CALL; if (!C) return; callSend({ t: 'end' }); if (C.host) updateDoc(doc(db, 'streams', C.sid), { live: false, endedAt: serverTimestamp() }).catch(() => { }); });
+function callAttach() {
+  const C = CALL; if (!C) return;
+  const rv = document.getElementById('callRemote'); if (rv && C.remote && rv.srcObject !== C.remote) { rv.srcObject = C.remote; rv.play().catch(() => { }); }
+  const lv = document.getElementById('callLocal'); if (lv && C.local && lv.srcObject !== C.local) { lv.srcObject = C.local; lv.play().catch(() => { }); }
+}
+function callDom() {
+  const box = callBox(), C = CALL;
+  if (!C) { box.innerHTML = ''; box.className = ''; return; }
+  const u = U(C.peer), name = esc(u?.name || '…'), st = C.state;
+  const btn = (act, ic, label, cls = '') => `<button class="call-b ${cls}" data-act="${act}" aria-label="${label}" title="${label}"><span>${ic}</span><small>${label}</small></button>`;
+  box.className = `call ${st} ${C.min ? 'min' : ''} ${C.video ? 'video' : ''}`;
+  if (C.min) {
+    box.innerHTML = `<button class="call-pill" data-act="callmax" aria-label="Открыть звонок">${avatar(u, 30, false)}<span class="grow"><b>${name}</b><small id="callTime">${st === 'live' ? fmtDur((Date.now() - C.t0) / 1000) : 'Соединяем…'}</small></span></button>
+      <button class="call-b end sm" data-act="callhang" aria-label="Положить трубку"><span>${I.phone}</span></button>${C.video ? '' : '<audio id="callRemote" autoplay></audio>'}`;
+    if (C.video) box.insertAdjacentHTML('beforeend', '<video id="callRemote" autoplay playsinline hidden></video>');
+    callAttach(); return;
+  }
+  const label = { ring: 'Вызываем…', incoming: C.video ? 'Видеозвонок' : 'Звонок', connecting: 'Соединяем…' }[st] || '';
+  box.innerHTML = `<div class="call-in" role="dialog" aria-label="Звонок">
+    ${C.video ? `<video id="callRemote" class="call-remote" autoplay playsinline></video>` : '<audio id="callRemote" autoplay></audio>'}
+    <div class="call-who">${avatar(u, 104, false)}<b>${name}</b><span>${st === 'live' ? `<span id="callTime">${fmtDur((Date.now() - C.t0) / 1000)}</span>${C.together ? ' · 🎧 слушаем вместе' : ''}` : label}</span></div>
+    ${C.video && C.local ? '<video id="callLocal" class="call-local" autoplay playsinline muted></video>' : ''}
+    <div class="call-bar">${st === 'incoming'
+      ? btn('calldecline', I.phone, 'Отклонить', 'end') + btn('callpick', I.phone, 'Ответить', 'pick')
+      : btn('callmic', I.mic, C.mic ? 'Микрофон' : 'Без звука', C.mic ? '' : 'off')
+        + (C.video ? btn('callcam', I.video, C.cam ? 'Камера' : 'Камера выкл.', C.cam ? '' : 'off') : '')
+        + (st === 'live' ? btn('calltog', I.music, C.together ? 'Вместе' : 'Музыка', C.together ? 'on' : '') : '')
+        + btn('callmin', I.down, 'Свернуть') + btn('callhang', I.phone, 'Завершить', 'end')}</div>
+  </div>`;
+  callAttach();
+}
+// «Слушать вместе»: ведущий раз в 1,5 секунды отправляет, что играет; у второго включается тот же трек с той же секунды
+function togetherToggle() {
+  const C = CALL; if (!C || C.state !== 'live') return;
+  if (C.together && !C.lead) { C.lead = true; } else { C.together = !C.together; C.lead = C.together; }
+  callSend({ t: 'tog', on: C.together }); clearInterval(togTimer);
+  if (C.together) {
+    togTimer = setInterval(togetherSend, 1500); togetherSend();
+    toast(curTrack() ? `🎧 ${(U(C.peer)?.name || 'Собеседник').split(' ')[0]} слышит то же, что и вы` : '🎧 Включите трек в ВС Музыке — он заиграет у обоих');
+  }
+  callDom();
+}
+function togetherSend() {
+  const C = CALL, t = curTrack(); if (!C?.together || !C.lead) return;
+  callSend(!t || t.radio ? { t: 'mus', id: null } : { t: 'mus', id: t.id, pos: player.audio.currentTime || 0, paused: player.audio.paused });
+}
+async function togetherRecv(C, m) {
+  if (!m.id || typeof m.id !== 'string') return;
+  if (curTrack()?.id !== m.id) {
+    if (C.loading === m.id) return; C.loading = m.id;
+    if (!trackCache.get(m.id)) await tracksById([m.id]).catch(() => { });
+    const t = trackCache.get(m.id); C.loading = null; if (!t || CALL !== C) return;
+    player.queue = [t]; player.label = 'Слушаем вместе'; player.stream = false; player.autoNext = false; await playAt(0);
+  }
+  const a = player.audio, pos = Number(m.pos) || 0;
+  if (a.duration && Math.abs(a.currentTime - pos) > 2) a.currentTime = Math.min(pos, a.duration - 0.5);
+  if (m.paused && !a.paused) a.pause(); else if (!m.paused && a.paused) a.play().catch(() => { });
+}
 
 /* 7.0: «нравится» у записи — кнопкой или двойным тапом по фото (двойной тап только ставит, не снимает) */
 let imgTap = {};
@@ -4883,13 +5123,13 @@ function viewTag() {
 }
 
 /* Уведомления */
-const NOTIF_TEXT = { like: 'оценил(а) вашу запись', comment: 'прокомментировал(а) вашу запись', wall: 'написал(а) у вас на стене', friend: 'принял(а) вашу заявку в друзья', repost: 'поделился(ась) вашей записью', mention: 'упомянул(а) вас', gift: 'сделал(а) вам подарок', answer: 'ответил(а) на ваш вопрос', best: 'выбрал(а) ваш ответ лучшим', nick: 'подарил(а) вам коллекционный юзернейм 💎' };
+const NOTIF_TEXT = { like: 'оценил(а) вашу запись', comment: 'прокомментировал(а) вашу запись', wall: 'написал(а) у вас на стене', friend: 'принял(а) вашу заявку в друзья', repost: 'поделился(ась) вашей записью', mention: 'упомянул(а) вас', gift: 'сделал(а) вам подарок', answer: 'ответил(а) на ваш вопрос', best: 'выбрал(а) ваш ответ лучшим', nick: 'подарил(а) вам коллекционный юзернейм 💎', call: 'звонил(а) вам' };
 function viewNotifs() {
   const list = cache.notifs.filter(n => n.from !== S.me.id);
   return `<div class="card"><div class="pad" style="padding-bottom:4px"><h1 class="h">Уведомления <span class="muted">${list.length}</span></h1></div>
     <div class="ulist">${list.length ? list.map(n => {
       const u = U(n.from); if (!u) return '';
-      const href = n.type === 'gift' || n.type === 'nick' ? '#id/' + uid() : n.type === 'friend' ? '#id/' + n.from : ['answer', 'best'].includes(n.type) ? '#q/' + n.postId : n.postId ? '#post/' + n.postId : '#id/' + n.from;
+      const href = n.type === 'call' ? '#im/' + n.from : n.type === 'gift' || n.type === 'nick' ? '#id/' + uid() : n.type === 'friend' ? '#id/' + n.from : ['answer', 'best'].includes(n.type) ? '#q/' + n.postId : n.postId ? '#post/' + n.postId : '#id/' + n.from;
       return `<a class="uitem notif" href="${esc(href)}" style="color:var(--fg)">${avatar(u, 46, false)}
         <div class="grow" style="min-width:0"><b>${esc(u.name)}</b> ${NOTIF_TEXT[n.type] || ''}
           ${n.text ? `<div class="muted small notif-text">«${esc(plainText(n.text))}»</div>` : ''}<div class="muted small">${ago(n.createdAt)}</div></div>
@@ -5361,6 +5601,7 @@ function viewMessages() {
       const peerRead = self ? null : chat?.read?.[key] ? ms(chat.read[key]) : 0;
       chatHtml = `<div class="chat-head"><a class="icon-btn back" href="#im" aria-label="К диалогам">${I.back}</a>${self ? `<span class="av fav" style="width:38px;height:38px">★</span>` : avatar(o, 38)}
         <div class="grow">${self ? '<b>Избранное</b>' : nameLink(o)}<div class="small seen ${!self && isOnline(o) ? 'on' : ''}">${self ? 'Только для вас' : esc(seenText(o) || o.city || '@' + (o.nick || ''))}</div></div>
+        ${!self && !o.deleted && !iBlocked(o.id) && !blockedMe(o) ? `<button class="icon-btn" data-act="call" data-id="${esc(o.id)}" data-v="0" aria-label="Позвонить" title="Позвонить">${I.phone}</button><button class="icon-btn" data-act="call" data-id="${esc(o.id)}" data-v="1" aria-label="Видеозвонок" title="Видеозвонок">${I.video}</button>` : ''}
         <button class="icon-btn" data-act="wallpick" aria-label="Обои чата" aria-expanded="${!!S.wallPick}" title="Обои чата">🎨</button>
         <button class="icon-btn" data-act="mqtoggle" aria-label="Поиск по сообщениям">${I.search}</button></div>
         ${S.wallPick ? wallPanel(key) : ''}${S.mqOpen ? searchBar() : ''}<div class="msgs ${wallCls(key)}">${mq ? found() : body(peerRead, self ? 'Сохраняйте сюда заметки, ссылки и фото — их видите только вы' : 'Напишите ' + esc(o.name.split(' ')[0]) + ' первым')}</div>
@@ -5488,6 +5729,18 @@ document.addEventListener('click', async e => {
         clipTapT = now; clearTimeout(clipTapTimer); clipTapTimer = setTimeout(() => clipToggle(el), 300); break;
       }
       case 'cliplike': clipLike(id); break;
+      case 'call': callStart(id, b.dataset.v === '1'); break;
+      case 'callpick': callPick(); break;
+      case 'calldecline': callDecline(); break;
+      case 'callhang': callEnd(CALL?.state === 'ring' ? 'cancelled' : 'hangup'); break;
+      case 'callmin': if (CALL) { CALL.min = true; callDom(); } break;
+      case 'callmax': if (CALL) { CALL.min = false; callDom(); } break;
+      case 'calltog': togetherToggle(); break;
+      case 'callmic': if (CALL?.local) { CALL.mic = !CALL.mic; CALL.local.getAudioTracks().forEach(t => { t.enabled = CALL.mic; }); callDom(); } break;
+      case 'callcam': if (CALL?.local) { CALL.cam = !CALL.cam; CALL.local.getVideoTracks().forEach(t => { t.enabled = CALL.cam; }); callDom(); } break;
+      case 'clipcmt': case 'vcmt': openVcmt(id); break;
+      case 'vcclose': closeVcmt(); break;
+      case 'vcdel': if (S.vcmt) await deleteDoc(doc(db, 'videos', S.vcmt.id, 'comments', id)); break;
       case 'clipshare': await copyText(siteUrl('clips/' + id), 'Ссылка на клип скопирована'); break;
       case 'clipmute': { S.clipMuted = !S.clipMuted; document.querySelectorAll('#clipsFeed video').forEach(v => { v.muted = S.clipMuted; }); clipMuteUi();
         const v = document.querySelector('#clipsFeed .clip.on video'); if (v && !S.clipMuted) { v.play().catch(() => { }); if (!player.audio.paused) player.audio.pause(); } break; }
@@ -6189,6 +6442,7 @@ async function openLightbox(i) {
 document.addEventListener('keydown', e => {
   if (S.story) { if (e.key === 'Escape') { clearTimeout(storyTimer); S.story = null; render(); } else if (e.key === 'ArrowRight') storyStep(1); else if (e.key === 'ArrowLeft') storyStep(-1); return; }
   if (e.key === 'Escape' && S.trackForm) { S.trackForm = null; render(); return; }
+  if (e.key === 'Escape' && S.vcmt) { closeVcmt(); return; }
   if (e.key === 'Escape' && S.whatsNew) { lsSet('vs_seen_ver', WN_VER); S.whatsNew = false; render(); return; }
   if (S.fullPlayer && curTrack() && !e.target.matches?.('input,textarea,select,[contenteditable]') && !e.ctrlKey && !e.metaKey && !e.altKey) {
     const a = player.audio, t = curTrack();
@@ -6355,6 +6609,12 @@ document.addEventListener('submit', async e => {
           lsSet('vs_draft', ''); ['postText', 'pollQ', 'pollO0', 'pollO1', 'pollO2', 'pollO3', 'pollO4', 'pollO5'].forEach(clear); S.compose = false; toast('Опубликовано');
         } catch (err) { toast(err.message === 'too-big' ? 'Фото слишком большое даже после сжатия' : errText(err)); }
         finally { S.busy = false; render(); }
+        break;
+      }
+      case 'vcomment': {
+        const text = v('vcIn'), vid = S.vcmt?.id; if (!text || !vid) return;
+        clear('vcIn');
+        await addDoc(collection(db, 'videos', vid, 'comments'), { authorId: uid(), text: text.slice(0, 1000), createdAt: serverTimestamp() });
         break;
       }
       case 'comment': {

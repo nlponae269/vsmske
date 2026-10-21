@@ -1710,3 +1710,55 @@ kbd{font:600 11px/1 var(--f-body,system-ui);border:1px solid var(--line);border-
 .fmt-bar button:hover{background:var(--accent-soft);color:var(--accent)}
 .fmt-bar .small{margin-left:6px}
 .fmt-aa{font:800 15px/1 var(--f-display,system-ui);letter-spacing:-.02em}
+
+/* 8.0: комментарии к видео и клипам — шторка снизу */
+.ov.vc-ov{background:rgba(0,0,0,.45);place-items:end center;padding:0}
+.vc-sheet{width:min(560px,100%);max-height:min(78vh,720px);display:flex;flex-direction:column;background:var(--surface);color:var(--fg);border-radius:22px 22px 0 0;
+  box-shadow:0 -10px 40px rgba(0,0,0,.3);padding-bottom:env(safe-area-inset-bottom,0px);animation:sheetUp .28s cubic-bezier(.2,.8,.2,1)}
+@media (min-width:700px){.ov.vc-ov{place-items:center;padding:16px}.vc-sheet{border-radius:22px}}
+.vc-head{display:flex;align-items:center;justify-content:space-between;padding:14px 16px 8px;border-bottom:1px solid var(--line)}
+.vc-list{flex:1;min-height:120px;overflow:auto;padding:10px 14px;display:flex;flex-direction:column;gap:10px}
+.vc-list .empty{padding:24px 8px}
+.vc-form{border-top:1px solid var(--line);padding:10px 12px;margin:0}
+.clip-views{display:inline-flex;align-items:center;gap:4px;margin-left:10px;font-weight:500;font-size:13px;opacity:.85}
+.clip-views svg{width:15px;height:15px}
+
+/* 8.0: звонки — экран вне #app, поверх всего */
+#callBox.call{position:fixed;inset:0;z-index:95;display:grid;place-items:center;background:radial-gradient(120% 90% at 50% 20%,#2b2f4a,#0b0c14);color:#fff}
+#callBox.call.video{background:#000}
+.call-in{position:relative;width:100%;height:100%;display:flex;flex-direction:column;align-items:center;justify-content:space-between;
+  padding:calc(40px + env(safe-area-inset-top,0px)) 16px calc(28px + env(safe-area-inset-bottom,0px))}
+.call-remote{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;background:#000}
+.call-local{position:absolute;right:16px;top:calc(16px + env(safe-area-inset-top,0px));width:min(28vw,150px);aspect-ratio:3/4;object-fit:cover;border-radius:16px;
+  box-shadow:0 10px 30px rgba(0,0,0,.5);transform:scaleX(-1);z-index:2;background:#222}
+.call-who{position:relative;z-index:1;display:flex;flex-direction:column;align-items:center;gap:10px;text-align:center;text-shadow:0 2px 12px rgba(0,0,0,.5)}
+.call-who b{font:700 26px/1.2 var(--f-display,system-ui)}
+.call-who > span{opacity:.85;font-size:15px}
+.call.live.video .call-who .av{display:none}
+.call.live.video .call-who{align-self:flex-start;align-items:flex-start;text-align:left}
+.call.live.video .call-who b{font-size:19px}
+.call.ring .call-who .av,.call.incoming .call-who .av{animation:callPulse 1.6s ease-in-out infinite}
+@keyframes callPulse{0%,100%{box-shadow:0 0 0 0 rgba(255,255,255,.35)}50%{box-shadow:0 0 0 22px rgba(255,255,255,0)}}
+.call-bar{position:relative;z-index:2;display:flex;gap:14px;flex-wrap:wrap;justify-content:center;padding:14px 18px;border-radius:30px;background:rgba(0,0,0,.35);
+  -webkit-backdrop-filter:blur(14px);backdrop-filter:blur(14px)}
+.call-b{display:flex;flex-direction:column;align-items:center;gap:6px;border:0;background:none;color:#fff;cursor:pointer;min-width:62px}
+.call-b > span{width:58px;height:58px;border-radius:50%;display:grid;place-items:center;background:rgba(255,255,255,.16);transition:background .2s,transform .15s}
+.call-b:hover > span{background:rgba(255,255,255,.26)}
+.call-b:active > span{transform:scale(.92)}
+.call-b small{font-size:12px;opacity:.9}
+.call-b svg{width:24px;height:24px}
+.call-b.off > span{background:#fff;color:#111}
+.call-b.on > span{background:#22c55e}
+.call-b.end > span{background:#ef4444}
+.call-b.end svg{transform:rotate(135deg)}
+.call-b.pick > span{background:#22c55e;animation:callPulse 1.6s ease-in-out infinite}
+.call-b.sm{min-width:0}
+.call-b.sm > span{width:42px;height:42px}
+.call-b.sm svg{width:20px;height:20px}
+/* свёрнутый звонок — плашка сверху */
+#callBox.call.min{inset:auto 12px auto 12px;top:calc(10px + env(safe-area-inset-top,0px));display:flex;align-items:center;gap:8px;padding:6px 6px 6px 8px;
+  border-radius:99px;background:#16a34a;box-shadow:0 10px 30px rgba(0,0,0,.3);max-width:420px;margin:0 auto}
+.call-pill{flex:1;min-width:0;display:flex;align-items:center;gap:10px;border:0;background:none;color:#fff;text-align:left;cursor:pointer}
+.call-pill b{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.call-pill small{opacity:.9;font-variant-numeric:tabular-nums}
+@media (prefers-reduced-motion:reduce){.call.ring .call-who .av,.call.incoming .call-who .av,.call-b.pick > span{animation:none}}
