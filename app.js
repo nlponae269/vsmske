@@ -700,6 +700,8 @@ function route() {
   else if (v === 'games') { S.view = 'games'; S.game = arg || null; }
   else if (v === 'live') { S.view = 'live'; S.liveId = arg || null; }
   else if (v === 'clips') { S.view = 'clips'; S.clipId = arg || null; }
+  else if (v === 'theme') { S.themeOffer = themeParse(arg); S.view = 'settings'; history.replaceState(null, '', BASE + 'settings'); if (!S.themeOffer) toast('Ссылка на тему повреждена'); }
+  else if (v === 'search') { S.view = 'search'; try { S.sq = decodeURIComponent(arg || ''); } catch (e) { S.sq = arg || ''; } S.stab = 'all'; }
   else if (v === 'tag' && arg) { S.view = 'tag'; try { S.tag = decodeURIComponent(arg).toLowerCase(); } catch (e) { S.tag = arg; } }
   else if (['feed', 'friends', 'people', 'edit', 'disk', 'vid', 'settings', 'more', 'notif', 'clubs', 'admin', 'guests', 'apps', 'notes', 'weather', 'events', 'rates', 'radio', 'horo', 'timer', 'calc', 'dice', 'live'].includes(v)) S.view = v;
   else S.view = 'feed';
@@ -830,6 +832,8 @@ function attachView() {
       cache.videos = s.docs.map(data).sort((a, b) => ms(b.createdAt) - ms(a.createdAt));
       ensureUsers(cache.videos.map(v => v.ownerId)); S.loading = false; render();
     }, onViewErr));
+  } else if (S.view === 'search') {
+    S.loading = false; searchLoad();
   } else if (S.view === 'clips') {
     S.clipsReady = false; S.clipIdx = 0; cache.clips = []; cache.clipsLast = null; cache.clipsDone = false; cache.clipsBusy = false;
     loadClips(S.clipId).then(() => { if (S.view !== 'clips') return; S.clipsReady = true; S.loading = false; render(); });
@@ -1404,6 +1408,7 @@ function shell() {
   else if (S.view === 'messages') main = viewMessages();
   else if (S.view === 'friends') main = viewFriends();
   else if (S.view === 'people') main = viewPeople();
+  else if (S.view === 'search') main = viewSearch();
   else if (S.view === 'edit') main = viewEdit();
   else if (S.view === 'video') main = viewVideo();
   else if (S.view === 'watch') main = viewWatch();
@@ -1447,7 +1452,7 @@ function shell() {
   return `
   <header class="top"><div class="top-in">
     <a class="logo" href="#feed" aria-label="VСмске, лента"><span class="logo-mark">вс</span><span class="logo-word" style="color:var(--fg)">VСмске</span></a>
-    <form class="search" data-form="search">${I.search}<input id="q" type="search" placeholder="Поиск людей" autocomplete="off" value="${esc(S.view === 'people' ? S.query : '')}"></form>
+    <form class="search" data-form="search">${I.search}<input id="q" type="search" placeholder="Поиск по VСмске" autocomplete="off" value="${esc(S.view === 'people' ? S.query : '')}"></form>
     <a class="top-bell icon-btn ${S.view === 'notif' ? 'on' : ''}" href="#notif" aria-label="Уведомления">${I.bell}${unseenNotifs() ? `<span class="badge">${unseenNotifs()}</span>` : ''}</a>
     <a class="top-me" href="#id/${esc(me.id)}" style="color:var(--fg)">${avatar(me, 32, false)}<span>${esc(me.name.split(' ')[0])}</span></a>
   </div></header>
@@ -1467,7 +1472,7 @@ function shell() {
    Все разделы — в боковом меню (S.drawer), новая запись — в шторке снизу (S.compose). «Газета» и Классический
    собираются по-старому (shell()). */
 const MD = () => document.documentElement.dataset.skin === 'material';
-const MD_TITLES = { feed: 'Лента', messages: 'Чаты', friends: 'Друзья', notif: 'Сигналы', people: 'Люди', edit: 'Редактирование',
+const MD_TITLES = { search: 'Поиск', feed: 'Лента', messages: 'Чаты', friends: 'Друзья', notif: 'Сигналы', people: 'Люди', edit: 'Редактирование',
   video: 'Видео', watch: 'Видео', albums: 'Альбомы', album: 'Альбом', disk: 'Диск', vid: 'VС ID', settings: 'Настройки', more: 'Меню',
   post: 'Запись', clubs: 'Клубы', club: 'Клуб', guests: 'Гости', apps: 'Сервисы', market: 'Маркет', lot: 'Объявление', events: 'События',
   event: 'Событие', rates: 'Курсы', radio: 'Радио', horo: 'Гороскоп', saved: 'Закладки', music: 'Музыка', answers: 'Ответы', question: 'Вопрос',
@@ -1497,7 +1502,7 @@ function mdShell(me, main, up) {
   <header class="md-top">
     <a class="md-brand" href="#feed" aria-label="VСмске, лента"><span class="logo-mark">вс</span></a>
     <h1 class="md-title">${esc(mdTitle())}</h1>
-    <form class="search md-search" data-form="search">${I.search}<input id="q" type="search" placeholder="Поиск людей" autocomplete="off" value="${esc(v === 'people' ? S.query : '')}"></form>
+    <form class="search md-search" data-form="search">${I.search}<input id="q" type="search" placeholder="Поиск по VСмске" autocomplete="off" value="${esc(v === 'people' ? S.query : '')}"></form>
     <button class="md-icon md-pal" data-act="palopen" aria-label="Быстрый поиск" title="Быстрый поиск (Ctrl+K)">${I.search}</button>
     <a class="md-me" href="#id/${esc(me.id)}" aria-label="Моя страница">${avatar(me, 40, false)}</a>
   </header>
@@ -1679,7 +1684,7 @@ function palItems() {
     .map(([href, icon, t]) => ({ href, icon, t, sub: href === '@recap' ? 'Твоя статистика в стиле Wrapped' : href === '@keys' ? 'Подсказка' : 'Раздел' }));
   const people = !q ? [] : [...cache.users.values()].filter(u => u && !u.deleted && u.id !== S.me.id && (norm(u.name).includes(q) || norm(u.nick).includes(q.replace(/^@/, ''))))
     .slice(0, 6).map(u => ({ href: 'id/' + u.id, u, t: u.name, sub: '@' + (u.nick || '') }));
-  const more = q.length >= 2 ? [{ href: 'people', q: S.pal.q.trim(), icon: I.search, t: `Найти людей: «${S.pal.q.trim()}»`, sub: 'Поиск по всем' }] : [];
+  const more = q.length >= 2 ? [{ href: 'search/' + encodeURIComponent(S.pal.q.trim()), icon: I.search, t: `Искать везде: «${S.pal.q.trim()}»`, sub: 'Люди, записи, видео, музыка, клубы' }, { href: 'people', q: S.pal.q.trim(), icon: I.search, t: `Найти людей: «${S.pal.q.trim()}»`, sub: 'Поиск по всем' }] : [];
   return [...people, ...secs, ...more];
 }
 function palOverlay() {
@@ -2261,7 +2266,7 @@ function viewSettings() {
       <div class="set-row"><span class="grow">Цвет</span><div class="accents" role="radiogroup">${ACCENTS.map(([k, l, c]) => `<button role="radio" aria-checked="${(lsGet('vs_accent') || 'blue') === k}" aria-label="${l}" title="${l}" class="${(lsGet('vs_accent') || 'blue') === k ? 'on' : ''}" style="background:${c}" data-act="accent" data-v="${k}"></button>`).join('')}</div></div>
       <div class="set-row"><span class="grow">Дизайн<br><span class="muted small">Material You — как на Android, Газета — бумага и типографика, Классический — простой и быстрый</span></span>${seg('skin', skinNow(), SKINS)}</div>
       <p class="hint" style="margin:0">Сохраняется на этом устройстве.</p></div>
-    ${androidCard()}${installCard()}
+    ${themesCard()}${androidCard()}${installCard()}
     <div class="card pad set"><h2 class="h" style="font-size:16px">Музыка</h2>
       <div class="set-row"><span class="grow">Показывать в профиле, что я слушаю</span>${seg('listen', lsGet('vs_listen') === '0' ? 'off' : 'on', [['on', 'Да'], ['off', 'Нет']])}</div>
       <div class="set-row"><span class="grow">Анимации</span>${seg('anim', lsGet('vs_anim') === 'off' ? 'off' : 'on', [['on', 'Вкл'], ['off', 'Выкл']])}</div></div>
@@ -5269,10 +5274,10 @@ function composer(wallId, ph, g = null) {
       ${Array.from({ length: d.pollN }, (_, i) => `<input id="pollO${i}" maxlength="80" placeholder="Вариант ${i + 1}">`).join('')}
       <div class="row">${d.pollN < 6 ? `<button type="button" class="btn ghost small" data-act="polladd">+ Вариант</button>` : ''}<span class="grow"></span>
         <button type="button" class="btn ghost small" data-act="polltoggle">Убрать опрос</button></div></div>` : ''}
-    ${emojiPanel('postText')}${fmtPanel('postText')}
+    ${emojiPanel('postText')}${fmtPanel('postText')}${S.cmore && !g ? draftsPanel() : ''}
     <div class="composer-bar"><button type="button" class="icon-btn" data-act="attach">${I.photo}<span class="small">Фото</span></button>
       ${d.poll ? '' : `<button type="button" class="icon-btn" data-act="polltoggle">${I.poll}<span class="small">Опрос</span></button>`}
-      ${emojiBtn('postText')}${fmtBtn('postText')}
+      ${emojiBtn('postText')}${fmtBtn('postText')}${g ? '' : `<button type="button" class="icon-btn" data-act="cmore" aria-label="Черновики и отложенные записи" aria-expanded="${!!S.cmore}" title="Черновики и отложенные">🗂${draftsGet().length + schedGet().filter(x => x.uid === uid()).length ? `<span class="small">${draftsGet().length + schedGet().filter(x => x.uid === uid()).length}</span>` : ''}</button>`}
       <span class="grow"></span><button class="btn" type="submit" ${S.busy ? 'disabled' : ''}>${S.busy ? 'Публикуем…' : 'Опубликовать'}</button></div>
   </form></div>`;
 }
@@ -5401,6 +5406,55 @@ function badges(u, friends, posts, likes) {
   return out;
 }
 
+/* 8.0: уровень профиля — опыт считается на лету из того, что уже видно на странице (без записей в базу) */
+function levelOf(u, friends, posts, likes) {
+  const days = u.createdAt ? (Date.now() - ms(u.createdAt)) / 864e5 : 0;
+  const xp = Math.round(posts * 10 + likes * 3 + friends * 8 + (u.tracks || []).length * 2 + (u.groups || []).length * 2 + Math.min(days, 730) * 0.5 + (u.photo ? 15 : 0) + (u.about ? 10 : 0));
+  const lv = Math.min(99, Math.floor(Math.sqrt(xp / 25)) + 1), from = 25 * (lv - 1) ** 2, to = 25 * lv ** 2;
+  return { lv, xp, pct: lv >= 99 ? 100 : Math.round((xp - from) / (to - from) * 100), left: Math.max(0, to - xp) };
+}
+// все достижения: полученные и ещё нет (с тем, что нужно сделать)
+function allBadges(u, friends, posts, likes) {
+  const days = u.createdAt ? (Date.now() - ms(u.createdAt)) / 864e5 : 0;
+  return [
+    ['✍️', 'Первая запись', 'Опубликовать запись', posts >= 1], ['📰', 'Писатель', '20 записей на стене', posts >= 20], ['📚', 'Летописец', '100 записей', posts >= 100],
+    ['👋', 'Общительный', '10 друзей', friends >= 10], ['🤝', 'Душа компании', '50 друзей', friends >= 50], ['🏟', 'Звезда района', '200 друзей', friends >= 200],
+    ['❤️', 'Любимчик', '20 лайков на стене', likes >= 20], ['🌟', 'Звезда', '100 лайков', likes >= 100], ['💫', 'Легенда', '1000 лайков', likes >= 1000],
+    ['🖼', 'Лицо с обложки', 'Поставить фото профиля', !!u.photo], ['📝', 'О себе', 'Рассказать о себе', !!u.about],
+    ['🎧', 'Меломан', '10 треков в музыке', (u.tracks || []).length >= 10], ['🏘', 'Активист', '5 сообществ', (u.groups || []).length >= 5],
+    ['🏛', 'Старожил', 'Год на VСмске', days >= 365],
+  ];
+}
+// готовые темы оформления: дизайн + цвет + тема + обои чатов; своей можно поделиться ссылкой /theme/<код>
+const THEMES = [
+  ['brand', 'Фирменная', { s: 'material', a: 'blue', t: 'system', w: 'none' }, ['#F4EFFF', '#7C3AED']],
+  ['night', 'Ночной город', { s: 'material', a: 'violet', t: 'dark', w: 'night' }, ['#141024', '#A98BFF']],
+  ['forest', 'Лес', { s: 'material', a: 'green', t: 'light', w: 'mint' }, ['#EEF7F0', '#1F8A5B']],
+  ['sunset', 'Закат', { s: 'material', a: 'orange', t: 'dark', w: 'sunset' }, ['#24150E', '#FF9A57']],
+  ['candy', 'Карамель', { s: 'material', a: 'pink', t: 'light', w: 'hearts' }, ['#FFF0F6', '#C2357A']],
+  ['paper', 'Утренняя газета', { s: 'paper', a: 'blue', t: 'light', w: 'none' }, ['#EFE9DC', '#A3261B']],
+  ['ink', 'Ночная газета', { s: 'paper', a: 'blue', t: 'dark', w: 'none' }, ['#15130F', '#E8836F']],
+  ['retro', 'Классика', { s: 'lite', a: 'blue', t: 'light', w: 'dots' }, ['#ECEFF5', '#2F44D0']],
+];
+const themeNow = () => ({ s: skinNow(), a: lsGet('vs_accent') || 'blue', t: lsGet('vs_theme') || 'system', w: wallsGet()['*'] || 'none' });
+const themeOk = o => o && SKINS.some(x => x[0] === o.s) && ACCENTS.some(x => x[0] === o.a) && ['system', 'light', 'dark'].includes(o.t) && WALLS.some(x => x[0] === o.w);
+function themeApply(o) {
+  if (!themeOk(o)) return;
+  lsSet('vs_skin', o.s); lsSet('vs_accent', o.a); lsSet('vs_theme', o.t);
+  const w = wallsGet(); w['*'] = o.w; lsSet('vs_walls', JSON.stringify(w));
+  applySkin(); applyAccent(o.a); applyTheme(o.t); render();
+}
+const themeCode = o => btoa(JSON.stringify(o)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+const themeParse = c => { try { const o = JSON.parse(atob(String(c).replace(/-/g, '+').replace(/_/g, '/'))); return themeOk(o) ? { s: o.s, a: o.a, t: o.t, w: o.w } : null; } catch (e) { return null; } };
+function themesCard() {
+  const cur = JSON.stringify(themeNow()), offer = S.themeOffer;
+  return `<div class="card pad set">${offer ? `<div class="th-offer"><b>Вам прислали тему</b><span class="muted small">${esc(SKINS.find(x => x[0] === offer.s)[1])} · ${esc(ACCENTS.find(x => x[0] === offer.a)[1])} · ${offer.t === 'dark' ? 'тёмная' : offer.t === 'light' ? 'светлая' : 'как в системе'} · обои «${esc(WALLS.find(x => x[0] === offer.w)[1])}»</span>
+      <div class="row" style="gap:8px"><button class="btn small" data-act="themetake">Применить</button><button class="btn ghost small" data-act="themeno">Не надо</button></div></div>` : ''}
+    <h2 class="h" style="font-size:16px">Готовые темы</h2>
+    <div class="th-grid">${THEMES.map(([k, l, o, [bg, ac]]) => `<button class="th-it ${JSON.stringify(o) === cur ? 'on' : ''}" data-act="themeset" data-v="${k}"><span class="th-sw" style="background:${bg}"><i style="background:${ac}"></i><i style="background:${ac};opacity:.45"></i></span><span>${l}</span></button>`).join('')}</div>
+    <div class="row" style="justify-content:space-between;gap:8px;flex-wrap:wrap"><span class="hint" style="margin:0">Дизайн, цвет, тема и обои чатов — одной кнопкой</span><button class="btn sec small" data-act="themeshare">${I.link}<span>Поделиться моей темой</span></button></div></div>`;
+}
+
 /* Отношения с человеком */
 function relation(id) {
   if (id === S.me.id) return 'me';
@@ -5481,7 +5535,11 @@ function viewProfile() {
       <div><b>${posts.length}</b><span>${plural(posts.length, 'пост', 'поста', 'постов')}</span></div>
       <div><b>${likes}</b><span>${plural(likes, 'лайк', 'лайка', 'лайков')}</span></div>
     </div>
-    ${(() => { const b = badges(u, friendIds.length, posts.length, likes); return b.length ? `<div class="badges">${b.map(([e, t, d]) => `<span class="badge-a" title="${esc(d)}">${e} ${esc(t)}</span>`).join('')}</div>` : ''; })()}
+    ${(() => { const b = badges(u, friendIds.length, posts.length, likes), L = levelOf(u, friendIds.length, posts.length, likes), own = u.id === S.me.id;
+      return `<div class="lvl" title="Опыт: ${L.xp}"><span class="lvl-n">${L.lv}</span><span class="grow"><b>Уровень ${L.lv}</b><span class="lvl-bar"><i style="width:${L.pct}%"></i></span>${own ? `<span class="muted small">До ${L.lv + 1}-го уровня — ${L.left} опыта · записи, лайки и друзья прибавляют опыт</span>` : ''}</span>
+        <button class="btn ghost small" data-act="achall">${S.achAll ? 'Свернуть' : 'Достижения'}</button></div>
+      ${S.achAll ? `<div class="ach-all">${allBadges(u, friendIds.length, posts.length, likes).map(([e, t, d, ok]) => `<div class="ach ${ok ? 'ok' : ''}"><span class="ach-e">${e}</span><b>${esc(t)}</b><span class="muted small">${ok ? 'Получено' : esc(d)}</span></div>`).join('')}</div>`
+        : b.length ? `<div class="badges">${b.map(([e, t, d]) => `<span class="badge-a" title="${esc(d)}">${e} ${esc(t)}</span>`).join('')}</div>` : ''}`; })()}
   </div>
   <div class="two">
     <div>
@@ -5683,22 +5741,30 @@ function viewMessages() {
     }
   }
   const q = S.dq.trim().toLowerCase();
-  const items = list.map(c => {
+  const pins = lsList('vs_chatpins'), arch = lsList('vs_chatarch'), fld = S.chatFolder || 'all', keyOf = c => c.group ? c.id : (c.members.find(m => m !== id) || id);
+  const shown = list.filter(c => c.fresh || (fld === 'arch' ? arch.includes(keyOf(c)) : !arch.includes(keyOf(c)) && (fld === 'all' || (fld === 'dm' ? !c.group : fld === 'rooms' ? c.group : isUnread(c)))))
+    .sort((a, b) => pins.includes(keyOf(b)) - pins.includes(keyOf(a)));
+  const fcount = f => f === 'unread' ? list.filter(c => !c.fresh && isUnread(c) && !arch.includes(keyOf(c))).length : f === 'arch' ? list.filter(c => arch.includes(keyOf(c))).length : 0;
+  const folders = `<div class="dfolders">${CHAT_FOLDERS.filter(([f]) => f !== 'arch' || arch.length).map(([f, l]) => `<button class="${fld === f ? 'on' : ''}" data-act="chatfolder" data-v="${f}">${l}${fcount(f) ? ` <b>${fcount(f)}</b>` : ''}</button>`).join('')}</div>`;
+  const items = shown.map(c => {
     const k = c.group ? c.id : (c.members.find(m => m !== id) || id), ou = c.group ? null : U(k), me1 = k === id;
     if (!c.group && !ou) return '';
     const name = c.group ? c.name : dialogName(ou, me1);
     if (q && !name.toLowerCase().includes(q) && !(c.lastText || '').toLowerCase().includes(q)) return '';
     const unread = !c.fresh && isUnread(c);
     const prefix = c.lastFrom === id && !me1 ? 'Вы: ' : c.group && c.lastFrom && U(c.lastFrom) ? U(c.lastFrom).name.split(' ')[0] + ': ' : '';
-    return `<a class="ditem ${S.chatWith === k ? 'on' : ''}" href="#im/${esc(k)}">${c.group ? roomAvatar(c, 46) : me1 ? `<span class="av fav" style="width:46px;height:46px">★</span>` : avatar(ou, 46, false)}
+    const pin = pins.includes(k), menu = S.chatMenu === k;
+    return `<div class="ditem-w ${menu ? 'menu' : ''}"><a class="ditem ${S.chatWith === k ? 'on' : ''} ${pin ? 'pinned' : ''}" href="#im/${esc(k)}">${c.group ? roomAvatar(c, 46) : me1 ? `<span class="av fav" style="width:46px;height:46px">★</span>` : avatar(ou, 46, false)}
       <div class="grow"><div class="row" style="gap:6px"><b class="grow" style="font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(name)}</b>${c.lastAt ? `<span class="muted small">${ms(c.lastAt) >= startOfDay() ? hm(new Date(ms(c.lastAt))) : dayLabel(c.lastAt)}</span>` : ''}</div>
-      <div class="last">${c.fresh ? 'Новый диалог' : esc(prefix + plainText(c.lastText))}</div></div>${unread ? '<span class="dot" aria-label="Непрочитано"></span>' : ''}</a>`;
+      <div class="last">${pin ? '📌 ' : ''}${c.fresh ? 'Новый диалог' : esc(prefix + plainText(c.lastText))}</div></div>${unread ? '<span class="dot" aria-label="Непрочитано"></span>' : ''}</a>
+      ${c.fresh ? '' : `<button class="ditem-more" data-act="chatmenu" data-id="${esc(k)}" aria-label="Действия с диалогом" aria-expanded="${menu}">⋯</button>`}
+      ${menu ? `<div class="ditem-menu"><button data-act="chatpin" data-id="${esc(k)}">📌 ${pin ? 'Открепить' : 'Закрепить'}</button><button data-act="chatarch" data-id="${esc(k)}">🗄 ${arch.includes(k) ? 'Вернуть из архива' : 'В архив'}</button></div>` : ''}</div>`;
   }).join('');
   return `${S.chatsError ? errBox(S.chatsError) : ''}<div class="card im ${S.chatWith ? 'open' : ''}">
     <div class="dlist"><div class="dsearch">${I.search}<input id="dq" type="search" placeholder="Поиск по диалогам" autocomplete="off" value="${esc(S.dq)}">
         <button class="icon-btn" data-act="newroom" aria-label="Создать беседу" title="Создать беседу">${I.friends}</button>
         ${cache.chats.some(c => c.id === chatId(id, id)) ? '' : `<a class="icon-btn" href="#im/${esc(id)}" aria-label="Избранное" title="Избранное">★</a>`}</div>
-      ${items || `<div class="empty">${q ? 'Ничего не нашли' : 'Диалогов пока нет'}</div>`}</div>
+      ${list.length > 1 || arch.length ? folders : ''}${items || `<div class="empty">${q ? 'Ничего не нашли' : 'Диалогов пока нет'}</div>`}</div>
     <div class="chat">${chatHtml}</div></div>`;
 }
 
@@ -5707,6 +5773,154 @@ document.addEventListener('input', e => {
   if (e.target.id === 'fpSeek') { const a = player.audio; if (a.duration) { a.currentTime = Number(e.target.value) / 1000 * a.duration; e.target.style.setProperty('--p', (Number(e.target.value) / 10) + '%'); } }
 });
 document.addEventListener('input', e => { if (e.target.id === 'cvAmt') { S.cvAmt = e.target.value; render(); return; } if (e.target.id === 'dq') { S.dq = e.target.value; render(); } else if (e.target.id === 'mq') { S.mq = e.target.value; render(); } });
+
+/* ---------- 8.0: удобства ---------- */
+const lsList = k => { try { const v = JSON.parse(lsGet(k) || '[]'); return Array.isArray(v) ? v : []; } catch (e) { return []; } };
+// подсказки при наборе: @ — люди (сначала друзья), # — теги из загруженных записей
+const AC_FIELD = el => !!el?.id && (el.id === 'postText' || el.id === 'msgInput' || el.id === 'vcIn' || el.id === 'stReply' || el.id.startsWith('c_'));
+let AC = null;   // {id, start, kind, items, sel}
+const acBox = () => document.getElementById('acPop') || document.body.appendChild(Object.assign(document.createElement('div'), { id: 'acPop', className: 'ac-pop', hidden: true }));
+function acClose() { AC = null; const b = document.getElementById('acPop'); if (b) b.hidden = true; }
+function acFind(el) {
+  const pos = el.selectionStart ?? el.value.length, m = /(^|[\s(,.!?])([@#])([\p{L}\d._]{0,30})$/u.exec(el.value.slice(0, pos));
+  if (!m) return acClose();
+  const kind = m[2], q = norm(m[3]), start = pos - m[3].length - 1;
+  let items = [];
+  if (kind === '@') {
+    const seen = new Set(), all = [...(S.me.friends || []).map(U), ...cache.users.values()];
+    for (const u of all) {
+      if (!u || u.deleted || !u.nick || seen.has(u.id) || u.id === uid()) continue;
+      if (q && !u.nick.startsWith(q) && !norm(u.name).split(/\s+/).some(w => w.startsWith(q))) continue;
+      seen.add(u.id); items.push({ v: '@' + u.nick, u }); if (items.length >= 6) break;
+    }
+  } else {
+    const n = new Map();
+    for (const p of [...cache.feed.values()].flat().concat(cache.wall || [], cache.tagPosts || [])) for (const t of p.tags || []) n.set(t, (n.get(t) || 0) + 1);
+    items = [...n].filter(([t]) => !q || norm(t).startsWith(q)).sort((a, b) => b[1] - a[1]).slice(0, 6).map(([t, c]) => ({ v: '#' + t, c }));
+  }
+  if (!items.length) return acClose();
+  AC = { id: el.id, start, kind, items, sel: 0 }; acDraw(el);
+}
+function acDraw(el) {
+  const box = acBox(), r = el.getBoundingClientRect(), up = r.top > 240;
+  box.innerHTML = AC.items.map((x, i) => `<button class="ac-it ${i === AC.sel ? 'on' : ''}" data-act="acpick" data-i="${i}">${x.u ? avatar(x.u, 28, false) + `<span class="grow"><b>${esc(x.u.name)}</b><span class="muted small">${esc(x.v)}</span></span>` : `<span class="ac-hash">#</span><span class="grow"><b>${esc(x.v.slice(1))}</b><span class="muted small">${x.c} ${plural(x.c, 'запись', 'записи', 'записей')}</span></span>`}</button>`).join('');
+  box.hidden = false;
+  box.style.left = Math.max(8, Math.min(r.left, innerWidth - 300)) + 'px'; box.style.width = Math.min(320, Math.max(220, r.width)) + 'px';
+  box.style.top = up ? '' : (r.bottom + 6) + 'px'; box.style.bottom = up ? (innerHeight - r.top + 6) + 'px' : '';
+}
+function acPick(i) {
+  const a = AC, el = a && document.getElementById(a.id), x = a?.items[i]; if (!el || !x) return acClose();
+  const pos = el.selectionStart ?? el.value.length, ins = x.v + ' ';
+  el.value = el.value.slice(0, a.start) + ins + el.value.slice(pos);
+  el.focus(); el.setSelectionRange(a.start + ins.length, a.start + ins.length); acClose();
+  el.dispatchEvent(new Event('input', { bubbles: true }));
+}
+document.addEventListener('input', e => { if (AC_FIELD(e.target)) acFind(e.target); else if (AC) acClose(); });
+document.addEventListener('keydown', e => {
+  if (!AC || e.target.id !== AC.id) return;
+  if (e.key === 'ArrowDown' || e.key === 'ArrowUp') { e.preventDefault(); AC.sel = (AC.sel + (e.key === 'ArrowDown' ? 1 : AC.items.length - 1)) % AC.items.length; acDraw(e.target); }
+  else if (e.key === 'Enter' || e.key === 'Tab') { e.preventDefault(); e.stopPropagation(); acPick(AC.sel); }
+  else if (e.key === 'Escape') { e.stopPropagation(); acClose(); }
+}, true);
+document.addEventListener('pointerdown', e => { if (e.target.closest?.('#acPop')) e.preventDefault(); else if (AC) acClose(); });
+document.addEventListener('focusout', e => { if (AC && e.target.id === AC.id) setTimeout(() => { if (document.activeElement?.id !== AC?.id) acClose(); }, 150); });
+
+// черновики (несколько) и отложенные записи — хранятся на этом устройстве; отложенную публикует сам сайт, когда время пришло и он открыт
+const draftsGet = () => lsList('vs_drafts'), schedGet = () => lsList('vs_sched');
+function draftsPanel() {
+  const dr = draftsGet(), sc = schedGet().filter(x => x.uid === uid());
+  const soon = new Date(Date.now() + 3600e3), iso = new Date(soon - soon.getTimezoneOffset() * 6e4).toISOString().slice(0, 16);
+  return `<div class="cmore">
+    <div class="row cmore-row"><button type="button" class="btn sec small" data-act="draftsave">💾 В черновики</button>
+      <span class="grow"></span><input type="datetime-local" id="schedAt" class="inp" value="${iso}" aria-label="Когда опубликовать"><button type="button" class="btn sec small" data-act="schedpost">⏰ Запланировать</button></div>
+    ${dr.length ? `<div class="cmore-h">Черновики</div>${dr.map(x => `<div class="cmore-it"><span class="grow">${esc(x.text.slice(0, 90))}</span><span class="muted small">${ago(x.at)}</span>
+      <button type="button" class="btn ghost small" data-act="draftuse" data-id="${esc(x.id)}">Взять</button><button type="button" class="icon-btn" data-act="draftdel" data-id="${esc(x.id)}" aria-label="Удалить черновик">✕</button></div>`).join('')}` : ''}
+    ${sc.length ? `<div class="cmore-h">Запланировано</div>${sc.map(x => `<div class="cmore-it"><span class="grow">${esc(x.text.slice(0, 90))}</span><span class="muted small">⏰ ${esc(new Date(x.at).toLocaleString('ru-RU', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }))}</span>
+      <button type="button" class="icon-btn" data-act="scheddel" data-id="${esc(x.id)}" aria-label="Отменить">✕</button></div>`).join('')}` : ''}
+    <p class="hint" style="margin:0">Отложенная запись — только текст; она выйдет, когда VСмске открыт на этом устройстве (если в нужное время сайт закрыт — сразу при следующем входе).</p></div>`;
+}
+async function schedTick() {
+  if (S.phase !== 'app') return;
+  const all = schedGet(), due = all.filter(x => x.uid === uid() && x.at <= Date.now()); if (!due.length) return;
+  lsSet('vs_sched', JSON.stringify(all.filter(x => !due.includes(x))));
+  for (const x of due) {
+    try {
+      const post = { authorId: uid(), wallId: uid(), text: x.text, image: '', likes: [], commentCount: 0, createdAt: serverTimestamp() };
+      const tags = extractTags(x.text); if (tags.length) post.tags = tags;
+      const ref = await addDoc(collection(db, 'posts'), post); notifyMentions(x.text, ref.id, [uid()]);
+      toast('⏰ Отложенная запись опубликована');
+    } catch (e) { console.error(e); toast('Отложенная запись не вышла: ' + errText(e)); }
+  }
+}
+setInterval(schedTick, 20000);
+
+// папки, закреп и архив диалогов (на этом устройстве)
+const CHAT_FOLDERS = [['all', 'Все'], ['dm', 'Личные'], ['rooms', 'Беседы'], ['unread', 'Непрочитанные'], ['arch', 'Архив']];
+function lsToggle(k, v) { const l = lsList(k), i = l.indexOf(v); if (i >= 0) l.splice(i, 1); else l.unshift(v); lsSet(k, JSON.stringify(l.slice(0, 200))); return i < 0; }
+
+/* ---------- 8.0: поиск по всему сайту (/search/<запрос>) ----------
+   Люди — по полю search (как раньше); записи, видео, музыка и клубы — среди последних загруженных (раз в 5 минут, без новых индексов). */
+const SRCH = { at: 0, busy: null, posts: [], videos: [], tracks: [], groups: [], people: [], pq: null };
+const SR_TABS = [['all', 'Всё'], ['people', 'Люди'], ['posts', 'Записи'], ['videos', 'Видео'], ['tracks', 'Музыка'], ['groups', 'Клубы']];
+function searchLoad() {
+  if (!SRCH.busy && Date.now() - SRCH.at > 5 * 60e3) SRCH.busy = Promise.all([
+    getDocs(query(collection(db, 'posts'), orderBy('createdAt', 'desc'), limit(150))).then(s => { SRCH.posts = s.docs.map(data); }),
+    getDocs(query(collection(db, 'videos'), orderBy('createdAt', 'desc'), limit(100))).then(s => { SRCH.videos = s.docs.map(data); }),
+    getDocs(query(collection(db, 'tracks'), orderBy('createdAt', 'desc'), limit(200))).then(s => { SRCH.tracks = keepTracks(s.docs.map(data)); }),
+    getDocs(query(collection(db, 'groups'), limit(100))).then(s => { SRCH.groups = s.docs.map(data); }),
+  ].map(p => p.catch(console.error))).then(() => {
+    SRCH.at = Date.now(); SRCH.busy = null;
+    ensureUsers([...SRCH.posts.map(p => p.authorId), ...SRCH.videos.map(v => v.ownerId)]); if (S.view === 'search') render();
+  });
+  searchPeople();
+}
+let srT = 0;
+function searchPeople() {
+  const words = norm(S.sq).trim().replace(/^[@#]/, '').split(/\s+/).filter(Boolean), token = words[0] || '';
+  if (token === SRCH.pq) return; SRCH.pq = token; SRCH.people = [];
+  if (!token || S.sq.trim().startsWith('#')) return;
+  getDocs(query(collection(db, 'users'), where('search', 'array-contains', token.slice(0, 15)), limit(30))).then(s => {
+    if (SRCH.pq !== token) return;
+    const rest = norm(S.sq).trim().split(/\s+/).slice(1);
+    SRCH.people = s.docs.map(data).filter(u => !u.deleted && rest.every(w => (u.search || []).includes(w.slice(0, 15))));
+    SRCH.people.forEach(u => cache.users.set(u.id, u)); if (S.view === 'search') render();
+  }).catch(console.error);
+}
+const hl = (text, q) => {   // кусочек текста вокруг найденного, найденное подсвечено
+  const t = plainText(String(text || '')), i = norm(t).indexOf(q);
+  if (!q || i < 0) return esc(t.slice(0, 140)) + (t.length > 140 ? '…' : '');
+  const a = Math.max(0, i - 50), b = Math.min(t.length, i + q.length + 80);
+  return (a ? '…' : '') + esc(t.slice(a, i)) + '<mark>' + esc(t.slice(i, i + q.length)) + '</mark>' + esc(t.slice(i + q.length, b)) + (b < t.length ? '…' : '');
+};
+function viewSearch() {
+  const raw = S.sq.trim(), q = norm(raw), tag = q.startsWith('#') ? q.slice(1) : null, tab = S.stab || 'all';
+  const has = (...xs) => xs.some(x => norm(x).includes(q));
+  const R = {
+    people: tag ? [] : SRCH.people,
+    posts: !q ? [] : SRCH.posts.filter(p => tag ? (p.tags || []).includes(tag) : has(p.text || '')),
+    videos: !q || tag ? [] : SRCH.videos.filter(v => has(v.title || '', v.description || '')),
+    tracks: !q || tag ? [] : SRCH.tracks.filter(t => has(t.title || '', t.artist || '')),
+    groups: !q || tag ? [] : SRCH.groups.filter(g => has(g.name || '', g.about || '')),
+  };
+  const n = Object.values(R).reduce((s, l) => s + l.length, 0), lim = k => tab === 'all' ? R[k].slice(0, k === 'videos' ? 4 : 5) : R[k];
+  const sec = (k, title, html) => R[k].length && (tab === 'all' || tab === k) ? `<section class="card sr-sec"><div class="sr-h"><h2 class="h">${title} <span class="muted">${R[k].length}</span></h2>${tab === 'all' && R[k].length > (k === 'videos' ? 4 : 5) ? `<button class="linkbtn" data-act="stab" data-v="${k}">Все</button>` : ''}</div>${html}</section>` : '';
+  const qq = tag ? '' : q;
+  return `<div class="card pad sr-top"><h1 class="h brandh">Поиск</h1>
+      <div class="sr-box">${I.search}<input id="gsq" type="search" placeholder="Люди, записи, видео, музыка, клубы или #тег" autocomplete="off" value="${esc(S.sq)}"></div>
+      ${q ? `<div class="tabs scroll-x sr-tabs">${SR_TABS.map(([k, l]) => `<button class="${tab === k ? 'on' : ''}" data-act="stab" data-v="${k}">${l}${k !== 'all' && R[k].length ? ` <span class="muted">${R[k].length}</span>` : ''}</button>`).join('')}</div>` : ''}</div>
+    ${!q ? `<div class="card empty"><b>Что ищем?</b><span>Имя, ник, слово из записи, название трека или клуба. С «#» — записи с тегом.</span></div>`
+      : SRCH.busy && !SRCH.at ? loadingBox(2) : !n ? `<div class="card empty"><b>Ничего не нашли</b><span>Попробуйте другое слово${tag ? '' : ' или #тег'}</span></div>` : ''}
+    ${sec('people', 'Люди', `<div class="ulist">${lim('people').map(u => `<a class="uitem" href="#id/${esc(u.id)}" style="color:var(--fg)">${avatar(u, 42, false)}<span class="grow"><b>${esc(u.name)}</b><span class="muted small"> @${esc(u.nick || '')}</span></span></a>`).join('')}</div>`)}
+    ${sec('posts', tag ? 'Записи с #' + esc(tag) : 'Записи', lim('posts').map(p => { const a = U(p.authorId); return `<a class="sr-post" href="#post/${esc(p.id)}">${avatar(a, 36, false)}<span class="grow"><b>${esc(a?.name || '…')}</b> <span class="muted small">${ago(p.createdAt)}</span><span class="sr-snip">${hl(p.text || (p.poll ? p.poll.q : 'Фото'), qq)}</span></span></a>`; }).join(''))}
+    ${sec('videos', 'Видео', `<div class="vgrid sr-vgrid">${lim('videos').map(v => videoCard(v)).join('')}</div>`)}
+    ${sec('tracks', 'Музыка', lim('tracks').map(t => `<div class="sr-track"><button class="tembed-play" data-act="tplayid" data-id="${esc(t.id)}" aria-label="Играть">${trackCover(t)}<span class="tembed-ic">${I.play}</span></button><a class="grow" href="#music/t_${esc(t.id)}"><b>${hl(t.title, qq)}</b><span class="muted small">${hl(t.artist || 'Неизвестный исполнитель', qq)}</span></a></div>`).join(''))}
+    ${sec('groups', 'Клубы', `<div class="ulist">${lim('groups').map(g => `<a class="uitem" href="#club/${esc(g.id)}" style="color:var(--fg)">${groupAvatar(g, 42, false)}<span class="grow"><b>${hl(g.name, qq)}</b><span class="muted small"> · ${g.membersCount || 0} ${plural(g.membersCount || 0, 'участник', 'участника', 'участников')}</span></span></a>`).join('')}</div>`)}`;
+}
+document.addEventListener('input', e => {
+  if (e.target.id !== 'gsq') return;
+  S.sq = e.target.value; history.replaceState(null, '', BASE + 'search' + (S.sq.trim() ? '/' + encodeURIComponent(S.sq.trim()) : ''));
+  clearTimeout(srT); srT = setTimeout(searchPeople, 350); render();
+});
 
 /* ---------- Действия ---------- */
 let pickTarget = null;
@@ -5912,6 +6126,29 @@ document.addEventListener('click', async e => {
       case 'polltoggle': S.draft.poll = !S.draft.poll; S.draft.pollN = 2; render(); if (S.draft.poll) document.getElementById('pollQ')?.focus(); break;
       case 'polladd': S.draft.pollN = Math.min(6, S.draft.pollN + 1); render(); document.getElementById('pollO' + (S.draft.pollN - 1))?.focus(); break;
       case 'emojis': S.emoji = S.emoji === b.dataset.t ? null : b.dataset.t; render(); break;
+      case 'acpick': acPick(Number(b.dataset.i)); break;
+      case 'stab': S.stab = b.dataset.v; render(); window.scrollTo(0, 0); break;
+      case 'achall': S.achAll = !S.achAll; render(); break;
+      case 'themeset': { const t = THEMES.find(x => x[0] === b.dataset.v); if (t) { themeApply(t[2]); toast('🎨 Тема «' + t[1] + '»'); } break; }
+      case 'themetake': themeApply(S.themeOffer); S.themeOffer = null; toast('🎨 Тема применена'); render(); break;
+      case 'themeno': S.themeOffer = null; render(); break;
+      case 'themeshare': await copyText(siteUrl('theme/' + themeCode(themeNow())), 'Ссылка на тему скопирована — отправьте её другу'); break;
+      case 'cmore': S.cmore = !S.cmore; render(); break;
+      case 'draftsave': { const el = document.getElementById('postText'), t = el?.value.trim(); if (!t) { toast('Сначала напишите текст'); break; }
+        lsSet('vs_drafts', JSON.stringify([{ id: rid(), text: t.slice(0, 4000), at: Date.now() }, ...draftsGet()].slice(0, 20))); el.value = ''; lsSet('vs_draft', ''); resetIds.add('postText'); toast('💾 Сохранено в черновики'); render(); break; }
+      case 'draftuse': { const x = draftsGet().find(d => d.id === id), el = document.getElementById('postText'); if (!x || !el) break;
+        el.value = x.text; lsSet('vs_draft', x.text); lsSet('vs_drafts', JSON.stringify(draftsGet().filter(d => d.id !== id))); S.cmore = false; render(); document.getElementById('postText')?.focus(); break; }
+      case 'draftdel': lsSet('vs_drafts', JSON.stringify(draftsGet().filter(d => d.id !== id))); render(); break;
+      case 'schedpost': { const el = document.getElementById('postText'), t = el?.value.trim(), at = new Date(document.getElementById('schedAt')?.value || '').getTime();
+        if (!t) { toast('Сначала напишите текст'); break; }
+        if (!(at > Date.now() + 30000)) { toast('Выберите время в будущем'); break; }
+        lsSet('vs_sched', JSON.stringify([...schedGet(), { id: rid(), uid: uid(), text: t.slice(0, 4000), at }].slice(-30)));
+        el.value = ''; lsSet('vs_draft', ''); resetIds.add('postText'); S.compose = false; toast('⏰ Запись выйдет ' + new Date(at).toLocaleString('ru-RU', { day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' })); render(); break; }
+      case 'scheddel': lsSet('vs_sched', JSON.stringify(schedGet().filter(x => x.id !== id))); render(); break;
+      case 'chatfolder': S.chatFolder = b.dataset.v; S.chatMenu = null; render(); break;
+      case 'chatmenu': S.chatMenu = S.chatMenu === id ? null : id; render(); break;
+      case 'chatpin': toast(lsToggle('vs_chatpins', id) ? '📌 Закреплено' : 'Откреплено'); S.chatMenu = null; render(); break;
+      case 'chatarch': toast(lsToggle('vs_chatarch', id) ? '🗄 Диалог в архиве' : 'Диалог вернулся из архива'); S.chatMenu = null; render(); break;
       case 'fmts': S.fmt = S.fmt === b.dataset.t ? null : b.dataset.t; render(); break;
       case 'fmtwrap': fmtWrap(b.dataset.t, b.dataset.m); break;
       case 'emoji': {
@@ -6733,7 +6970,7 @@ document.addEventListener('submit', async e => {
         } catch (err) { S.authBusy = false; S.authError = err.message === 'nick-taken' ? 'Короткое имя уже занято, выберите другое.' : errText(err); render(); }
         break;
       }
-      case 'search': S.query = v('q'); go('people'); break;
+      case 'search': { const t = v('q'); S.query = t; go('search' + (t ? '/' + encodeURIComponent(t) : '')); break; }
       case 'videolink': {
         const p = parseVideoLink(v('vlUrl'));
         if (!p) { toast('Не узнали ссылку. Подходят YouTube, Rutube, VK Видео или прямая ссылка на .mp4'); return; }
