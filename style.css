@@ -1488,3 +1488,225 @@ kbd{font:600 11px/1 var(--f-body,system-ui);border:1px solid var(--line);border-
 .live-recv{width:100%;max-height:48vh;border-radius:14px;background:#000}
 .live-end{display:flex;flex-direction:column;gap:12px}
 @media (max-width:979px){.live-stage{position:sticky;top:64px;z-index:6;max-height:46vh}.live-msgs{height:auto;min-height:150px;max-height:34vh}}
+
+/* ==========================================================================
+   7.0: ВС Видео 2.0 и ВС Клипы
+   ========================================================================== */
+.vh-head{display:flex;align-items:flex-end;gap:10px;flex-wrap:wrap;padding:6px 4px 0}
+.vh-title{margin:2px 0 0;font:800 clamp(24px,5vw,34px)/1.1 var(--f-display,system-ui);letter-spacing:-.03em;text-wrap:balance}
+.vh-head .btn svg{width:18px;height:18px;flex:none}
+.vh-tabs{border-radius:var(--r);background:var(--surface);box-shadow:var(--shadow)}
+@media (max-width:520px){.vh-head .btn span{display:none}.vh-head .btn{width:44px;height:44px;padding:0;justify-content:center;border-radius:50%}}
+/* карточка ролика: обложка, аватар автора и подпись */
+.vcard{gap:10px}
+.vthumb{border-radius:16px;box-shadow:0 10px 24px -16px rgba(0,0,0,.5)}
+.vthumb img{transition:transform .35s cubic-bezier(.2,.8,.2,1)}
+.vcard:hover .vthumb img{transform:scale(1.04);filter:none}
+.vplay{position:absolute;inset:auto auto 10px 10px;width:36px;height:36px;border-radius:50%;display:grid;place-items:center;background:rgba(0,0,0,.45);color:#fff;
+  -webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px);opacity:0;transform:scale(.8);transition:opacity .2s,transform .2s}
+.vplay svg{width:18px;height:18px}
+.vcard:hover .vplay{opacity:1;transform:none}
+.vmeta{flex-direction:row;align-items:flex-start;gap:10px}
+.vmeta-t{display:flex;flex-direction:column;gap:2px;min-width:0}
+.vmeta-t b{font-weight:650;line-height:1.25;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
+.vmeta .av{flex:none;margin-top:1px}
+.vcard-wide{flex:none;width:260px;scroll-snap-align:start}
+.watch-side .vcard-wide{width:auto;flex-direction:row;gap:12px}
+.watch-side .vcard-wide .vthumb{width:46%;flex:none}
+.watch-side .vcard-wide .vmeta .av{display:none}
+/* главный ролик */
+.vhero{position:relative;display:block;aspect-ratio:16/8;max-height:420px;width:100%;border-radius:28px;overflow:hidden;color:#fff;background:#1a1030;box-shadow:0 22px 50px -30px rgba(0,0,0,.7)}
+.vhero-img,.vhero-img img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
+.vhero-img img{transition:transform .8s cubic-bezier(.2,.8,.2,1)}
+.vhero:hover .vhero-img img{transform:scale(1.03)}
+.vhero-shade{position:absolute;inset:0;background:linear-gradient(180deg,transparent 30%,rgba(10,6,20,.85))}
+.vhero-play{position:absolute;right:22px;bottom:22px;width:64px;height:64px;border-radius:50%;display:grid;place-items:center;background:#fff;color:#1a0b3b;box-shadow:0 14px 30px -10px rgba(0,0,0,.6);transition:transform .2s}
+.vhero:hover .vhero-play{transform:scale(1.07)}
+.vhero-play svg{width:30px;height:30px}
+.vhero-t{position:absolute;left:22px;right:100px;bottom:20px;display:flex;flex-direction:column;gap:6px}
+.vhero-t .mus-kicker{color:#F0ABFC}
+.vhero-t b{font:800 clamp(20px,4.4vw,32px)/1.1 var(--f-display,system-ui);letter-spacing:-.025em;text-wrap:balance;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
+.vhero-by{display:flex;align-items:center;gap:8px;font-size:14px;opacity:.9}
+@media (max-width:600px){.vhero{aspect-ratio:4/3;border-radius:22px}.vhero-play{width:52px;height:52px;right:16px;bottom:16px}.vhero-t{left:16px;right:80px;bottom:14px}}
+/* вертикальные карточки клипов */
+.vclip{flex:none;width:132px;display:flex;flex-direction:column;gap:6px;color:var(--fg);scroll-snap-align:start}
+.vclip-img{position:relative;display:grid;place-items:center;aspect-ratio:9/16;border-radius:18px;overflow:hidden;background:linear-gradient(160deg,#7C3AED,#DB2777);box-shadow:0 12px 26px -16px rgba(0,0,0,.55)}
+.vclip-img img{width:100%;height:100%;object-fit:cover;transition:transform .35s}
+.vclip:hover .vclip-img img{transform:scale(1.05)}
+.vclip-t{display:flex;flex-direction:column;min-width:0}
+.vclip-t b{font-size:13.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.vclip-t span{font-size:12px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.vclip-go-ic{width:60px;height:60px;border-radius:50%;display:grid;place-items:center;background:rgba(255,255,255,.95);color:#7C3AED}
+.vclip-go-ic svg{width:28px;height:28px}
+/* страница просмотра */
+.player{border-radius:22px;position:relative}
+.watch-info{display:flex;flex-direction:column;gap:12px}
+.watch-title{font-size:21px;text-wrap:balance;margin:0}
+.watch-by{gap:12px;flex-wrap:wrap}
+.watch-acts{gap:8px;flex-wrap:wrap}
+.watch-acts .pill svg{width:16px;height:16px}
+.watch-desc{position:relative}
+.watch-desc.cut .post-text{max-height:4.6em;overflow:hidden;-webkit-mask-image:linear-gradient(#000 55%,transparent);mask-image:linear-gradient(#000 55%,transparent)}
+.watch-next-h{gap:8px}
+.vauto{display:inline-flex;align-items:center;gap:8px;flex:none;border:0;background:none;color:var(--muted);cursor:pointer;padding:4px 2px;font:inherit}
+.vauto-sw{position:relative;width:36px;height:22px;border-radius:99px;background:var(--line);transition:background .2s}
+.vauto-sw::after{content:"";position:absolute;top:3px;left:3px;width:16px;height:16px;border-radius:50%;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.3);transition:transform .2s}
+.vauto-sw.on{background:var(--accent)}
+.vauto-sw.on::after{transform:translateX(14px)}
+.vnext{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;padding:16px;background:rgba(7,4,15,.78);color:#fff;text-align:center;z-index:2;animation:vsFade .25s ease-out}
+.vnext-t{font-size:18px;max-width:90%}
+.btn.light{color:#fff}
+/* скелетоны (заготовки вместо крутилки) */
+.sk-box,.sk-line,.sk-av,.sk-card{background:linear-gradient(90deg,var(--surface-2) 0%,color-mix(in srgb,var(--surface-2) 55%,var(--surface)) 50%,var(--surface-2) 100%);background-size:220% 100%;animation:skShine 1.3s ease-in-out infinite}
+.sk-line{display:block;height:12px;border-radius:6px;width:90%}
+.sk-line.short{width:55%;margin-top:6px}
+.sk-av{display:block;width:32px;height:32px;border-radius:50%;flex:none}
+@keyframes skShine{0%{background-position:120% 0}100%{background-position:-120% 0}}
+:root[data-anim="off"] .sk-box,:root[data-anim="off"] .sk-line,:root[data-anim="off"] .sk-av,:root[data-anim="off"] .sk-card{animation:none}
+.c-clips .app-ico{background:linear-gradient(135deg,#111827,#DB2777)}
+
+/* ВС Клипы — во весь экран, поверх всего */
+.clips{position:fixed;inset:0;z-index:70;background:#000;color:#fff;overflow:hidden}
+.clips-top{position:absolute;left:0;right:0;top:0;z-index:5;display:flex;align-items:center;gap:10px;padding:calc(10px + env(safe-area-inset-top,0px)) max(12px,env(safe-area-inset-right,0px)) 10px max(12px,env(safe-area-inset-left,0px));
+  background:linear-gradient(rgba(0,0,0,.55),transparent);pointer-events:none}
+.clips-top > *{pointer-events:auto}
+.clips-top b{font:800 19px var(--f-display,system-ui);letter-spacing:-.02em}
+.clips-x{width:42px;height:42px;flex:none;display:grid;place-items:center;border:0;border-radius:50%;background:rgba(255,255,255,.14);color:#fff;font-size:18px;cursor:pointer;
+  -webkit-backdrop-filter:blur(10px);backdrop-filter:blur(10px)}
+.clips-x:hover{background:rgba(255,255,255,.24)}
+.clips-x svg{width:20px;height:20px}
+.clip-load{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;text-align:center;padding:20px}
+.clips-feed{position:absolute;inset:0;overflow-y:auto;scroll-snap-type:y mandatory;overscroll-behavior:contain;scrollbar-width:none}
+.clips-feed::-webkit-scrollbar{display:none}
+.clip{position:relative;height:100%;scroll-snap-align:start;scroll-snap-stop:always;overflow:hidden;display:flex;justify-content:center}
+.clip-bg{position:absolute;inset:-40px;background:#111 center/cover;filter:blur(40px) brightness(.45);transform:scale(1.15)}
+.clip-media{position:relative;height:100%;width:min(100%,calc(100dvh * 9 / 16));cursor:pointer;-webkit-tap-highlight-color:transparent;user-select:none}
+.clip-media video,.clip-media iframe,.clip-poster{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;border:0;background:transparent}
+.clip-poster{transition:opacity .3s}
+.clip.playing .clip-poster{opacity:0}
+.clip-media iframe{pointer-events:auto}
+@media (min-width:700px){.clip-media{border-radius:20px;overflow:hidden;margin:12px 0;height:calc(100% - 24px);box-shadow:0 30px 70px -30px rgba(0,0,0,.9)}}
+.clip-paused{position:absolute;left:50%;top:50%;width:84px;height:84px;margin:-42px 0 0 -42px;border-radius:50%;display:grid;place-items:center;background:rgba(0,0,0,.4);opacity:0;transform:scale(1.3);transition:opacity .2s,transform .2s;pointer-events:none}
+.clip-paused svg{width:40px;height:40px}
+.clip.paused .clip-paused{opacity:1;transform:none}
+.clip-info{position:absolute;left:0;right:76px;bottom:0;z-index:3;padding:0 max(16px,env(safe-area-inset-left,0px)) calc(26px + env(safe-area-inset-bottom,0px));
+  background:linear-gradient(transparent,rgba(0,0,0,.55) 40%);pointer-events:none}
+@media (min-width:700px){.clip-info{left:50%;right:auto;width:min(100%,calc(100dvh * 9 / 16));transform:translateX(-50%);padding-right:80px}}
+.clip-info > *{pointer-events:auto}
+.clip-author{display:inline-flex;align-items:center;gap:10px;color:#fff;font-size:16px;text-shadow:0 1px 8px rgba(0,0,0,.6)}
+.clip-author .av{border:2px solid #fff}
+.clip-title{margin-top:8px;font-weight:700;font-size:15.5px;text-shadow:0 1px 8px rgba(0,0,0,.6)}
+.clip-desc{margin-top:4px;font-size:14px;opacity:.88;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;text-shadow:0 1px 8px rgba(0,0,0,.6)}
+.clip-side{position:absolute;right:max(10px,env(safe-area-inset-right,0px));bottom:calc(30px + env(safe-area-inset-bottom,0px));z-index:4;display:flex;flex-direction:column;gap:16px;align-items:center}
+@media (min-width:700px){.clip-side{right:calc(50% - min(50vw,calc(100dvh * 9 / 32)) - 76px)}}
+.clip-btn{display:flex;flex-direction:column;align-items:center;gap:4px;border:0;background:none;color:#fff;cursor:pointer;font:700 12px var(--f-body,system-ui);text-shadow:0 1px 6px rgba(0,0,0,.6)}
+.clip-ic{width:50px;height:50px;border-radius:50%;display:grid;place-items:center;background:rgba(255,255,255,.16);-webkit-backdrop-filter:blur(10px);backdrop-filter:blur(10px);transition:transform .15s,background .2s}
+.clip-ic svg{width:24px;height:24px}
+.clip-btn:hover .clip-ic{background:rgba(255,255,255,.26)}
+.clip-btn.on .clip-ic{color:#FF3B6B}
+.clip-btn.pop .clip-ic{animation:clipPop .45s cubic-bezier(.3,1.6,.5,1)}
+@keyframes clipPop{0%{transform:scale(1)}40%{transform:scale(1.35)}100%{transform:scale(1)}}
+.clip-prog{position:absolute;left:0;right:0;bottom:0;z-index:4;height:3px;background:rgba(255,255,255,.2)}
+.clip-prog i{display:block;height:100%;width:0;background:#fff}
+.clips-nav{position:absolute;right:20px;top:50%;transform:translateY(-50%);z-index:5;display:none;flex-direction:column;gap:10px}
+.clips-nav .clips-x:first-child svg{transform:rotate(90deg)}
+.clips-nav .clips-x:last-child svg{transform:rotate(-90deg)}
+@media (min-width:900px) and (hover:hover){.clips-nav{display:flex}}
+.clip.err .clip-media::after{content:"Не удалось загрузить ролик";position:absolute;inset:auto 0 50% 0;text-align:center;font-weight:700}
+/* летящее сердце на двойной тап (и в ленте, и в клипах) */
+.tap-heart{position:absolute;z-index:6;width:96px;height:96px;margin:-48px 0 0 -48px;color:#FF3B6B;pointer-events:none;filter:drop-shadow(0 6px 18px rgba(255,59,107,.55));
+  animation:tapHeart .85s cubic-bezier(.2,.9,.3,1) forwards}
+.tap-heart svg{width:100%;height:100%}
+@keyframes tapHeart{0%{transform:scale(.2) rotate(var(--rot,0deg));opacity:0}15%{transform:scale(1.2) rotate(var(--rot,0deg));opacity:1}30%{transform:scale(.95) rotate(var(--rot,0deg))}70%{transform:scale(1) rotate(var(--rot,0deg)) translateY(-10px);opacity:1}100%{transform:scale(1.1) rotate(var(--rot,0deg)) translateY(-80px);opacity:0}}
+/* 7.0: скелетоны страниц */
+.sk-wrap{display:flex;flex-direction:column;gap:12px}
+.sk-post .row{gap:12px}
+.sk-av.big{width:44px;height:44px}
+.sk-media{display:block;height:180px;border-radius:16px;margin-top:16px}
+/* 7.0: плавная смена страниц. Шапка, меню и плееры не участвуют — они остаются на месте, меняется только содержимое */
+.md-rail{view-transition-name:vs-rail}
+.md-top{view-transition-name:vs-top}
+.md-nav{view-transition-name:vs-mnav}
+.md-fab-float{view-transition-name:vs-fab}
+.mbar{view-transition-name:vs-mbar}
+.top{view-transition-name:vs-topbar}
+.nav{view-transition-name:vs-dock}
+::view-transition-old(root){animation:vtOut .18s cubic-bezier(.4,0,1,1) both}
+::view-transition-new(root){animation:vtIn .32s cubic-bezier(.2,.8,.2,1) both}
+:root[data-nav="back"]::view-transition-new(root){animation-name:vtInBack}
+@keyframes vtOut{to{opacity:0;transform:scale(.985)}}
+@keyframes vtIn{from{opacity:0;transform:translateY(14px) scale(.995)}}
+@keyframes vtInBack{from{opacity:0;transform:translateY(-10px)}}
+@media (prefers-reduced-motion:reduce){::view-transition-old(root),::view-transition-new(root){animation:none}}
+/* 7.0: разметка текста */
+.post-text b,.bubble b,.msg b{font-weight:700}
+.icode{font:500 .92em ui-monospace,SFMono-Regular,Menlo,monospace;padding:1px 6px;border-radius:6px;background:color-mix(in srgb,currentColor 13%,transparent)}
+.spoiler{border-radius:6px;padding:0 3px;background:var(--fg);color:transparent;cursor:pointer;transition:background .25s,color .25s;-webkit-user-select:none;user-select:none}
+.spoiler a{color:transparent;pointer-events:none}
+.spoiler.show{background:color-mix(in srgb,var(--fg) 8%,transparent);color:inherit;-webkit-user-select:text;user-select:text}
+.spoiler.show a{color:var(--accent);pointer-events:auto}
+.tap-heart.fixed{position:fixed;z-index:200}
+.post-img,.post-grid img{-webkit-tap-highlight-color:transparent}
+/* 7.0: обои чата */
+.wall-pick{display:flex;flex-direction:column;gap:10px;padding:10px 14px;border-bottom:1px solid var(--line)}
+.wall-sw{display:flex;gap:8px;overflow-x:auto;scrollbar-width:none;padding-bottom:2px}
+.wall-sw::-webkit-scrollbar{display:none}
+.wall-o{flex:none;width:64px;height:84px;border-radius:14px;border:2px solid transparent;cursor:pointer;display:flex;align-items:flex-end;justify-content:center;padding:4px;background-color:var(--surface-2);overflow:hidden}
+.wall-o span{font-size:10.5px;font-weight:700;padding:2px 6px;border-radius:99px;background:rgba(0,0,0,.45);color:#fff;white-space:nowrap}
+.wall-o.on{border-color:var(--accent);box-shadow:0 0 0 2px color-mix(in srgb,var(--accent) 35%,transparent)}
+.wall-o.wall-none span{background:var(--surface);color:var(--fg)}
+.wall-dusk{background:linear-gradient(160deg,#C4B5FD,#F9A8D4 60%,#FDE68A)!important}
+.wall-ocean{background:linear-gradient(170deg,#0EA5E9,#1E3A8A)!important}
+.wall-sunset{background:linear-gradient(170deg,#F97316,#DB2777 55%,#4C1D95)!important}
+.wall-mint{background:linear-gradient(160deg,#D1FAE5,#99F6E4 50%,#A7F3D0)!important}
+.wall-night{background:radial-gradient(1.5px 1.5px at 20% 30%,#fff9 50%,transparent 51%),radial-gradient(1px 1px at 70% 60%,#fff8 50%,transparent 51%),radial-gradient(1.2px 1.2px at 40% 80%,#fff7 50%,transparent 51%),linear-gradient(180deg,#0B1026,#1E1B4B)!important;background-size:120px 120px,90px 90px,150px 150px,auto!important}
+.wall-dots{background:radial-gradient(color-mix(in srgb,var(--accent) 22%,transparent) 2px,transparent 2.5px) 0 0/22px 22px,color-mix(in srgb,var(--accent) 6%,var(--surface))!important}
+.wall-waves{background:repeating-radial-gradient(circle at 0 100%,transparent 0 18px,color-mix(in srgb,var(--accent) 14%,transparent) 18px 20px) 0 0/80px 80px,color-mix(in srgb,var(--accent) 5%,var(--surface))!important}
+.wall-hearts{background:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='64' height='64' viewBox='0 0 64 64'%3E%3Cpath d='M16 26s-7-4.2-8.4-8.7C6.6 14 8.7 11.4 11.6 11.4c1.8 0 3.2.9 4.4 2.5 1.1-1.6 2.6-2.5 4.4-2.5 2.9 0 5 2.6 4 5.9C23 21.8 16 26 16 26z' fill='%23f472b6' fill-opacity='.35'/%3E%3Cpath d='M48 58s-5-3-6-6.2c-.7-2.3.8-4.2 2.9-4.2 1.3 0 2.3.6 3.1 1.8.8-1.2 1.8-1.8 3.1-1.8 2.1 0 3.6 1.9 2.9 4.2-1 3.2-6 6.2-6 6.2z' fill='%23a78bfa' fill-opacity='.35'/%3E%3C/svg%3E") 0 0/64px 64px,#FFF1F7!important}
+.msgs.wall .daysep{align-self:center;padding:3px 12px;border-radius:99px;background:rgba(0,0,0,.32);color:#fff;-webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px)}
+.msgs.wall .empty{color:#fff;text-shadow:0 1px 8px rgba(0,0,0,.4)}
+.msgs.wall-mint .daysep,.msgs.wall-dusk .daysep,.msgs.wall-hearts .daysep,.msgs.wall-dots .daysep,.msgs.wall-waves .daysep{background:rgba(255,255,255,.7);color:#333}
+/* 7.0: свайп для ответа */
+.msgs .msg{touch-action:pan-y;position:relative}
+.msgs .msg::before{content:"↩";position:absolute;left:-34px;top:50%;width:26px;height:26px;margin-top:-13px;border-radius:50%;display:grid;place-items:center;background:var(--accent);color:#fff;font-size:14px;opacity:0;transform:scale(.6);transition:opacity .15s,transform .15s}
+.msgs .msg.swipe-ok::before{opacity:1;transform:none}
+/* 7.0: поле сообщения — микрофон, пока пусто, и «отправить», когда есть текст */
+.chat-form:not(.has-text) > .btn[aria-label="Отправить"]{display:none}
+.chat-form.has-text > [data-act=mic]{display:none}
+@media (max-width:520px){.chat-form{gap:4px;padding-inline:8px}.chat-form > .icon-btn{width:40px;height:40px;flex:none}}
+/* 7.0: окно «Что нового» */
+.ov.wn-ov{background:rgba(10,8,20,.5);-webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px)}
+.ov-in.modal.wn{max-width:440px;padding:0;gap:0;overflow:hidden;max-height:calc(100dvh - 32px)}
+.wn-head{position:relative;isolation:isolate;overflow:hidden;flex:none;padding:26px 22px 22px;display:flex;flex-direction:column;gap:4px;color:#fff;
+  background:linear-gradient(135deg,color-mix(in srgb,var(--accent) 72%,#120A2A),color-mix(in srgb,var(--accent) 45%,#BE185D) 60%,color-mix(in srgb,var(--accent) 30%,#C2410C))}
+.wn-head i{position:absolute;border-radius:50%;filter:blur(20px);z-index:-1;animation:wnBlob 9s ease-in-out infinite alternate}
+.wn-head i:nth-child(1){width:170px;height:170px;left:-50px;top:-70px;background:rgba(255,255,255,.22)}
+.wn-head i:nth-child(2){width:150px;height:150px;right:-40px;top:0;background:rgba(244,114,182,.55);animation-duration:12s}
+.wn-head i:nth-child(3){width:130px;height:130px;left:38%;bottom:-80px;background:rgba(96,165,250,.55);animation-duration:7s}
+@keyframes wnBlob{to{transform:translate(30px,18px) scale(1.2)}}
+.wn-kick{font-size:12px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;opacity:.85}
+.wn-title{font-size:34px;line-height:1.05;font-weight:800;letter-spacing:-.02em;font-family:var(--f-display,inherit)}
+.wn-sub{font-size:14px;opacity:.92}
+.wn-head > .icon-btn.wn-x{position:absolute;top:10px;right:10px;width:36px;min-width:0;height:36px;padding:0;justify-content:center;border-radius:50%;color:#fff;background:rgba(255,255,255,.2)}
+.wn-head > .icon-btn.wn-x:hover{background:rgba(255,255,255,.32)}
+.wn-list{display:flex;flex-direction:column;gap:2px;padding:10px 10px 4px;overflow:auto;min-height:0}
+.wn-item{display:flex;align-items:center;gap:12px;padding:10px;border-radius:16px}
+@media (hover:hover){.wn-item:hover{background:color-mix(in srgb,var(--accent) 7%,transparent)}}
+.wn-item .grow{display:flex;flex-direction:column;gap:2px;min-width:0}
+.wn-item .grow > span{font-size:13px;line-height:1.38;color:var(--muted)}
+.wn-item .btn{flex:none}
+.wn-ic{width:44px;height:44px;flex:none;border-radius:14px;display:grid;place-items:center;font-size:22px;background:var(--accent-soft)}
+.btn.wn-ok{flex:none;margin:8px 16px 16px;padding:12px 16px;border-radius:14px;font-size:15px}
+.ov.a-in .wn-item{animation:vsUp .45s cubic-bezier(.2,.8,.2,1) both}
+.ov.a-in .wn-item:nth-child(2){animation-delay:.05s}.ov.a-in .wn-item:nth-child(3){animation-delay:.1s}
+.ov.a-in .wn-item:nth-child(4){animation-delay:.15s}.ov.a-in .wn-item:nth-child(5){animation-delay:.2s}.ov.a-in .wn-item:nth-child(6){animation-delay:.25s}
+:root[data-anim="off"] .wn-head i,:root[data-anim="off"] .ov.a-in .wn-item{animation:none}
+@media (prefers-reduced-motion:reduce){.wn-head i,.ov.a-in .wn-item{animation:none}}
+@media (max-width:520px){.wn-title{font-size:28px}.wn-head{padding:22px 18px 18px}.wn-item .btn{padding:6px 10px}}
+#clipsOv{position:relative;z-index:80}
+/* 7.0: кнопки разметки в новой записи */
+.fmt-bar{display:flex;align-items:center;gap:4px;flex-wrap:wrap;padding:8px 0 2px;margin-top:8px;border-top:1px solid var(--line)}
+.fmt-bar button{min-width:40px;height:36px;padding:0 10px;border:0;border-radius:12px;background:var(--surface-2);color:var(--fg);font:600 15px var(--f-body,system-ui);cursor:pointer}
+.fmt-bar button:hover{background:var(--accent-soft);color:var(--accent)}
+.fmt-bar .small{margin-left:6px}
+.fmt-aa{font:800 15px/1 var(--f-display,system-ui);letter-spacing:-.02em}

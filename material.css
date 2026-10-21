@@ -409,3 +409,8 @@ main{gap:12px}
 .mh-q-play,.mh-pl{background:var(--md-p);color:var(--md-on-p)}
 .mh-stream{border-radius:28px}
 .mh-cv{border-radius:20px}
+/* 7.0: видео в Material You */
+.vh-tabs{background:var(--md-s-c);box-shadow:none}
+.vhero,.player{border-radius:28px}
+.vthumb,.vclip-img{border-radius:20px}
+@media (max-width:760px){.tabs{flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none}.tabs::-webkit-scrollbar{display:none}.tabs :is(a,button){flex:none}}
