@@ -3102,7 +3102,7 @@ function fullPlayer() {
       <button class="icon-btn fp-big" data-act="mnext" aria-label="Следующий">${I.next}</button>
       <button class="icon-btn fp-ic fp-mode ${player.repeat !== 'off' ? 'on' : ''}" data-act="fprepeat" aria-label="${REPEAT_LABEL[player.repeat]}" title="${REPEAT_LABEL[player.repeat]}">${I.repeat}${player.repeat === 'one' ? '<sup>1</sup>' : ''}</button></div>
     <div class="fp-acts">
-      ${act('fpsheet', '🎛', 'Звук', eqActive(), 'data-v="eq"', t.radio)}
+      ${act('fpsheet', '🎛', 'Эквалайзер', eqActive(), 'data-v="eq"', t.radio)}
       ${showLyrics && !S.lyrEdit ? act('lyrpick', 'Aa', 'Вид текста', S.lyrPick) : act('fpmode', I.radio, 'Винил', view === 'viz', 'data-v="viz"')}
       ${act('fpsheet', '⏩', player.rate !== 1 ? player.rate + '×' : 'Скорость', player.rate !== 1 || !player.pitch, 'data-v="speed"', t.radio)}
       ${act('fpsheet', '🌙', `<span id="fpSleep">${sleepTxt || 'Сон'}</span>`, !!player.sleep, 'data-v="sleep"')}
