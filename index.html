@@ -2,44 +2,36 @@
 <html lang="ru">
 <head>
 <meta charset="utf-8">
-<script>
-/* Адреса без решётки (6.9). Папка сайта: на GitHub Pages «/vsmske/», при запуске с корня — «/». <base> нужен, чтобы стили и скрипты находились и на адресах вроде /vsmske/live/abc.
-   Страница 404.html присылает сюда глубокие адреса как /vsmske/?/live/abc — возвращаем обычный адрес до того, как запустится сайт. */
-(function (l) {
-  var b = l.pathname.indexOf('/vsmske/') === 0 || l.pathname === '/vsmske' ? '/vsmske/' : '/';
-  document.write('<base href="' + b + '">');
-  if (l.search.charAt(1) === '/') {
-    var d = l.search.slice(1).split('&').map(function (x) { return x.replace(/~and~/g, '&'); }).join('?');
-    history.replaceState(null, '', b.slice(0, -1) + d + l.hash);
-  }
-})(window.location);
-</script>
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>VСмске</title>
-<meta name="description" content="VСмске — социальная сеть: стена, лента друзей, лайки, комментарии и сообщения.">
-<meta name="theme-color" content="#140A24">
-<link rel="icon" type="image/png" href="icon-192.png">
+<script>
+/* Адрес, спрятанный 404.html (…/?/im/abc), возвращаем на место; <base> — чтобы стили и скрипты находились на любой глубине адреса. */
+(function (l) {
+  var keep = l.pathname.indexOf('/vsmske/') === 0 ? '/vsmske/' : '/';
+  document.write('<base href="' + keep + '">');
+  if (l.search[1] === '/') {
+    var d = l.search.slice(1).split('&').map(function (s) { return s.replace(/~and~/g, '&'); }).join('?');
+    history.replaceState(null, '', keep.slice(0, -1) + d + l.hash);
+  }
+  try { var t = localStorage.getItem('vs_theme'); if (t === 'light' || t === 'dark') document.documentElement.dataset.theme = t; } catch (e) { }
+})(window.location);
+</script>
+<meta name="description" content="VСмске — лента друзей, переписка и звонки, музыка, видео и клипы.">
+<meta name="theme-color" content="#FBF7F2" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#141317" media="(prefers-color-scheme: dark)">
 <link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon-192.png">
 <link rel="apple-touch-icon" href="apple-touch-icon.png">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="VСмске">
-<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Google+Sans:wght@400;500;600;700&family=PT+Serif:ital,wght@0,400;0,700;1,400&family=PT+Sans:wght@400;700&family=Unbounded:wght@500;600;700&display=swap">
-<link rel="stylesheet" href="style.css?v=8.0">
-<link rel="stylesheet" href="material.css?v=8.0" id="skinMd">
-<link rel="stylesheet" href="paper.css?v=8.0" id="skinPaper">
-<link rel="stylesheet" href="player.css?v=8.0">
-<script>(function(){var k='material';try{var s=localStorage.getItem('vs_skin');k=s==='paper'||s==='lite'||s==='material'?s:(localStorage.getItem('vs_lite')==='on'?'lite':'material')}catch(e){}
-document.documentElement.dataset.skin=k;document.getElementById('skinPaper').disabled=k!=='paper';document.getElementById('skinMd').disabled=k!=='material'})()</script>
-<style>:root{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)} body{margin:0} img{max-width:100%} [hidden]{display:none!important}</style>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap">
+<link rel="stylesheet" href="css/app.css?v=9.0">
 </head>
 <body>
-<div id="app"><div class="boot"><span class="boot-logo">вс</span></div></div>
-<div id="toast" class="toast" hidden></div>
-<input type="file" id="filePick" accept="image/*" hidden>
-<script type="module" src="app.js?v=8.0"></script>
+<div id="app"><div class="boot"><span class="logo-mark">вс</span></div></div>
+<script type="module" src="js/main.js?v=9.0"></script>
 </body>
 </html>
