@@ -53,7 +53,7 @@ const MAX_POST_IMG = 700000;   // символов dataURL (~520 КБ), лими
 const MAX_AVATAR = 120000;
 const CHUNK = 700000;                                   // символов base64 в одном куске (кратно 4)
 const LIMITS = { disk: 10 * 1024 * 1024, video: 20 * 1024 * 1024, music: 12 * 1024 * 1024 };
-const VERSION = '9.1';
+const VERSION = '9.2';
 const MAX_MSG_IMG = 380000;    // фото в сообщении
 const ONLINE_MS = 5 * 60 * 1000; // «в сети», если заходил не раньше 5 минут назад
 
@@ -5989,11 +5989,12 @@ document.addEventListener('click', async e => {
       case 'authtab': S.authTab = b.dataset.tab; S.authError = ''; S.fatal = null; render(); break;
       case 'google': {
         S.authError = '';
-        if (isStandalone()) { await googleGo(); break; }   // с иконки на главном экране — без всплывающего окна
+        // 9.1: и с иконки на главном экране сначала пробуем окно Google через Firebase (его адрес возврата у Google разрешён);
+        // переход googleGo() — только если окно не открылось (ему нужен адрес сайта в Authorized redirect URIs в Google Cloud)
         const p = new GoogleAuthProvider(); p.setCustomParameters({ prompt: 'select_account' });
         try { await signInWithPopup(auth, p); }
         catch (err) {
-          if (err.code === 'auth/popup-blocked' || err.code === 'auth/operation-not-supported-in-this-environment') await googleGo();
+          if (err.code === 'auth/popup-blocked' || err.code === 'auth/operation-not-supported-in-this-environment' || err.code === 'auth/web-storage-unsupported') await googleGo();
           else if (err.code !== 'auth/popup-closed-by-user' && err.code !== 'auth/cancelled-popup-request') { S.authError = errText(err); render(); }
         }
         break;
