@@ -149,10 +149,11 @@ view('more', {
 const Q = { q: '', res: null, t: 0 };
 act('search-open', () => { Q.q = ''; Q.res = null; openModal({ type: 'search' }); setTimeout(() => document.getElementById('qInput')?.focus(), 30); });
 modal('search', () => html`<div class="search-box"><div class="sbar">${raw(I.search)}<input id="qInput" data-i="q" placeholder="Имя, фамилия или ник" autocomplete="off" value="${Q.q}"><button class="ib" data-a="modal-x" aria-label="Закрыть">${raw(I.x)}</button></div>
-  <div class="slist">${!Q.q.trim() ? html`<p class="muted small pad">Начните вводить имя — найдём людей на VСмске</p>`
+  <div class="slist">${Q.q.trim().startsWith('#') ? html`<a class="urow" href="search/${encodeURIComponent(Q.q.trim().toLowerCase())}">${raw(I.search)}<span class="grow"><b>Записи с ${Q.q.trim()}</b></span></a>`
+    : !Q.q.trim() ? html`<p class="muted small pad">Начните вводить имя или #хэштег</p>`
     : Q.res === null ? html`<p class="muted small pad">Ищем…</p>` : Q.res.length ? Q.res.map(u => html`<a class="urow" href="${profileHref(u)}" data-k="s-${u.id}">${avatar(u, 40, false)}<span class="grow"><b>${u.name}</b><small class="muted">@${u.nick}${u.city ? ' · ' + u.city : ''}</small></span></a>`) : html`<p class="muted small pad">Никого не нашли</p>`}</div></div>`);
 onInput('q', v => {
-  Q.q = v; clearTimeout(Q.t); Q.res = null; render();
+  Q.q = v; clearTimeout(Q.t); Q.res = null; render(); if (v.trim().startsWith('#')) return;
   const words = norm(v).trim().replace(/^@/, '').split(/\s+/).filter(Boolean); if (!words.length) return;
   Q.t = setTimeout(async () => {
     try {
@@ -164,3 +165,30 @@ onInput('q', v => {
   }, 250);
 });
 document.addEventListener('click', e => { if (S.modal?.type === 'search' && e.target.closest('.slist a')) setTimeout(() => { if (S.modal?.type === 'search') { S.modal = null; render(); } }, 0); });
+
+/* ---------- Страница поиска: search/<запрос>; «#тег» — записи с хэштегом, иначе люди ---------- */
+const SR = { q: '', res: null };
+async function findPeople(v) {
+  const words = norm(v).trim().replace(/^@/, '').split(/\s+/).filter(Boolean); if (!words.length) return [];
+  const s = await getDocs(query(collection(db, 'users'), where('search', 'array-contains', words[0].slice(0, 15)), limit(30)));
+  const res = s.docs.map(data).filter(u => words.slice(1).every(w => (u.search || []).includes(w.slice(0, 15))));
+  res.forEach(u => cache.users.set(u.id, u)); return res;
+}
+view('search', {
+  title: q => q || 'Поиск',
+  enter(q = '') {
+    SR.q = q; SR.res = null;
+    const tag = q.startsWith('#') ? norm(q.slice(1)).trim() : '';
+    // без orderBy — так не нужен новый индекс; порядок наводит watchPosts
+    if (tag) watchPosts(last => query(collection(db, 'posts'), where('tags', 'array-contains', tag), ...(last ? [startAfter(last)] : []), limit(60)), 60);
+    else if (q.trim()) findPeople(q).then(r => { if (SR.q === q) { SR.res = r; render(); } }).catch(() => { SR.res = []; render(); });
+    else SR.res = [];
+  },
+  render(q = '') {
+    const head = html`<form class="card sbar" data-f="search-go">${raw(I.search)}<input name="q" value="${q}" data-v="${q}" placeholder="Люди или #хэштег" autocomplete="off"><button class="btn sm">Найти</button></form>`;
+    if (q.startsWith('#')) return html`${pageHead(q, 'Записи с этим хэштегом')}${head}${postList('Записей с таким хэштегом пока нет')}`;
+    return html`${pageHead('Поиск')}${head}<section class="card list">${!q.trim() ? html`<p class="muted small pad">Введите имя, ник или #хэштег</p>` : SR.res === null ? skeleton(1)
+      : SR.res.length ? SR.res.map(u => html`<a class="urow" href="${profileHref(u)}" data-k="sr-${u.id}">${avatar(u, 44, false)}<span class="grow"><b>${u.name}</b><small class="muted">@${u.nick}${u.city ? ' · ' + u.city : ''}</small></span></a>`) : empty('Никого не нашли')}</section>`;
+  },
+});
+form('search-go', v => { const q = (v.q || '').trim(); go('search/' + encodeURIComponent(q)); });

@@ -2,7 +2,7 @@
 import {
   auth, db, uid, data, errText, GOOGLE_CLIENT, onAuthStateChanged, GoogleAuthProvider, signInWithPopup, signInWithCredential,
   createUserWithEmailAndPassword, signInWithEmailAndPassword, sendPasswordResetEmail, signOut,
-  doc, collection, query, where, orderBy, limit, getDoc, onSnapshot, writeBatch, serverTimestamp,
+  doc, collection, query, where, orderBy, limit, getDoc, deleteDoc, onSnapshot, writeBatch, serverTimestamp,
 } from './fb.js';
 import { S, cache, view, act, form, render, route, go, ensureUsers, touchSeen, BASE } from './core.js';
 import { html, raw, I, toast, buildSearch, safePhoto, lsGet, lsSet } from './lib.js';
@@ -35,6 +35,8 @@ function startLive(id) {
   unsubs.push(onSnapshot(query(collection(db, 'notifs'), where('to', '==', id), limit(150)), s => {
     cache.notifs = s.docs.map(data).sort((a, b) => (b.createdAt?.toMillis?.() || 0) - (a.createdAt?.toMillis?.() || 0));
     ensureUsers(cache.notifs.map(n => n.from)); emit('notifs'); render();
+    // запрос без orderBy (так не нужен индекс), поэтому храним не больше 100: самые старые стираем — иначе новые могли бы не попасть в выборку
+    if (cache.notifs.length > 120) cache.notifs.slice(100).forEach(n => deleteDoc(doc(db, 'notifs', n.id)).catch(() => { }));
   }, console.error));
   unsubs.push(onSnapshot(query(collection(db, 'friendRequests'), where('to', '==', id)), s => { cache.incoming = s.docs.map(data); ensureUsers(cache.incoming.map(r => r.from)); render(); }, console.error));
   unsubs.push(onSnapshot(query(collection(db, 'friendRequests'), where('from', '==', id)), s => { cache.outgoing = s.docs.map(data); render(); }, console.error));

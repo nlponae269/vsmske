@@ -88,6 +88,8 @@ window.addEventListener('popstate', () => route());
 const ALIASES = { '': 'feed', news: 'feed', im: 'im', messages: 'im' };
 export function route() {
   if (S.phase !== 'app') return;
+  // старые ссылки с решёткой (/#video, …/#music/t_x из старых записей); #id_token — возврат от Google
+  if (/^#[^#]/.test(location.hash) && !location.hash.includes('id_token')) history.replaceState(null, '', BASE + location.hash.slice(1).replace(/^\/+/, ''));
   const parts = curPath().split('/').filter(Boolean).map(p => { try { return decodeURIComponent(p); } catch (e) { return p; } });
   let name = parts[0] ?? '', args = parts.slice(1);
   if (name.startsWith('@')) { args = [name.slice(1)]; name = 'nick'; }
