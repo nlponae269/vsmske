@@ -1,0 +1,104 @@
+/* Дизайн 8.0 «Газета»: бумага, типографика и тонкие линейки вместо стекла и теней.
+   Включается вместо material.css (data-skin="paper"), раскладка — классическая (старый shell()). */
+:root{
+  --bg:#EFE9DC; --surface:#FBF8F0; --surface-2:#F2ECDF; --line:#D6CCB8;
+  --fg:#1C1A16; --muted:#6E675A; --accent-soft:#F1E1D9; --accent-fg:#FFFFFF;
+  --like:#B3261E; --ok:#2E6B3F;
+  --f-display:"PT Serif",Georgia,"Times New Roman",serif;
+  --f-body:"PT Sans","Golos Text",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --r:3px; --shadow:none; --ink:#1C1A16; --rule:#1C1A16;
+}
+:root:not([data-accent]){--accent:#A3261B}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#15130F; --surface:#1D1A15; --surface-2:#25211B; --line:#3B342A;
+  --fg:#EDE6D6; --muted:#A39B8A; --accent-soft:#3A2520; --accent-fg:#15130F;
+  --like:#F07A6A; --ok:#7CC08E; --ink:#EDE6D6; --rule:#CFC6B4; color-scheme:dark}
+  :root:not([data-theme="light"]):not([data-accent]){--accent:#E8836F}}
+:root[data-theme="dark"]{
+  --bg:#15130F; --surface:#1D1A15; --surface-2:#25211B; --line:#3B342A;
+  --fg:#EDE6D6; --muted:#A39B8A; --accent-soft:#3A2520; --accent-fg:#15130F;
+  --like:#F07A6A; --ok:#7CC08E; --ink:#EDE6D6; --rule:#CFC6B4; color-scheme:dark}
+:root[data-theme="dark"]:not([data-accent]){--accent:#E8836F}
+
+/* бумага: лёгкое зерно поверх фона */
+html{background:var(--bg)}
+body{font-size:15.5px;line-height:1.5;
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 0.45 0 0 0 0 0.38 0 0 0 0 0.28 0 0 0 .07 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E")}
+h1,h2,h3,.h,.brandh,.prof-name,.vh-title,.watch-title{font-family:var(--f-display)!important;letter-spacing:0!important}
+.h{font-weight:700}
+::selection{background:color-mix(in srgb,var(--accent) 25%,transparent)}
+
+/* шапка — как «шапка» газеты: название крупно, двойная линейка снизу */
+.top{background:var(--bg);border-bottom:3px double var(--rule)}
+.top-in{height:62px}
+.logo-mark{border-radius:2px;background:var(--ink);color:var(--bg);font-family:var(--f-display);font-size:16px}
+.logo-word{font:700 24px/1 var(--f-display);letter-spacing:-.01em;font-style:italic}
+.search input{border-radius:2px;background:var(--surface);border:1px solid var(--line)}
+.search input:focus{border-color:var(--ink)}
+
+/* меню слева — оглавление номера */
+.nav :is(a,button){border-radius:0;padding:8px 6px;border-bottom:1px dotted var(--line)}
+.nav :is(a,button):hover{background:none;color:var(--accent)}
+.nav :is(a,button).on{background:none;box-shadow:none;color:var(--accent);font-weight:700}
+.nav :is(a,button).on span:not(.badge){text-decoration:underline;text-decoration-thickness:2px;text-underline-offset:4px}
+.nav svg{color:var(--ink)}
+.badge,.nav .badge{border-radius:2px;background:var(--accent)}
+
+/* карточки — колонки на бумаге: без теней, тонкая рамка, жирная линейка сверху */
+.card{border-radius:var(--r);box-shadow:none;border:1px solid var(--line);border-top:2px solid var(--rule)}
+.card.post,.post.card{border-top-width:1px}
+main > .card:first-child:has(.brandh){border-top:4px double var(--rule)}
+.brandh{font-size:28px!important;font-weight:700}
+.btn{border-radius:2px;background:var(--ink);color:var(--bg);font-weight:700;letter-spacing:.01em}
+.btn:hover{background:var(--accent);color:#fff}
+.btn.sec{background:transparent;color:var(--ink);box-shadow:inset 0 0 0 1px var(--ink)}
+.btn.sec:hover{background:var(--ink);color:var(--bg)}
+.btn.ghost{background:transparent;color:var(--accent)}
+.btn.danger{background:var(--like);color:#fff}
+.pill{border-radius:2px;background:transparent;border:1px solid var(--line);color:var(--fg)}
+.pill.liked{color:var(--like);border-color:var(--like)}
+.icon-btn{border-radius:2px}
+input,textarea,select{border-radius:2px!important}
+.tabs button.on,.tabs a.on{border-bottom-color:var(--ink);color:var(--ink);font-weight:700}
+.chip{border-radius:2px}
+.av{border-radius:50%;filter:saturate(.85) contrast(1.02)}
+.post-text{font-family:var(--f-display);font-size:16.5px;line-height:1.55}
+.post-text::first-letter{font-weight:700}
+.post-img,.post-grid img,.vthumb,.vhero,.vclip-img,.mcard,.app-tile{border-radius:2px!important}
+.post-img,.post-grid img{filter:saturate(.92)}
+.empty b{font-family:var(--f-display);font-size:19px}
+.small.muted,.muted.small{font-style:normal}
+.toast{border-radius:2px;background:var(--ink);color:var(--bg)}
+
+/* плитки сервисов — рубрики */
+.app-tile{box-shadow:none!important;border:1px solid var(--line)}
+.app-tile .app-ico{border-radius:2px!important}
+
+/* чаты — переписка как записки на полях */
+.msg{border-radius:3px!important}
+.msg.me{background:var(--ink)!important;color:var(--bg)!important}
+.msg.me a{color:inherit;text-decoration:underline}
+.chat-form input{border-radius:2px}
+
+/* окна */
+.ov-in.modal{border-radius:3px;border:1px solid var(--line);border-top:4px double var(--rule)}
+.wn-head{background:var(--ink)!important;color:var(--bg)}
+.wn-head i{display:none}
+.wn-title{font-family:var(--f-display);font-style:italic}
+
+/* телефон: нижнее меню — тонкая линейка, без подложек */
+@media (max-width:760px){
+  .nav{background:var(--bg);border-top:3px double var(--rule)}
+  .nav :is(a,button){border-bottom:0;font-family:var(--f-display);font-size:11.5px}
+  .nav :is(a,button).on span:not(.badge){text-decoration:none}
+  .logo-word{display:inline;font-size:20px}
+  .brandh{font-size:24px!important}
+}
+/* яркие баннеры — в газетной гамме */
+.card.recap-card{background:var(--ink)!important;color:var(--bg)!important;border-color:var(--ink)}
+.recap-card .recap-go{border-radius:2px;background:var(--bg);color:var(--ink)}
+.mh-stream{background:var(--ink)!important;color:var(--bg)!important;border-radius:3px!important}
+.mh-stream *{border-radius:2px}
+.mh-stream::before,.mh-stream::after{display:none!important}
+.mh-quick,.mh-quick a,.mh-tile,.mh-card,.mh-cover{border-radius:3px!important;box-shadow:none!important}
+.vh-tabs{border-radius:3px;box-shadow:none}
