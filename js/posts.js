@@ -1,6 +1,6 @@
 // Записи: лента, стена профиля, одна запись. Поле новой записи, лайки, комментарии, опросы, правка и удаление.
 import { db, uid, data, errText, doc, collection, query, where, orderBy, limit, startAfter, getDoc, getDocs, addDoc, updateDoc, deleteDoc, onSnapshot, writeBatch, serverTimestamp, arrayUnion, arrayRemove, increment, setDoc } from './fb.js';
-import { S, cache, U, view, act, form, onInput, render, sub, ensureUsers, avatar, nameLink, empty, skeleton, pageHead, openModal, closeModal, modal, isFriend, siteUrl, go } from './core.js';
+import { S, cache, U, hidden, locked, view, act, form, onInput, render, sub, ensureUsers, avatar, nameLink, empty, skeleton, pageHead, openModal, closeModal, modal, isFriend, siteUrl, go } from './core.js';
 import { html, raw, I, ago, plural, richText, extractTags, extractMentions, compress, safeImg, toast, copyText, lsGet, lsSet } from './lib.js';
 
 /* ---------- Уведомления (по возможности, ошибки не мешают) ---------- */
@@ -54,7 +54,8 @@ export function postCard(p) {
       <div class="row end"><button type="button" class="btn ghost sm" data-a="post-edit-x">Отмена</button><button class="btn sm">Сохранить</button></div></form>`
       : p.text ? html`<div class="post-t">${richText(p.text)}</div>` : ''}
     ${p.repostOf ? repostBox(p.repostOf) : ''}
-    ${imgs.length ? html`<div class="pics n${Math.min(imgs.length, 4)}">${imgs.slice(0, 4).map((src, i) => html`<button class="pic" data-a="photo" data-id="${p.id}" data-i="${i}"><img src="${safeImg(src)}" alt="Фото" loading="lazy"></button>`)}</div>` : ''}
+    ${imgs.length && hidden(p.authorId) ? html`<div class="pics n${Math.min(imgs.length, 4)}">${imgs.slice(0, 4).map(() => locked('Фото недоступно', 'pic'))}</div>`
+      : imgs.length ? html`<div class="pics n${Math.min(imgs.length, 4)}">${imgs.slice(0, 4).map((src, i) => html`<button class="pic" data-a="photo" data-id="${p.id}" data-i="${i}"><img src="${safeImg(src)}" alt="Фото" loading="lazy"></button>`)}</div>` : ''}
     ${p.poll ? pollBox(p) : ''}
     <footer class="post-f">
       <button class="pill ${liked ? 'liked' : ''}" data-a="like" data-id="${p.id}" aria-pressed="${liked}">${raw(liked ? I.heartF : I.heart)}<span>${(p.likes || []).length || ''}</span></button>
@@ -73,7 +74,7 @@ function repostBox(id) {
   if (o === null) return html`<div class="repost muted">Загружаем…</div>`;
   if (!o) return html`<div class="repost muted">Запись удалена</div>`;
   const img = o.images?.[0] || o.image;
-  return html`<a class="repost" href="post/${o.id}"><div class="row">${avatar(U(o.authorId), 26, false)}<b>${U(o.authorId)?.name || '…'}</b></div>${o.text ? html`<div class="clamp3">${o.text}</div>` : ''}${img ? html`<img src="${safeImg(img)}" alt="" loading="lazy">` : ''}</a>`;
+  return html`<a class="repost" href="post/${o.id}"><div class="row">${avatar(U(o.authorId), 26, false)}<b>${U(o.authorId)?.name || '…'}</b></div>${o.text ? html`<div class="clamp3">${o.text}</div>` : ''}${img ? (hidden(o.authorId) ? locked('Фото недоступно') : html`<img src="${safeImg(img)}" alt="" loading="lazy">`) : ''}</a>`;
 }
 function pollBox(p) {
   const poll = p.poll, votes = poll.votes || {}, all = Object.values(votes), mine = votes[uid()], voted = mine !== undefined;

@@ -49,7 +49,7 @@ async function accept(from) {
 
 /* ---------- Страница друзей: /friends, /friends/requests, /friends/find, /friends/<uid> ---------- */
 const F = { tab: 'all', q: '', other: null, people: null, found: null, t: 0 };
-const urow = (u, right = '') => html`<div class="urow" data-k="u-${u.id}">${avatar(u, 48)}<div class="grow"><div>${nameLink(u)}</div><small class="muted ${isOnline(u) ? 'ok' : ''}">${seenText(u) || (u.city || '@' + u.nick)}</small></div>${right}</div>`;
+const urow = (u, right = '') => html`<div class="urow" data-k="u-${u.id}">${avatar(u, 48)}<div class="grow"><div>${nameLink(u)}</div><small class="muted ${isOnline(u) ? 'ok' : ''}">${seenText(u) || (u.banned ? 'Аккаунт заблокирован' : u.city || '@' + u.nick)}</small></div>${right}</div>`;
 view('friends', {
   title: 'Друзья',
   enter(a) {
@@ -88,7 +88,7 @@ view('friends', {
 onInput('fr-q', v => { F.q = v; render(); });
 async function loadPeople() {
   F.people = null;
-  try { const s = await getDocs(query(collection(db, 'users'), orderBy('createdAt', 'desc'), limit(40))); F.people = s.docs.map(data); F.people.forEach(u => cache.users.set(u.id, u)); }
+  try { const s = await getDocs(query(collection(db, 'users'), orderBy('createdAt', 'desc'), limit(40))); F.people = s.docs.map(data); F.people.forEach(u => cache.users.set(u.id, u)); F.people = F.people.map(u => U(u.id)).filter(u => !u.banned); }
   catch (e) { F.people = []; }
   render();
 }
@@ -100,7 +100,7 @@ onInput('fr-find', v => {
     try {
       const s = await getDocs(query(collection(db, 'users'), where('search', 'array-contains', w[0].slice(0, 15)), limit(40)));
       F.found = s.docs.map(data).filter(u => w.slice(1).every(x => (u.search || []).includes(x.slice(0, 15))));
-      F.found.forEach(u => cache.users.set(u.id, u));
+      F.found.forEach(u => cache.users.set(u.id, u)); F.found = F.found.map(u => U(u.id));
     } catch (e) { F.found = []; }
     render();
   }, 300);

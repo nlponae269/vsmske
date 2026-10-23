@@ -15,7 +15,7 @@ function openProfile(id) {
   watchPosts(last => query(collection(db, 'posts'), where('wallId', '==', id), orderBy('createdAt', 'desc'), ...(last ? [startAfter(last)] : []), limit(20)));
 }
 function onSnapshotUser(id) {
-  return onSnapshot(doc(db, 'users', id), s => { PR.user = s.exists() ? data(s) : { id, deleted: true, name: 'Страница удалена', friends: [] }; cache.users.set(id, PR.user); ensureUsers((PR.user.friends || []).slice(0, 12)); render(); }, () => { PR.user = { id, deleted: true, name: 'Страница недоступна', friends: [] }; render(); });
+  return onSnapshot(doc(db, 'users', id), s => { PR.user = s.exists() ? data(s) : { id, deleted: true, name: 'Страница удалена', friends: [] }; cache.users.set(id, PR.user); PR.user = U(id); ensureUsers((PR.user.friends || []).slice(0, 12)); render(); }, () => { PR.user = { id, deleted: true, name: 'Страница недоступна', friends: [] }; render(); });
 }
 // адрес /@ник
 view('nick', {
@@ -37,6 +37,9 @@ function profilePage() {
   const u = PR.user;
   if (!u) return skeleton(2);
   if (u.deleted) return empty(u.name, 'Проверьте ссылку');
+  if (u.banned) return html`<section class="card prof banned" data-k="prof-${u.id}"><div class="cover"></div>
+      <div class="prof-main">${avatar(u, 112, false)}<div class="prof-id"><h1>Deleted Account</h1><p class="muted">Аккаунт заблокирован</p></div></div>
+      <p class="about muted">Страница, записи, фото, видео и музыка этого человека недоступны.</p></section>`;
   const own = u.id === uid(), cov = COVERS[u.cover] || COVERS.blue, friends = (u.friends || []).map(U).filter(Boolean);
   const bday = u.bday ? (() => { const [y, m, d] = u.bday.split('-').map(Number); return `${d} ${MONTHS[m - 1]}${y > 1900 ? ' ' + y : ''}`; })() : '';
   const since = u.createdAt ? new Date(ms(u.createdAt)) : null;
@@ -151,7 +154,7 @@ act('search-open', () => { Q.q = ''; Q.res = null; openModal({ type: 'search' })
 modal('search', () => html`<div class="search-box"><div class="sbar">${raw(I.search)}<input id="qInput" data-i="q" placeholder="Имя, фамилия или ник" autocomplete="off" value="${Q.q}"><button class="ib" data-a="modal-x" aria-label="Закрыть">${raw(I.x)}</button></div>
   <div class="slist">${Q.q.trim().startsWith('#') ? html`<a class="urow" href="search/${encodeURIComponent(Q.q.trim().toLowerCase())}">${raw(I.search)}<span class="grow"><b>Записи с ${Q.q.trim()}</b></span></a>`
     : !Q.q.trim() ? html`<p class="muted small pad">Начните вводить имя или #хэштег</p>`
-    : Q.res === null ? html`<p class="muted small pad">Ищем…</p>` : Q.res.length ? Q.res.map(u => html`<a class="urow" href="${profileHref(u)}" data-k="s-${u.id}">${avatar(u, 40, false)}<span class="grow"><b>${u.name}</b><small class="muted">@${u.nick}${u.city ? ' · ' + u.city : ''}</small></span></a>`) : html`<p class="muted small pad">Никого не нашли</p>`}</div></div>`);
+    : Q.res === null ? html`<p class="muted small pad">Ищем…</p>` : Q.res.length ? Q.res.map(u => html`<a class="urow" href="${profileHref(u)}" data-k="s-${u.id}">${avatar(u, 40, false)}<span class="grow"><b>${u.name}</b><small class="muted">${u.banned ? "Аккаунт заблокирован" : "@" + u.nick}${u.city ? ' · ' + u.city : ''}</small></span></a>`) : html`<p class="muted small pad">Никого не нашли</p>`}</div></div>`);
 onInput('q', v => {
   Q.q = v; clearTimeout(Q.t); Q.res = null; render(); if (v.trim().startsWith('#')) return;
   const words = norm(v).trim().replace(/^@/, '').split(/\s+/).filter(Boolean); if (!words.length) return;
@@ -160,7 +163,7 @@ onInput('q', v => {
       const s = await getDocs(query(collection(db, 'users'), where('search', 'array-contains', words[0].slice(0, 15)), limit(30)));
       if (Q.q !== v) return;
       Q.res = s.docs.map(data).filter(u => words.slice(1).every(w => (u.search || []).includes(w.slice(0, 15))));
-      Q.res.forEach(u => cache.users.set(u.id, u)); render();
+      Q.res.forEach(u => cache.users.set(u.id, u)); Q.res = Q.res.map(u => U(u.id)); render();
     } catch (e) { Q.res = []; render(); }
   }, 250);
 });
@@ -172,7 +175,7 @@ async function findPeople(v) {
   const words = norm(v).trim().replace(/^@/, '').split(/\s+/).filter(Boolean); if (!words.length) return [];
   const s = await getDocs(query(collection(db, 'users'), where('search', 'array-contains', words[0].slice(0, 15)), limit(30)));
   const res = s.docs.map(data).filter(u => words.slice(1).every(w => (u.search || []).includes(w.slice(0, 15))));
-  res.forEach(u => cache.users.set(u.id, u)); return res;
+  res.forEach(u => cache.users.set(u.id, u)); return res.map(u => U(u.id));
 }
 view('search', {
   title: q => q || 'Поиск',
@@ -188,7 +191,7 @@ view('search', {
     const head = html`<form class="card sbar" data-f="search-go">${raw(I.search)}<input name="q" value="${q}" data-v="${q}" placeholder="Люди или #хэштег" autocomplete="off"><button class="btn sm">Найти</button></form>`;
     if (q.startsWith('#')) return html`${pageHead(q, 'Записи с этим хэштегом')}${head}${postList('Записей с таким хэштегом пока нет')}`;
     return html`${pageHead('Поиск')}${head}<section class="card list">${!q.trim() ? html`<p class="muted small pad">Введите имя, ник или #хэштег</p>` : SR.res === null ? skeleton(1)
-      : SR.res.length ? SR.res.map(u => html`<a class="urow" href="${profileHref(u)}" data-k="sr-${u.id}">${avatar(u, 44, false)}<span class="grow"><b>${u.name}</b><small class="muted">@${u.nick}${u.city ? ' · ' + u.city : ''}</small></span></a>`) : empty('Никого не нашли')}</section>`;
+      : SR.res.length ? SR.res.map(u => html`<a class="urow" href="${profileHref(u)}" data-k="sr-${u.id}">${avatar(u, 44, false)}<span class="grow"><b>${u.name}</b><small class="muted">${u.banned ? "Аккаунт заблокирован" : "@" + u.nick}${u.city ? ' · ' + u.city : ''}</small></span></a>`) : empty('Никого не нашли')}</section>`;
   },
 });
 form('search-go', v => { const q = (v.q || '').trim(); go('search/' + encodeURIComponent(q)); });

@@ -496,3 +496,21 @@ a.urow:hover,.list .urow:hover{background:var(--card2)}
 .row.wrap>.sbar{flex:1 1 240px}
 .main>.seg{align-self:flex-start}
 .w-info .row.wrap>.grow{min-width:170px}
+
+/* ---------- Забаненные: «Deleted Account» и недоступное содержимое ---------- */
+.av.ghost{--gh-bg:#8E8A96;background:#8E8A96;color:#F4F2F7}
+.av.ghost svg{width:62%;height:62%}
+.name.banned{color:var(--mut)}
+.locked{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;min-height:120px;padding:16px;border-radius:12px;text-align:center;color:var(--mut);
+  background:repeating-linear-gradient(135deg,var(--card2) 0 12px,color-mix(in srgb,var(--line) 70%,var(--card2)) 12px 24px)}
+.locked .i{width:26px;height:26px}.locked small{font-weight:700;font-size:12.5px}
+.pics .locked.pic{aspect-ratio:1;min-height:0;border-radius:0}
+.pics.n1 .locked.pic{aspect-ratio:16/10}
+.msg .locked{min-width:200px;min-height:90px;color:inherit;opacity:.85;background:color-mix(in srgb,currentColor 10%,transparent)}
+.tcov.off{background:var(--card2);color:var(--mut)}.tcov.off .i{width:45%;height:45%}
+.trow.off{opacity:.7}
+.vthumb.off .locked{position:absolute;inset:0;min-height:0;border-radius:0}
+.player .vload .locked,.clip-media>.locked{background:none;color:rgba(255,255,255,.8)}
+.clip-media>.locked{height:100%}
+.prof.banned .cover{background:linear-gradient(120deg,#9A96A1,#5F5B66)}
+.prof.banned .about{margin-bottom:4px}

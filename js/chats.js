@@ -1,6 +1,6 @@
 // Чаты: список диалогов и переписка — текст, фото, голосовые, ответы, реакции, правка, удаление, «прочитано».
 import { db, uid, data, errText, doc, collection, query, orderBy, limitToLast, getDoc, updateDoc, deleteDoc, onSnapshot, writeBatch, serverTimestamp } from './fb.js';
-import { S, cache, U, view, act, form, onInput, render, sub, ensureUsers, avatar, nameLink, empty, onAfterRender, isOnline, seenText, isFriend, isUnread, iBlocked } from './core.js';
+import { S, cache, U, hidden, locked, view, act, form, onInput, render, sub, ensureUsers, avatar, nameLink, empty, onAfterRender, isOnline, seenText, isFriend, isUnread, iBlocked } from './core.js';
 import { html, raw, I, ms, hm, dayLabel, ago, fmtDur, richText, compress, safeImg, toast, readDataUrl, norm } from './lib.js';
 import { pickFiles } from './posts.js';
 
@@ -61,8 +61,8 @@ function chatPane() {
   const peerRead = !room && chat?.read?.[key] ? ms(chat.read[key]) : 0;
   const head = html`<header class="chat-h"><a class="ib back" href="im" aria-label="К диалогам">${raw(I.back)}</a>
     ${room ? html`<span class="av room" style="--s:42px">${raw(I.friends)}</span>` : self ? html`<span class="av fav" style="--s:42px">★</span>` : avatar(u, 42)}
-    <div class="grow"><b class="clamp1">${room ? chat.name : self ? 'Избранное' : nameLink(u)}</b><small class="muted ${!room && isOnline(u) ? 'ok' : ''}">${room ? `${chat.members.length} участников` : self ? 'Заметки для себя' : seenText(u) || '@' + (u.nick || '')}</small></div>
-    ${!room && !self && !u.deleted ? html`<button class="ib" data-a="call" data-id="${key}" data-v="0" aria-label="Позвонить" title="Позвонить">${raw(I.phone)}</button><button class="ib" data-a="call" data-id="${key}" data-v="1" aria-label="Видеозвонок" title="Видеозвонок">${raw(I.cam)}</button>` : ''}</header>`;
+    <div class="grow"><b class="clamp1">${room ? chat.name : self ? 'Избранное' : nameLink(u)}</b><small class="muted ${!room && isOnline(u) ? 'ok' : ''}">${room ? `${chat.members.length} участников` : self ? 'Заметки для себя' : (u?.banned ? 'Аккаунт заблокирован' : seenText(u) || '@' + (u.nick || ''))}</small></div>
+    ${!room && !self && !u.deleted && !u.banned ? html`<button class="ib" data-a="call" data-id="${key}" data-v="0" aria-label="Позвонить" title="Позвонить">${raw(I.phone)}</button><button class="ib" data-a="call" data-id="${key}" data-v="1" aria-label="Видеозвонок" title="Видеозвонок">${raw(I.cam)}</button>` : ''}</header>`;
   let lastDay = '';
   const body = !C.ready ? html`<p class="muted center small">Загружаем…</p>` : !C.msgs.length ? html`<div class="chat-hello">${self ? 'Сохраняйте сюда заметки, ссылки и фото — их видите только вы' : `Напишите ${room ? 'в беседу' : u.name.split(' ')[0]} первым 👋`}</div>`
     : C.msgs.map(m => { const d = dayLabel(m.createdAt), sep = d !== lastDay ? (lastDay = d, html`<div class="dsep" data-k="sep-${d}"><span>${d}</span></div>`) : ''; return html`${sep}${msgHtml(m, room, peerRead)}`; });
@@ -76,12 +76,12 @@ function msgHtml(m, room, peerRead) {
   const mine = m.from === uid(), sel = C.sel === m.id, a = U(m.from);
   const ticks = mine && !room ? html`<span class="tick ${peerRead >= ms(m.createdAt) ? 'read' : ''}">${raw(peerRead >= ms(m.createdAt) ? I.checks : I.check)}</span>` : '';
   const reacts = Object.entries(m.reacts || {}).reduce((o, [, e]) => (o[e] = (o[e] || 0) + 1, o), {});
-  const media = typeof m.audio === 'string' ? (m.audio.startsWith('data:video/') ? html`<video class="vnote" src="${m.audio}" playsinline loop muted autoplay data-a="vnote" data-keep="v-${m.id}"></video>` : m.audio.startsWith('data:audio/') ? voiceHtml(m) : '') : '';
-  return html`<div class="msg ${mine ? 'me' : ''} ${sel ? 'sel' : ''} ${m.audio?.startsWith('data:video/') ? 'note' : ''}" data-k="m-${m.id}" data-a="msg-sel" data-id="${m.id}">
+  const media = typeof m.audio === 'string' && hidden(m.from) ? locked(m.audio.startsWith('data:video/') ? 'Видеосообщение недоступно' : 'Голосовое недоступно') : typeof m.audio === 'string' ? (m.audio.startsWith('data:video/') ? html`<video class="vnote" src="${m.audio}" playsinline loop muted autoplay data-a="vnote" data-keep="v-${m.id}"></video>` : m.audio.startsWith('data:audio/') ? voiceHtml(m) : '') : '';
+  return html`<div class="msg ${mine ? 'me' : ''} ${sel ? 'sel' : ''} ${m.audio?.startsWith('data:video/') && !hidden(m.from) ? 'note' : ''}" data-k="m-${m.id}" data-a="msg-sel" data-id="${m.id}">
     ${room && !mine ? html`<a class="mfrom" href="id/${m.from}">${a?.name || '…'}</a>` : ''}
     ${m.fwd ? html`<div class="mquote">↪ ${m.fwd.name || 'Пересланное'}: ${m.fwd.text || ''}</div>` : ''}
     ${m.replyTo ? html`<div class="mquote"><b>${m.replyTo.from === uid() ? 'Вы' : U(m.replyTo.from)?.name.split(' ')[0] || ''}</b> ${m.replyTo.text}</div>` : ''}
-    ${safeImg(m.image) ? html`<img class="mimg" src="${m.image}" alt="Фото" data-a="mphoto" data-id="${m.id}">` : ''}${media}
+    ${safeImg(m.image) && hidden(m.from) ? locked('Фото недоступно') : safeImg(m.image) ? html`<img class="mimg" src="${m.image}" alt="Фото" data-a="mphoto" data-id="${m.id}">` : ''}${media}
     ${m.text ? html`<span class="mtext">${richText(m.text)}</span>` : ''}
     <span class="mmeta">${m.edited ? 'изм. ' : ''}${hm(new Date(ms(m.createdAt)))}${ticks}</span>
     ${Object.keys(reacts).length ? html`<span class="mreacts">${Object.entries(reacts).map(([e, n]) => html`<button class="${m.reacts?.[uid()] === e ? 'on' : ''}" data-a="react" data-id="${m.id}" data-e="${e}">${e}${n > 1 ? n : ''}</button>`)}</span>` : ''}

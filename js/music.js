@@ -1,16 +1,16 @@
 // Музыка: Поток (все треки по очереди), Мои треки, загрузка с тегами MP3, плеер (мини-панель и полноэкранный), экран блокировки.
 import { db, uid, data, errText, doc, collection, query, where, orderBy, limit, startAfter, getDoc, getDocs, addDoc, updateDoc, deleteDoc, serverTimestamp, arrayUnion, arrayRemove } from './fb.js';
-import { S, U, view, act, form, onInput, modal, openModal, closeModal, render, sub, ensureUsers, empty, skeleton, pageHead, shellExtra, siteUrl, onAfterRender } from './core.js';
+import { S, U, hidden, locked, view, act, form, onInput, modal, openModal, closeModal, render, sub, ensureUsers, empty, skeleton, pageHead, shellExtra, siteUrl, onAfterRender } from './core.js';
 import { html, raw, I, fmtDur, fmtSize, norm, toast, copyText, compress, safeImg, lsGet, lsSet } from './lib.js';
 import { uploadFile, fileUrl, deleteFile } from './files.js';
 import { pickFiles } from './posts.js';
 
 const M = { tab: 'stream', stream: [], last: null, done: false, busy: false, mine: null, q: '', up: null };
 export const tracks = new Map();
-const keep = l => { l.forEach(t => tracks.set(t.id, t)); return l; };
+const keep = l => { l.forEach(t => tracks.set(t.id, t)); ensureUsers(l.map(t => t.ownerId)); return l; };
 const PALS = [['#FF5A2E', '#FFB86B'], ['#6D5DFC', '#C084FC'], ['#0EA5A4', '#7DD3FC'], ['#E11D48', '#FB7185'], ['#16A34A', '#A3E635'], ['#1E293B', '#64748B']];
 const pal = t => PALS[[...String(t.id)].reduce((a, c) => a + c.charCodeAt(0), 0) % PALS.length];
-export const cover = (t, cls = '') => safeImg(t.cover) ? html`<span class="tcov ${cls}"><img src="${t.cover}" alt="" loading="lazy"></span>`
+export const cover = (t, cls = '') => hidden(t.ownerId) ? html`<span class="tcov off ${cls}">${raw(I.lock)}</span>` : safeImg(t.cover) ? html`<span class="tcov ${cls}"><img src="${t.cover}" alt="" loading="lazy"></span>`
   : html`<span class="tcov ${cls}" style="--c1:${pal(t)[0]};--c2:${pal(t)[1]}">${raw(I.music)}</span>`;
 
 async function loadStream() {
@@ -58,6 +58,7 @@ onInput('mq', v => { M.q = v; render(); });
 act('mus-more', () => loadStream());
 const listOf = () => M.tab === 'my' ? M.mine || [] : M.tab === 'one' ? (M.one ? [M.one] : []) : M.stream;
 function trackRow(t, list, i) {
+  if (hidden(t.ownerId)) return html`<div class="trow off" data-k="t-${t.id}">${cover(t)}<div class="grow tmeta"><b>Трек недоступен</b><small class="muted">Deleted Account</small></div></div>`;
   const on = cur()?.id === t.id, saved = (S.me.tracks || []).includes(t.id), mine = t.ownerId === uid();
   return html`<div class="trow ${on ? 'on' : ''}" data-k="t-${t.id}">
     <button class="tplay" data-a="t-play" data-id="${t.id}" data-i="${i}" aria-label="Играть">${cover(t)}<span class="tov">${raw(on && !A.paused ? I.pause : I.play)}</span></button>
@@ -69,8 +70,8 @@ function trackRow(t, list, i) {
       ${mine ? html`<button data-a="t-edit" data-id="${t.id}">${raw(I.edit)} Изменить</button><button class="danger" data-a="t-del" data-id="${t.id}">${raw(I.trash)} Удалить</button>` : ''}</div>` : ''}
   </div>`;
 }
-act('t-play', d => { const list = listOf(), i = list.findIndex(t => t.id === d.id); if (cur()?.id === d.id) return toggle(); playList(list, Math.max(0, i)); });
-act('mus-play-all', () => { if (M.stream.length) playList(M.stream, 0); });
+act('t-play', d => { const list = listOf().filter(t => !hidden(t.ownerId)), i = list.findIndex(t => t.id === d.id); if (cur()?.id === d.id) return toggle(); playList(list, Math.max(0, i), M.tab); });
+act('mus-play-all', () => { const l = M.stream.filter(t => !hidden(t.ownerId)); if (l.length) playList(l, 0, 'stream'); });
 act('t-save', async d => { const has = (S.me.tracks || []).includes(d.id); await updateDoc(doc(db, 'users', uid()), { tracks: has ? arrayRemove(d.id) : arrayUnion(d.id) }); toast(has ? 'Убрано из «Моих треков»' : 'Добавлено в «Мои треки»'); });
 act('t-link', d => { S.menu = null; copyText(siteUrl('music/t_' + d.id), 'Ссылка на трек скопирована'); });
 act('t-next', d => { const t = tracks.get(d.id); if (!t) return; S.menu = null; if (!P.queue.length) return playList([t], 0); P.queue.splice(P.i + 1, 0, t); toast('Заиграет следующим'); render(); });
@@ -144,11 +145,12 @@ const A = new Audio(); A.preload = 'auto';
 export const P = { queue: [], i: -1, loading: false, repeat: lsGet('vs_repeat') || 'off', shuffle: lsGet('vs_shuffle') === '1', full: false, lyr: false };
 const cur = () => P.queue[P.i] || null;
 A.volume = Math.min(1, Math.max(0, Number(lsGet('vs_vol') ?? 1)));
-export function playList(list, i) { P.queue = list.slice(); playAt(i); }
+export function playList(list, i, src = '') { P.queue = list.slice(); P.src = src; playAt(i); }
 async function playAt(i) {
   if (i < 0 || i >= P.queue.length) { A.pause(); render(); return; }
   P.i = i; P.loading = true; render();
   const t = cur();
+  if (hidden(t.ownerId)) { P.loading = false; toast('Трек недоступен'); A.pause(); render(); return; }
   try {
     const url = await fileUrl(t.fileId, t.type || 'audio/mpeg'); if (cur() !== t) return;
     A.src = url; await A.play();
@@ -166,7 +168,7 @@ function next(auto = false) {
   if (!P.queue.length) return;
   if (auto && P.repeat === 'one') { A.currentTime = 0; A.play(); return; }
   let i = P.shuffle && P.queue.length > 1 ? (() => { let r; do r = Math.floor(Math.random() * P.queue.length); while (r === P.i); return r; })() : P.i + 1;
-  if (i >= P.queue.length) { if (P.repeat === 'all' || !auto) i = 0; else if (M.tab === 'stream' && !M.done && P.queue === M.stream) { loadStream(); return; } else { A.pause(); render(); return; } }
+  if (i >= P.queue.length) { if (P.repeat === 'all' || !auto) i = 0; else if (P.src === 'stream' && !M.done) { const n = M.stream.length; loadStream().then(() => { const add = M.stream.slice(n).filter(t => !hidden(t.ownerId)); if (add.length) { P.queue.push(...add); playAt(i); } else { A.pause(); render(); } }); return; } else { A.pause(); render(); return; } }
   playAt(i);
 }
 function prev() { if (A.currentTime > 4) { A.currentTime = 0; return; } playAt(Math.max(0, P.i - 1)); }

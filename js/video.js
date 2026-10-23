@@ -1,6 +1,6 @@
 // Видео и Клипы: свои ролики (файл до 20 МБ) и ссылки на YouTube / Rutube / VK, просмотры, лайки, комментарии, вертикальная лента клипов.
 import { db, uid, data, errText, doc, collection, query, where, orderBy, limit, startAfter, getDoc, getDocs, addDoc, updateDoc, deleteDoc, onSnapshot, serverTimestamp, arrayUnion, arrayRemove, increment } from './fb.js';
-import { S, U, view, act, form, modal, openModal, closeModal, render, sub, ensureUsers, avatar, nameLink, empty, skeleton, pageHead, siteUrl, go, onAfterRender } from './core.js';
+import { S, U, hidden, locked, view, act, form, modal, openModal, closeModal, render, sub, ensureUsers, avatar, nameLink, empty, skeleton, pageHead, siteUrl, go, onAfterRender } from './core.js';
 import { html, raw, I, ago, fmtDur, fmtNum, plural, richText, safeImg, toast, copyText, loadImg } from './lib.js';
 import { uploadFile, fileUrl, deleteFile } from './files.js';
 import { pickFiles } from './posts.js';
@@ -21,9 +21,9 @@ function parseLink(u) {
   if (/^https:\/\/\S+\.(mp4|webm|mov|m4v)(\?\S*)?$/i.test(u)) return { provider: 'direct', vid: u };
   return null;
 }
-const thumbBox = v => html`<span class="vthumb" style="--h:${[...v.id].reduce((a, c) => a + c.charCodeAt(0), 0) % 360}">${safeImg(v.thumb) ? html`<img src="${v.thumb}" alt="" loading="lazy">` : v.provider === 'youtube' && /^[\w-]{11}$/.test(v.vid) ? html`<img src="https://i.ytimg.com/vi/${v.vid}/hqdefault.jpg" alt="" loading="lazy">` : html`<i>${raw(I.play)}</i>`}
+const thumbBox = v => hidden(v.ownerId) ? html`<span class="vthumb off">${locked('Видео недоступно')}</span>` : html`<span class="vthumb" style="--h:${[...v.id].reduce((a, c) => a + c.charCodeAt(0), 0) % 360}">${safeImg(v.thumb) ? html`<img src="${v.thumb}" alt="" loading="lazy">` : v.provider === 'youtube' && /^[\w-]{11}$/.test(v.vid) ? html`<img src="https://i.ytimg.com/vi/${v.vid}/hqdefault.jpg" alt="" loading="lazy">` : html`<i>${raw(I.play)}</i>`}
   ${v.duration ? html`<b class="vdur">${fmtDur(v.duration)}</b>` : v.source === 'link' ? html`<b class="vdur">${provName(v.provider)}</b>` : ''}</span>`;
-const vcard = v => { const o = U(v.ownerId); return html`<a class="vcard" href="video/${v.id}" data-k="v-${v.id}">${thumbBox(v)}<span class="vmeta">${avatar(o, 34, false)}<span class="grow"><b class="clamp2">${v.title}</b><small class="muted">${o?.name || ''} · ${v.views ? fmtNum(v.views) + ' просм. · ' : ''}${ago(v.createdAt)}</small></span></span></a>`; };
+const vcard = v => { const o = U(v.ownerId); return html`<a class="vcard" href="video/${v.id}" data-k="v-${v.id}">${thumbBox(v)}<span class="vmeta">${avatar(o, 34, false)}<span class="grow"><b class="clamp2">${hidden(v.ownerId) ? 'Видео недоступно' : v.title}</b><small class="muted">${o?.name || ''} · ${v.views ? fmtNum(v.views) + ' просм. · ' : ''}${ago(v.createdAt)}</small></span></span></a>`; };
 
 /* ---------- Список ---------- */
 view('video', {
@@ -95,8 +95,7 @@ function openWatch(id) {
     V.cur = s.exists() ? data(s) : false; render();
     if (!V.cur) return;
     ensureUsers([V.cur.ownerId]);
-    if (V.cur.source === 'file' && !V.src) { V.src = 'loading'; fileUrl(V.cur.fileId, V.cur.type || 'video/mp4').then(u => { V.src = u; render(); }).catch(() => { V.src = 'error'; render(); }); }
-    if (!V.viewed.has(id)) setTimeout(() => countView(id), 3000);
+    if (!V.viewed.has(id)) setTimeout(() => { if (!hidden(V.cur?.ownerId)) countView(id); }, 3000);
   }, () => { V.cur = false; render(); }));
   sub(onSnapshot(query(collection(db, 'videos', id, 'comments'), orderBy('createdAt', 'asc'), limit(200)), s => { V.cmts = s.docs.map(data); ensureUsers(V.cmts.map(c => c.authorId)); render(); }, () => { V.cmts = []; render(); }));
   getDocs(query(collection(db, 'videos'), orderBy('createdAt', 'desc'), limit(20))).then(s => { V.list = s.docs.map(data); ensureUsers(V.list.map(v => v.ownerId)); render(); }).catch(() => { });
@@ -110,21 +109,23 @@ function watchPage() {
   if (v === null) return skeleton(1);
   if (!v) return empty('Видео не найдено', 'Возможно, его удалили', html`<a class="btn sm" href="video">Все видео</a>`);
   const o = U(v.ownerId), liked = (v.likes || []).includes(uid()), own = v.ownerId === uid();
-  const player = v.source === 'link' ? (v.provider === 'direct' ? html`<video src="${v.vid}" controls playsinline data-keep="vp-${v.id}"></video>` : embed(v) ? html`<iframe src="${embed(v)}" allow="autoplay; encrypted-media; fullscreen; picture-in-picture" allowfullscreen referrerpolicy="strict-origin-when-cross-origin" title="${v.title}" data-keep="vp-${v.id}"></iframe>` : html`<p class="muted pad">Ссылка не поддерживается</p>`)
+  if (v.source === 'file' && !V.src && U(v.ownerId) && !hidden(v.ownerId)) { V.src = 'loading'; fileUrl(v.fileId, v.type || 'video/mp4').then(u => { V.src = u; render(); }).catch(() => { V.src = 'error'; render(); }); }
+  const off = !U(v.ownerId) || hidden(v.ownerId);
+  const player = off ? html`<div class="vload">${U(v.ownerId) ? locked('Видео недоступно') : html`<span class="spin"></span>`}</div>` : v.source === 'link' ? (v.provider === 'direct' ? html`<video src="${v.vid}" controls playsinline data-keep="vp-${v.id}"></video>` : embed(v) ? html`<iframe src="${embed(v)}" allow="autoplay; encrypted-media; fullscreen; picture-in-picture" allowfullscreen referrerpolicy="strict-origin-when-cross-origin" title="${v.title}" data-keep="vp-${v.id}"></iframe>` : html`<p class="muted pad">Ссылка не поддерживается</p>`)
     : V.src && V.src !== 'loading' && V.src !== 'error' ? html`<video src="${V.src}" controls autoplay playsinline data-keep="vp-${v.id}" poster="${safeImg(v.thumb)}"></video>`
     : html`<div class="vload">${V.src === 'error' ? 'Не получилось загрузить видео' : html`<span class="spin"></span> Загружаем видео…`}</div>`;
   const more = (V.list || []).filter(x => x.id !== v.id).slice(0, 10);
   return html`<div class="watch"><div class="w-main">
       <div class="player" data-k="player-${v.id}">${player}</div>
-      <section class="card pad w-info"><h1>${v.title}</h1>
+      <section class="card pad w-info"><h1>${hidden(v.ownerId) ? 'Видео недоступно' : v.title}</h1>
         <div class="row wrap">${avatar(o, 42)}<div class="grow"><div>${nameLink(o)}</div><small class="muted">${fmtNum(v.views || 0)} ${plural(v.views || 0, 'просмотр', 'просмотра', 'просмотров')} · ${ago(v.createdAt)}</small></div>
           <button class="pill ${liked ? 'liked' : ''}" data-a="v-like" data-id="${v.id}">${raw(liked ? I.heartF : I.heart)}<span>${(v.likes || []).length || ''}</span></button>
           <a class="pill" href="clips/${v.id}">${raw(I.clips)}<span>Как клип</span></a>
           <button class="pill" data-a="v-link" data-id="${v.id}">${raw(I.link)}</button>
           ${own ? html`<button class="pill" data-a="v-del" data-id="${v.id}">${raw(I.trash)}</button>` : ''}</div>
-        ${v.description ? html`<div class="w-desc">${richText(v.description)}</div>` : ''}</section>
+        ${v.description && !hidden(v.ownerId) ? html`<div class="w-desc">${richText(v.description)}</div>` : ''}</section>
       <section class="card pad">${commentsBlock(v.id, V.cmts, v.ownerId)}</section></div>
-    <aside class="w-side">${more.length ? html`<b>Ещё видео</b>` : ''}${more.map(x => html`<a class="vrow" href="video/${x.id}" data-k="vr-${x.id}">${thumbBox(x)}<span class="grow"><b class="clamp2">${x.title}</b><small class="muted">${U(x.ownerId)?.name || ''}</small></span></a>`)}</aside></div>`;
+    <aside class="w-side">${more.length ? html`<b>Ещё видео</b>` : ''}${more.map(x => html`<a class="vrow" href="video/${x.id}" data-k="vr-${x.id}">${thumbBox(x)}<span class="grow"><b class="clamp2">${hidden(x.ownerId) ? 'Видео недоступно' : x.title}</b><small class="muted">${U(x.ownerId)?.name || ''}</small></span></a>`)}</aside></div>`;
 }
 export function commentsBlock(vid, list, ownerId) {
   return html`<h2 class="ch">Комментарии ${list?.length ? html`<span class="muted">${list.length}</span>` : ''}</h2>
@@ -149,7 +150,7 @@ act('v-del', async d => {
 });
 
 /* ---------- Клипы: вертикальная лента на весь экран ---------- */
-const CL = { list: [], last: null, done: false, busy: false, i: 0, muted: true, start: null, cmts: null, cmtFor: null, cmtUnsub: null };
+const CL = { started: new Set(), list: [], last: null, done: false, busy: false, i: 0, muted: true, start: null, cmts: null, cmtFor: null, cmtUnsub: null };
 async function loadClips() {
   if (CL.busy || CL.done) return; CL.busy = true;
   try {
@@ -163,7 +164,7 @@ async function loadClips() {
 }
 view('clips', {
   full: true, title: 'Клипы',
-  enter(id) { CL.list = []; CL.last = null; CL.done = false; CL.i = 0; CL.start = id || null; loadClips(); },
+  enter(id) { CL.started.clear(); CL.list = []; CL.last = null; CL.done = false; CL.i = 0; CL.start = id || null; loadClips(); },
   leave() { clipObs?.disconnect(); document.querySelectorAll('.clip video').forEach(v => v.pause()); CL.cmtUnsub?.(); },
   render: () => html`<div class="clips">
     <div class="clips-top"><a class="ib" href="video" aria-label="Назад">${raw(I.back)}</a><b>Клипы</b><span class="grow"></span><button class="ib" data-a="cl-mute" aria-label="Звук">${raw(CL.muted ? I.mute : I.volume)}</button></div>
@@ -172,6 +173,8 @@ view('clips', {
 });
 function clipHtml(v, i) {
   const o = U(v.ownerId), liked = (v.likes || []).includes(uid());
+  if (hidden(v.ownerId)) return html`<section class="clip" data-k="cl-${v.id}" data-i="${i}" data-id="${v.id}"><div class="clip-media">${locked('Видео недоступно')}</div>
+    <div class="clip-info"><a class="row" href="id/${v.ownerId}">${avatar(o, 38, false)}<b>Deleted Account</b></a></div></section>`;
   return html`<section class="clip" data-k="cl-${v.id}" data-i="${i}" data-id="${v.id}">
     <div class="clip-bg" style="${safeImg(v.thumb) ? `background-image:url('${safeImg(v.thumb)}')` : ''}"></div>
     <div class="clip-media" data-a="cl-tap" data-id="${v.id}" data-keep="clm-${v.id}">${v.source === 'link' && v.provider !== 'direct' ? '' : raw('<video playsinline loop preload="none"></video>')}</div>
@@ -188,14 +191,18 @@ onAfterRender(() => {
   const feed = document.getElementById('clipsFeed'); if (!feed) return;
   if (!clipObs || clipObs.root !== feed) { clipObs?.disconnect(); clipObs = new IntersectionObserver(es => es.forEach(e => { if (e.isIntersecting && e.intersectionRatio > 0.6) activate(+e.target.dataset.i); }), { root: feed, threshold: [0.6] }); }
   feed.querySelectorAll('.clip:not([data-obs])').forEach(el => { el.dataset.obs = '1'; clipObs.observe(el); });
+  // автор текущего клипа догрузился позже, чем клип стал виден, — запускаем сейчас
+  const v = CL.list[CL.i]; if (v && !CL.started.has(v.id) && U(v.ownerId) && feed.querySelector(`.clip[data-i="${CL.i}"]`)) activate(CL.i);
 });
 async function activate(i) {
   const v = CL.list[i]; if (!v || S.route.name !== 'clips') return;
   CL.i = i; history.replaceState(null, '', location.pathname.replace(/clips(\/.*)?$/, 'clips/' + v.id));
   document.querySelectorAll('.clip').forEach(el => { const k = +el.dataset.i, vid = el.querySelector('video'); if (k !== i && vid) vid.pause(); if (k !== i) { const f = el.querySelector('iframe'); if (f) f.remove(); } });
   const el = document.querySelector(`.clip[data-i="${i}"]`), media = el?.querySelector('.clip-media'); if (!media) return;
-  setTimeout(() => { if (CL.i === i) countView(v.id); }, 2000);
   if (i >= CL.list.length - 3) loadClips();
+  if (!U(v.ownerId) || hidden(v.ownerId)) return;   // пока не знаем автора — не качаем; забаненного не показываем
+  CL.started.add(v.id);
+  setTimeout(() => { if (CL.i === i) countView(v.id); }, 2000);
   if (v.source === 'link' && v.provider !== 'direct') {
     if (!media.querySelector('iframe') && embed(v)) media.insertAdjacentHTML('beforeend', `<iframe src="${embed(v)}${v.provider === 'youtube' ? `?autoplay=1&mute=${CL.muted ? 1 : 0}&playsinline=1&loop=1&playlist=${v.vid}` : ''}" allow="autoplay; encrypted-media; fullscreen" allowfullscreen></iframe>`);
     return;

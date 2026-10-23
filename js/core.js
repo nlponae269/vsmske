@@ -18,6 +18,16 @@ export const S = {
 };
 export const cache = { users: new Map(), chats: [], notifs: [], incoming: [], outgoing: [] };
 export const U = id => cache.users.get(id) || null;
+/* ---------- Забаненные: для всех, кроме самого человека, — «Deleted Account», вместо аватарки заглушка, фото/видео/музыка недоступны ---------- */
+export const isBanned = u => !!u?.ban && (u.ban.until == null || ms(u.ban.until) > Date.now());
+export function maskUser(u) {
+  if (!u || u.id === uid() || !isBanned(u)) return u;
+  return { id: u.id, name: 'Deleted Account', nick: '', banned: true, friends: [], createdAt: u.createdAt };
+}
+// кэш людей сам прячет забаненных — так маска действует везде, где показывают имя и аватарку
+cache.users.set = function (id, u) { return Map.prototype.set.call(this, id, maskUser(u)); };
+export const hidden = id => !!id && !!U(id)?.banned;   // содержимое этого человека не показываем
+export const locked = (text = 'Содержимое недоступно', cls = '') => html`<span class="locked ${cls}">${raw(I.lock)}<small>${text}</small></span>`;
 
 /* ---------- Кэш людей: подгружаем профили по одному разу ---------- */
 const pending = new Set();
@@ -49,14 +59,16 @@ export function seenText(u) {
 
 /* ---------- Общие куски разметки ---------- */
 const HUES = [12, 28, 160, 200, 225, 262, 300, 340];
+const GHOST = '<svg viewBox="0 0 40 40" aria-hidden="true"><path d="M20 7c-6.1 0-10.5 4.6-10.5 10.6V33l3.3-2.4 3.4 2.4 3.8-2.4 3.8 2.4 3.4-2.4 3.3 2.4V17.6C30.5 11.6 26.1 7 20 7z" fill="currentColor"/><circle cx="16" cy="18" r="2.2" fill="var(--gh-bg)"/><circle cx="24" cy="18" r="2.2" fill="var(--gh-bg)"/></svg>';
 export function avatar(u, size = 40, link = true) {
+  if (u?.banned) { const g = html`<span class="av ghost" style="--s:${size}px">${raw(GHOST)}</span>`; return link ? html`<a class="av-link" href="id/${u.id}" aria-label="Deleted Account">${g}</a>` : g; }
   const ph = safePhoto(u?.photo), hue = HUES[[...String(u?.id || u?.name || '')].reduce((a, c) => a + c.charCodeAt(0), 0) % HUES.length];
   const inner = ph ? html`<img src="${ph}" alt="" loading="lazy" referrerpolicy="no-referrer">` : html`<span>${initials(u?.name)}</span>`;
   const body = html`<span class="av ${isOnline(u) ? 'on' : ''}" style="--s:${size}px;--h:${hue}">${inner}</span>`;
   return link && u?.id && !u.deleted ? html`<a class="av-link" href="${profileHref(u)}" aria-label="${u.name}">${body}</a>` : body;
 }
 export const profileHref = u => u?.nick ? '@' + u.nick : 'id/' + (u?.id || '');
-export const nameLink = u => u && !u.deleted ? html`<a class="name" href="${profileHref(u)}">${u.name}</a>${isAdmin(u) ? raw('<span class="vbadge" title="Администратор">✓</span>') : ''}` : html`<span class="name">${u?.name || '…'}</span>`;
+export const nameLink = u => u?.banned ? html`<a class="name banned" href="id/${u.id}">Deleted Account</a>` : u && !u.deleted ? html`<a class="name" href="${profileHref(u)}">${u.name}</a>${isAdmin(u) ? raw('<span class="vbadge" title="Администратор">✓</span>') : ''}` : html`<span class="name">${u?.name || '…'}</span>`;
 export const empty = (title, text = '', extra = '') => html`<div class="empty"><b>${title}</b>${text ? html`<span>${text}</span>` : ''}${extra}</div>`;
 export const skeleton = (n = 3) => html`<div class="skel">${Array.from({ length: n }, () => raw('<div class="card sk"><i class="sk-c"></i><i class="sk-l"></i><i class="sk-l s"></i></div>'))}</div>`;
 export const pageHead = (title, sub = '', right = '') => html`<header class="phead"><div><h1>${title}</h1>${sub ? html`<p>${sub}</p>` : ''}</div>${right}</header>`;
