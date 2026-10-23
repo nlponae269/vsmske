@@ -53,7 +53,7 @@ const MAX_POST_IMG = 700000;   // символов dataURL (~520 КБ), лими
 const MAX_AVATAR = 120000;
 const CHUNK = 700000;                                   // символов base64 в одном куске (кратно 4)
 const LIMITS = { disk: 10 * 1024 * 1024, video: 20 * 1024 * 1024, music: 12 * 1024 * 1024 };
-const VERSION = '9.2';
+const VERSION = '9.3';
 const MAX_MSG_IMG = 380000;    // фото в сообщении
 const ONLINE_MS = 5 * 60 * 1000; // «в сети», если заходил не раньше 5 минут назад
 
@@ -412,7 +412,7 @@ const S = {
    их фото, видео, музыка, подарки, голосовые и кружки закрыты заглушкой (lockBox) и не скачиваются. Кэш людей сам кладёт «маску» (maskUser). */
 function maskUser(u) {
   if (!u || u.banned || u.id === S.authUser?.uid || !banOf(u) || isAdm(S.me)) return u;
-  return { id: u.id, name: 'Deleted Account', nick: '', banned: true, friends: [], createdAt: u.createdAt, color: '#8E8A96' };
+  return { id: u.id, name: 'Deleted Account', nick: '', banned: true, friends: [], createdAt: u.createdAt, color: '#8E8A96', ban: u.ban };   // ban — для плашки «Заблокирован до …»
 }
 class UserMap extends Map { set(k, u) { return super.set(k, maskUser(u)); } }
 const hidden = id => !!id && !!U(id)?.banned;
@@ -5524,7 +5524,7 @@ function viewProfile() {
   if (!u) return loadingBox();
   if (u.deleted) return `<div class="card empty"><b>Страница не найдена</b><a class="btn sec" href="#feed">К новостям</a></div>`;
   if (u.banned) return `<div class="card prof-banned"><div class="cover"></div><div class="prof">${avatar(u, 120, false)}<div class="prof-info"><div class="prof-name">Deleted Account</div>
-    <div class="muted">Аккаунт заблокирован</div></div></div><p class="muted pad" style="margin:0;text-align:center">Страница, записи, фото, видео, музыка и подарки этого человека недоступны.</p></div>`;
+    <div class="muted">Аккаунт заблокирован</div>${banOf(u) ? `<span class="chip ban-chip">⛔ Заблокирован ${banText(banOf(u))}</span>` : ''}</div></div><p class="muted pad" style="margin:0;text-align:center">Страница, записи, фото, видео, музыка и подарки этого человека недоступны.</p></div>`;
   const own = u.id === me.id, isFriend = (me.friends || []).includes(u.id);
   const friendIds = u.friends || [];
   ensureUsers(friendIds.slice(0, 9));
