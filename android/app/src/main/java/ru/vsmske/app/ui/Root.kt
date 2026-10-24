@@ -8,9 +8,11 @@ import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -18,24 +20,23 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Apps
-import androidx.compose.material.icons.outlined.SmartDisplay
 import androidx.compose.material.icons.outlined.ChatBubbleOutline
-import androidx.compose.material.icons.outlined.Group
 import androidx.compose.material.icons.outlined.Home
 import androidx.compose.material.icons.outlined.MusicNote
+import androidx.compose.material.icons.outlined.SmartDisplay
 import androidx.compose.material.icons.rounded.Apps
-import androidx.compose.material.icons.rounded.SmartDisplay
 import androidx.compose.material.icons.rounded.ChatBubble
-import androidx.compose.material.icons.rounded.Group
 import androidx.compose.material.icons.rounded.Home
 import androidx.compose.material.icons.rounded.MusicNote
 import androidx.compose.material.icons.rounded.Pause
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.SkipNext
+import androidx.compose.material.icons.rounded.SmartDisplay
 import androidx.compose.material3.Badge
 import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.CircularProgressIndicator
@@ -45,6 +46,8 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.NavigationRail
+import androidx.compose.material3.NavigationRailItem
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
@@ -62,6 +65,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavHostController
 import androidx.navigation.NavType
@@ -73,6 +77,10 @@ import androidx.navigation.navArgument
 import kotlinx.coroutines.launch
 import ru.vsmske.app.data.Store
 import ru.vsmske.app.music.Music
+
+/** Планшеты и широкие экраны: боковая панель вместо нижней и ограниченная ширина содержимого */
+private val TABLET_MIN = 600.dp
+private val CONTENT_MAX = 880.dp
 
 @Composable
 fun Root(openPlayer: MutableState<Boolean>) {
@@ -105,45 +113,55 @@ private fun Main(openPlayer: MutableState<Boolean>) {
     val hasPlayer = ms.track != null
 
     CompositionLocalProvider(LocalNav provides nav, LocalToast provides toast) {
-        Scaffold(
-            contentWindowInsets = WindowInsets(0),
-            snackbarHost = { SnackbarHost(snack) },
-            bottomBar = {
-                Column {
-                    AnimatedVisibility(hasPlayer && !withInput, enter = slideInVertically { it } + fadeIn(), exit = slideOutVertically { it } + fadeOut()) {
-                        MiniPlayer(Modifier.padding(horizontal = 8.dp, vertical = 6.dp).then(if (isTab) Modifier else Modifier.navigationBarsPadding())) { openPlayer.value = true }
+        BoxWithConstraints(Modifier.fillMaxSize()) {
+            val tablet = maxWidth >= TABLET_MIN
+            Row(Modifier.fillMaxSize()) {
+                if (tablet && isTab) SideRail(route, nav)
+                Scaffold(
+                    modifier = Modifier.weight(1f).fillMaxHeight(),
+                    contentWindowInsets = WindowInsets(0),
+                    snackbarHost = { SnackbarHost(snack) },
+                    bottomBar = {
+                        Column {
+                            AnimatedVisibility(hasPlayer && !withInput, enter = slideInVertically { it } + fadeIn(), exit = slideOutVertically { it } + fadeOut()) {
+                                MiniPlayer(Modifier.padding(horizontal = 8.dp, vertical = 6.dp).then(if (isTab && !tablet) Modifier else Modifier.navigationBarsPadding())) { openPlayer.value = true }
+                            }
+                            if (isTab && !tablet) BottomNav(route, nav)
+                        }
+                    },
+                ) { pad ->
+                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
+                        NavHost(nav, startDestination = "feed",
+                            modifier = Modifier.fillMaxSize().padding(bottom = pad.calculateBottomPadding()).widthIn(max = if (tablet) CONTENT_MAX else Dp.Unspecified)) {
+                            val open = { openPlayer.value = true }
+                            composable("feed") { FeedScreen() }
+                            composable("video") { VideoHome() }
+                            composable("music") { MusicScreen(onOpenPlayer = open) }
+                            composable("chats") { ChatsScreen() }
+                            composable("menu") { MenuScreen() }
+                            composable("friends") { FriendsScreen() }
+                            composable("me") { ProfileScreen(Store.uid) }
+                            composable("video/{id}") { WatchScreen(it.arguments?.getString("id") ?: "") }
+                            composable("videos/{uid}") { UserVideosScreen(it.arguments?.getString("uid") ?: "") }
+                            composable("clips/{id}") { ClipsScreen((it.arguments?.getString("id") ?: "").takeIf { s -> s != "-" } ?: "") }
+                            composable("albums/{uid}") { AlbumsScreen(it.arguments?.getString("uid") ?: Store.uid) }
+                            composable("album/{id}") { AlbumScreen(it.arguments?.getString("id") ?: "") }
+                            composable("disk") { DiskScreen() }
+                            composable("live") { LiveListScreen() }
+                            composable("live/{id}") { LiveRoomScreen(it.arguments?.getString("id") ?: "") }
+                            composable("music/playlists") { PlaylistsScreen() }
+                            composable("music/liked") { TrackListScreen("liked", "", open) }
+                            composable("music/stream") { TrackListScreen("stream", "", open) }
+                            composable("music/user/{uid}") { TrackListScreen("user", it.arguments?.getString("uid") ?: "", open) }
+                            composable("music/pl/{id}") { TrackListScreen("pl", it.arguments?.getString("id") ?: "", open) }
+                            composable("notifs") { NotifsScreen() }
+                            composable("edit") { EditProfileScreen() }
+                            composable("profile/{id}", listOf(navArgument("id") { type = NavType.StringType })) { ProfileScreen(it.arguments?.getString("id") ?: Store.uid) }
+                            composable("chat/{key}", listOf(navArgument("key") { type = NavType.StringType })) { ChatScreen(it.arguments?.getString("key") ?: "") }
+                            composable("post/{id}", listOf(navArgument("id") { type = NavType.StringType })) { PostScreen(it.arguments?.getString("id") ?: "") }
+                        }
                     }
-                    if (isTab) BottomNav(route, nav)
                 }
-            },
-        ) { pad ->
-            NavHost(nav, startDestination = "feed", modifier = Modifier.padding(bottom = pad.calculateBottomPadding())) {
-                val open = { openPlayer.value = true }
-                composable("feed") { FeedScreen() }
-                composable("video") { VideoHome() }
-                composable("music") { MusicScreen(onOpenPlayer = open) }
-                composable("chats") { ChatsScreen() }
-                composable("menu") { MenuScreen() }
-                composable("friends") { FriendsScreen() }
-                composable("me") { ProfileScreen(Store.uid) }
-                composable("video/{id}") { WatchScreen(it.arguments?.getString("id") ?: "") }
-                composable("videos/{uid}") { UserVideosScreen(it.arguments?.getString("uid") ?: "") }
-                composable("clips/{id}") { ClipsScreen((it.arguments?.getString("id") ?: "").takeIf { s -> s != "-" } ?: "") }
-                composable("albums/{uid}") { AlbumsScreen(it.arguments?.getString("uid") ?: Store.uid) }
-                composable("album/{id}") { AlbumScreen(it.arguments?.getString("id") ?: "") }
-                composable("disk") { DiskScreen() }
-                composable("live") { LiveListScreen() }
-                composable("live/{id}") { LiveRoomScreen(it.arguments?.getString("id") ?: "") }
-                composable("music/playlists") { PlaylistsScreen() }
-                composable("music/liked") { TrackListScreen("liked", "", open) }
-                composable("music/stream") { TrackListScreen("stream", "", open) }
-                composable("music/user/{uid}") { TrackListScreen("user", it.arguments?.getString("uid") ?: "", open) }
-                composable("music/pl/{id}") { TrackListScreen("pl", it.arguments?.getString("id") ?: "", open) }
-                composable("notifs") { NotifsScreen() }
-                composable("edit") { EditProfileScreen() }
-                composable("profile/{id}", listOf(navArgument("id") { type = NavType.StringType })) { ProfileScreen(it.arguments?.getString("id") ?: Store.uid) }
-                composable("chat/{key}", listOf(navArgument("key") { type = NavType.StringType })) { ChatScreen(it.arguments?.getString("key") ?: "") }
-                composable("post/{id}", listOf(navArgument("id") { type = NavType.StringType })) { PostScreen(it.arguments?.getString("id") ?: "") }
             }
         }
         if (!(openPlayer.value && hasPlayer)) LiveBar(Modifier.fillMaxWidth().statusBarsPadding().padding(top = 6.dp).wrapContentWidth(Alignment.CenterHorizontally), route)
@@ -158,27 +176,48 @@ private fun Main(openPlayer: MutableState<Boolean>) {
 fun NavHostController.openProfile(id: String) = if (id == ru.vsmske.app.data.Fire.uid) navigate("me") { launchSingleTop = true } else navigate("profile/$id")
 fun NavHostController.openTab(r: String) = navigate(r) { popUpTo("feed") { saveState = true }; launchSingleTop = true; restoreState = true }
 
-/** Нижняя навигация Material 3 — «пилюля» под значком выбранного раздела */
+private class NavItem(val r: String, val label: String, val on: ImageVector, val off: ImageVector, val badge: Int = 0)
+
+/** Разделы нижней панели и боковой панели — одни и те же, с одинаковыми счётчиками */
 @Composable
-private fun BottomNav(route: String?, nav: NavHostController) {
+private fun navItems(): List<NavItem> {
     val me = Store.uid
     val unread = Store.chats.collectAsState().value.count { it.unread(me) }
     val reqs = Store.incoming.collectAsState().value.size + Store.notifs.collectAsState().value.let { Store.unseenNotifs() }
-    class Item(val r: String, val label: String, val on: ImageVector, val off: ImageVector, val badge: Int = 0)
-    val items = listOf(
-        Item("feed", "Лента", Icons.Rounded.Home, Icons.Outlined.Home),
-        Item("video", "Видео", Icons.Rounded.SmartDisplay, Icons.Outlined.SmartDisplay),
-        Item("music", "Музыка", Icons.Rounded.MusicNote, Icons.Outlined.MusicNote),
-        Item("chats", "Чаты", Icons.Rounded.ChatBubble, Icons.Outlined.ChatBubbleOutline, unread),
-        Item("menu", "Меню", Icons.Rounded.Apps, Icons.Outlined.Apps, reqs),
+    return listOf(
+        NavItem("feed", "Лента", Icons.Rounded.Home, Icons.Outlined.Home),
+        NavItem("video", "Видео", Icons.Rounded.SmartDisplay, Icons.Outlined.SmartDisplay),
+        NavItem("music", "Музыка", Icons.Rounded.MusicNote, Icons.Outlined.MusicNote),
+        NavItem("chats", "Чаты", Icons.Rounded.ChatBubble, Icons.Outlined.ChatBubbleOutline, unread),
+        NavItem("menu", "Меню", Icons.Rounded.Apps, Icons.Outlined.Apps, reqs),
     )
+}
+
+/** Нижняя навигация Material 3 — «пилюля» под значком выбранного раздела (телефон) */
+@Composable
+private fun BottomNav(route: String?, nav: NavHostController) {
     NavigationBar {
-        items.forEach { i ->
+        navItems().forEach { i ->
             val on = route == i.r
             NavigationBarItem(
                 selected = on, onClick = { if (!on) nav.openTab(i.r) },
                 icon = { BadgedBox(badge = { if (i.badge > 0) Badge { Text(if (i.badge > 99) "99+" else "${i.badge}") } }) { Icon(if (on) i.on else i.off, i.label) } },
                 label = { Text(i.label, maxLines = 1) },
+            )
+        }
+    }
+}
+
+/** Боковая панель для планшетов — те же разделы, слева, с подписями */
+@Composable
+private fun SideRail(route: String?, nav: NavHostController) {
+    NavigationRail(Modifier.fillMaxHeight().statusBarsPadding().navigationBarsPadding(), containerColor = MaterialTheme.colorScheme.surfaceContainer) {
+        navItems().forEach { i ->
+            val on = route == i.r
+            NavigationRailItem(
+                selected = on, onClick = { if (!on) nav.openTab(i.r) },
+                icon = { BadgedBox(badge = { if (i.badge > 0) Badge { Text(if (i.badge > 99) "99+" else "${i.badge}") } }) { Icon(if (on) i.on else i.off, i.label) } },
+                label = { Text(i.label, maxLines = 1) }, alwaysShowLabel = true,
             )
         }
     }
