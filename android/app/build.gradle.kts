@@ -12,8 +12,8 @@ android {
         applicationId = "ru.vsmske.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 3
-        versionName = "2.0"
+        versionCode = 4
+        versionName = "3.0"
         // только для проверки: ./gradlew assembleDebug -Pemu=true — локальные эмуляторы Firebase вместо настоящей базы
         val emu = (project.findProperty("emu") as String?) == "true"
         buildConfigField("boolean", "EMU", emu.toString())
@@ -70,6 +70,10 @@ dependencies {
 
     implementation("androidx.media3:media3-exoplayer:1.5.1")
     implementation("androidx.media3:media3-session:1.5.1")
+    implementation("androidx.media3:media3-ui:1.5.1")
+    implementation("androidx.graphics:graphics-shapes:1.0.1")
+    // эфиры и звонки — WebRTC (тот же протокол, что у сайта)
+    implementation("io.getstream:stream-webrtc-android:1.3.10")
     implementation("io.coil-kt:coil-compose:2.7.0")
 
     testImplementation("junit:junit:4.13.2")

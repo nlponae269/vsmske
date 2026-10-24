@@ -22,6 +22,7 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         Store.start()
         Music.connect(applicationContext)
+        ru.vsmske.app.rtc.Call.watch(applicationContext)
         openPlayer.value = intent?.getBooleanExtra("openPlayer", false) == true
         // плеер в шторке на Android 13+ требует разрешения на уведомления
         if (Build.VERSION.SDK_INT >= 33 && ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED)

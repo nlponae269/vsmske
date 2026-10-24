@@ -1,5 +1,7 @@
 package ru.vsmske.app.ui
 
+import androidx.compose.material.icons.rounded.Call
+import androidx.compose.material.icons.rounded.Videocam
 import android.content.Context
 import android.media.MediaPlayer
 import android.net.Uri
@@ -174,6 +176,8 @@ fun ChatScreen(key: String) {
         if (uri != null) { busy = true; scope.safe({ busy = false; toast(it) }) { Api.sendMessage(key, "", Images.compress(ctx, uri, 1280, 380_000)); busy = false } }
     }
     val readAt = chat?.read?.filterKeys { it != me }?.values?.maxOrNull() ?: 0L
+    var callVideo by remember { mutableStateOf(false) }
+    val call = rememberAvPermission { scope.safe(toast) { ru.vsmske.app.rtc.Call.start(ctx, key, callVideo) } }
 
     Scaffold(
         contentWindowInsets = WindowInsets(0),
@@ -191,6 +195,12 @@ fun ChatScreen(key: String) {
                     }
                 },
                 navigationIcon = { IconButton({ nav.popBackStack() }) { Icon(Icons.AutoMirrored.Rounded.ArrowBack, "Назад") } },
+                actions = {
+                    if (!room && key != me && peer?.banned != true) {
+                        IconButton({ callVideo = false; call(false) }) { Icon(Icons.Rounded.Call, "Позвонить") }
+                        IconButton({ callVideo = true; call(true) }) { Icon(Icons.Rounded.Videocam, "Видеозвонок") }
+                    }
+                },
             )
         },
         bottomBar = {

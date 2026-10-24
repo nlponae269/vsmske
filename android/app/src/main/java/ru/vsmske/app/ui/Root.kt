@@ -17,14 +17,18 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.AccountCircle
+import androidx.compose.material.icons.outlined.Apps
+import androidx.compose.material.icons.outlined.SmartDisplay
 import androidx.compose.material.icons.outlined.ChatBubbleOutline
 import androidx.compose.material.icons.outlined.Group
 import androidx.compose.material.icons.outlined.Home
 import androidx.compose.material.icons.outlined.MusicNote
-import androidx.compose.material.icons.rounded.AccountCircle
+import androidx.compose.material.icons.rounded.Apps
+import androidx.compose.material.icons.rounded.SmartDisplay
 import androidx.compose.material.icons.rounded.ChatBubble
 import androidx.compose.material.icons.rounded.Group
 import androidx.compose.material.icons.rounded.Home
@@ -85,7 +89,7 @@ fun Root(openPlayer: MutableState<Boolean>) {
     }
 }
 
-private val TABS = setOf("feed", "chats", "music", "friends", "me")
+private val TABS = setOf("feed", "video", "music", "chats", "menu")
 
 @Composable
 private fun Main(openPlayer: MutableState<Boolean>) {
@@ -96,7 +100,7 @@ private fun Main(openPlayer: MutableState<Boolean>) {
     val entry by nav.currentBackStackEntryAsState()
     val route = entry?.destination?.route
     val isTab = route in TABS
-    val withInput = route == "chat/{key}"   // там внизу поле ввода — мини-плеер прячем
+    val withInput = route == "chat/{key}" || route == "post/{id}" || route == "clips/{id}" || route == "live/{id}" || route == "video/{id}"   // там своё внизу — мини-плеер прячем
     val ms by Music.state.collectAsState()
     val hasPlayer = ms.track != null
 
@@ -114,11 +118,27 @@ private fun Main(openPlayer: MutableState<Boolean>) {
             },
         ) { pad ->
             NavHost(nav, startDestination = "feed", modifier = Modifier.padding(bottom = pad.calculateBottomPadding())) {
+                val open = { openPlayer.value = true }
                 composable("feed") { FeedScreen() }
+                composable("video") { VideoHome() }
+                composable("music") { MusicScreen(onOpenPlayer = open) }
                 composable("chats") { ChatsScreen() }
-                composable("music") { MusicScreen(onOpenPlayer = { openPlayer.value = true }) }
+                composable("menu") { MenuScreen() }
                 composable("friends") { FriendsScreen() }
-                composable("me") { ProfileScreen(Store.uid, tab = true) }
+                composable("me") { ProfileScreen(Store.uid) }
+                composable("video/{id}") { WatchScreen(it.arguments?.getString("id") ?: "") }
+                composable("videos/{uid}") { UserVideosScreen(it.arguments?.getString("uid") ?: "") }
+                composable("clips/{id}") { ClipsScreen((it.arguments?.getString("id") ?: "").takeIf { s -> s != "-" } ?: "") }
+                composable("albums/{uid}") { AlbumsScreen(it.arguments?.getString("uid") ?: Store.uid) }
+                composable("album/{id}") { AlbumScreen(it.arguments?.getString("id") ?: "") }
+                composable("disk") { DiskScreen() }
+                composable("live") { LiveListScreen() }
+                composable("live/{id}") { LiveRoomScreen(it.arguments?.getString("id") ?: "") }
+                composable("music/playlists") { PlaylistsScreen() }
+                composable("music/liked") { TrackListScreen("liked", "", open) }
+                composable("music/stream") { TrackListScreen("stream", "", open) }
+                composable("music/user/{uid}") { TrackListScreen("user", it.arguments?.getString("uid") ?: "", open) }
+                composable("music/pl/{id}") { TrackListScreen("pl", it.arguments?.getString("id") ?: "", open) }
                 composable("notifs") { NotifsScreen() }
                 composable("edit") { EditProfileScreen() }
                 composable("profile/{id}", listOf(navArgument("id") { type = NavType.StringType })) { ProfileScreen(it.arguments?.getString("id") ?: Store.uid) }
@@ -126,10 +146,12 @@ private fun Main(openPlayer: MutableState<Boolean>) {
                 composable("post/{id}", listOf(navArgument("id") { type = NavType.StringType })) { PostScreen(it.arguments?.getString("id") ?: "") }
             }
         }
+        if (!(openPlayer.value && hasPlayer)) LiveBar(Modifier.fillMaxWidth().statusBarsPadding().padding(top = 6.dp).wrapContentWidth(Alignment.CenterHorizontally), route)
         AnimatedVisibility(openPlayer.value && hasPlayer, enter = slideInVertically { it } + fadeIn(), exit = slideOutVertically { it } + fadeOut()) {
             PlayerScreen(onClose = { openPlayer.value = false })
         }
         if (openPlayer.value && hasPlayer) BackHandler { openPlayer.value = false }
+        CallOverlay()
     }
 }
 
@@ -141,14 +163,14 @@ fun NavHostController.openTab(r: String) = navigate(r) { popUpTo("feed") { saveS
 private fun BottomNav(route: String?, nav: NavHostController) {
     val me = Store.uid
     val unread = Store.chats.collectAsState().value.count { it.unread(me) }
-    val reqs = Store.incoming.collectAsState().value.size
+    val reqs = Store.incoming.collectAsState().value.size + Store.notifs.collectAsState().value.let { Store.unseenNotifs() }
     class Item(val r: String, val label: String, val on: ImageVector, val off: ImageVector, val badge: Int = 0)
     val items = listOf(
         Item("feed", "Лента", Icons.Rounded.Home, Icons.Outlined.Home),
-        Item("chats", "Чаты", Icons.Rounded.ChatBubble, Icons.Outlined.ChatBubbleOutline, unread),
+        Item("video", "Видео", Icons.Rounded.SmartDisplay, Icons.Outlined.SmartDisplay),
         Item("music", "Музыка", Icons.Rounded.MusicNote, Icons.Outlined.MusicNote),
-        Item("friends", "Друзья", Icons.Rounded.Group, Icons.Outlined.Group, reqs),
-        Item("me", "Профиль", Icons.Rounded.AccountCircle, Icons.Outlined.AccountCircle),
+        Item("chats", "Чаты", Icons.Rounded.ChatBubble, Icons.Outlined.ChatBubbleOutline, unread),
+        Item("menu", "Меню", Icons.Rounded.Apps, Icons.Outlined.Apps, reqs),
     )
     NavigationBar {
         items.forEach { i ->

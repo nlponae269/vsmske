@@ -33,6 +33,7 @@ data class User(
     val banned: Boolean = false,     // маска «Deleted Account» (для всех, кроме самого человека и админов)
     val wallPrivacy: String = "friends",   // кто пишет на стене: friends | me
     val listening: String = "",
+    val cover: String = "blue",          // ключ обложки профиля (COVERS на сайте)
     val missing: Boolean = false,
 ) {
     val online get() = lastSeen > 0 && System.currentTimeMillis() - lastSeen < 5 * 60_000
@@ -48,6 +49,7 @@ data class User(
                 tracks = d.strs("tracks"), blocked = d.strs("blocked"), lastSeen = d.ms("lastSeen"), notifSeenAt = d.ms("notifSeenAt"),
                 createdAt = d.ms("createdAt"), emoji = d.str("emoji"), admin = d.get("admin").let { it == true || it == "true" },
                 banUntil = ban?.let { b -> b["until"]?.tsMs() ?: 0L }, banReason = ban?.get("reason") as? String ?: "",
+                cover = d.str("cover").ifEmpty { "blue" },
                 wallPrivacy = (d.get("privacy") as? Map<*, *>)?.get("wall") as? String ?: "friends",
                 listening = (d.get("listening") as? Map<*, *>)?.let { l -> listOf(l["title"], l["artist"]).filterIsInstance<String>().filter { it.isNotEmpty() }.joinToString(" — ") } ?: "",
             )
@@ -75,6 +77,7 @@ data class Post(
     val commentCount: Int,
     val createdAt: Long,
     val editedAt: Long,
+    val reposts: Int = 0,
 ) {
     companion object {
         fun from(d: DocumentSnapshot): Post {
@@ -88,7 +91,7 @@ data class Post(
                 )
             }
             return Post(d.id, d.str("authorId"), d.str("wallId"), d.str("groupId"), d.str("text"), imgs, poll, d.str("repostOf"),
-                d.strs("likes"), (d.getLong("commentCount") ?: 0).toInt(), d.ms("createdAt"), d.ms("editedAt"))
+                d.strs("likes"), (d.getLong("commentCount") ?: 0).toInt(), d.ms("createdAt"), d.ms("editedAt"), (d.getLong("reposts") ?: 0).toInt())
         }
     }
 }
@@ -182,4 +185,70 @@ data class FriendRequest(val from: String, val to: String, val createdAt: Long) 
     companion object {
         fun from(d: DocumentSnapshot) = FriendRequest(d.str("from"), d.str("to"), d.ms("createdAt"))
     }
+}
+
+data class Video(
+    val id: String,
+    val ownerId: String,
+    val title: String,
+    val description: String,
+    val source: String,      // file | link
+    val provider: String,    // youtube | rutube | vk | direct
+    val vid: String,
+    val fileId: String,
+    val type: String,
+    val thumb: String,
+    val duration: Double,
+    val likes: List<String>,
+    val views: Int,
+    val createdAt: Long,
+) {
+    /** Обложка: своя (dataURL) или превью YouTube */
+    val cover: String get() = thumb.ifEmpty { if (provider == "youtube" && Regex("^[\\w-]{11}$").matches(vid)) "https://i.ytimg.com/vi/$vid/hqdefault.jpg" else "" }
+    /** Адрес встроенного плеера для ссылок YouTube / Rutube / VK */
+    val embed: String get() = when {
+        provider == "youtube" && Regex("^[\\w-]{11}$").matches(vid) -> "https://www.youtube.com/embed/$vid?playsinline=1&autoplay=1"
+        provider == "rutube" && Regex("^[a-f0-9]{32}$").matches(vid) -> "https://rutube.ru/play/embed/$vid"
+        provider == "vk" && Regex("^-?\\d+_\\d+$").matches(vid) -> vid.split("_").let { "https://vk.com/video_ext.php?oid=${it[0]}&id=${it[1]}&hd=2&autoplay=1" }
+        else -> ""
+    }
+    companion object {
+        fun from(d: DocumentSnapshot) = Video(
+            d.id, d.str("ownerId"), d.str("title"), d.str("description"), d.str("source"), d.str("provider"), d.str("vid"), d.str("fileId"),
+            d.str("type").ifEmpty { "video/mp4" }, d.str("thumb"), d.getDouble("duration") ?: 0.0, d.strs("likes"), (d.getLong("views") ?: 0).toInt(), d.ms("createdAt"),
+        )
+    }
+}
+
+data class Album(val id: String, val ownerId: String, val title: String, val count: Int, val cover: String, val coverId: String, val updatedAt: Long) {
+    companion object { fun from(d: DocumentSnapshot) = Album(d.id, d.str("ownerId"), d.str("title"), (d.getLong("count") ?: 0).toInt(), d.str("cover"), d.str("coverId"), d.ms("updatedAt")) }
+}
+
+data class Photo(val id: String, val ownerId: String, val albumId: String, val thumb: String, val createdAt: Long) {
+    companion object { fun from(d: DocumentSnapshot) = Photo(d.id, d.str("ownerId"), d.str("albumId"), d.str("thumb"), d.ms("createdAt")) }
+}
+
+data class DiskFile(val id: String, val name: String, val size: Long, val type: String, val status: String, val createdAt: Long) {
+    companion object { fun from(d: DocumentSnapshot) = DiskFile(d.id, d.str("name"), d.getLong("size") ?: 0, d.str("type"), d.str("status"), d.ms("createdAt")) }
+}
+
+data class Story(val id: String, val ownerId: String, val image: String, val text: String, val views: Map<String, Long>, val createdAt: Long) {
+    companion object {
+        fun from(d: DocumentSnapshot) = Story(d.id, d.str("ownerId"), d.str("image"), d.str("text"),
+            (d.get("views") as? Map<*, *>)?.mapNotNull { (k, v) -> (k as? String)?.let { it to v.tsMs() } }?.toMap() ?: emptyMap(), d.ms("createdAt"))
+    }
+}
+
+data class Stream(val id: String, val ownerId: String, val title: String, val mode: String, val live: Boolean, val beat: Long, val to: String, val createdAt: Long) {
+    /** Живой — если «пульс» свежее 150 секунд (как liveFresh() на сайте) */
+    val fresh get() = live && System.currentTimeMillis() - beat < 150_000
+    companion object { fun from(d: DocumentSnapshot) = Stream(d.id, d.str("ownerId"), d.str("title"), d.str("mode"), d.getBoolean("live") == true, d.ms("beat"), d.str("to"), d.ms("createdAt")) }
+}
+
+data class Playlist(val id: String, val ownerId: String, val title: String, val tracks: List<String>, val color: String, val updatedAt: Long) {
+    companion object { fun from(d: DocumentSnapshot) = Playlist(d.id, d.str("ownerId"), d.str("title"), d.strs("tracks"), d.str("color"), d.ms("updatedAt")) }
+}
+
+data class Gift(val id: String, val from: String, val gift: String, val text: String, val createdAt: Long) {
+    companion object { fun from(d: DocumentSnapshot) = Gift(d.id, d.str("from"), d.str("gift"), d.str("text"), d.ms("createdAt")) }
 }

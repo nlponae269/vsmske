@@ -37,12 +37,13 @@ object Api {
         }.await()
     }
 
-    suspend fun saveProfile(name: String, city: String, status: String, about: String, photo: String?) {
+    suspend fun saveProfile(name: String, city: String, status: String, about: String, photo: String?, cover: String? = null) {
         val u = Store.me.value ?: return
         val nm = name.trim().take(60); val ct = city.trim().take(40)
         val patch = mutableMapOf<String, Any>("name" to nm, "city" to ct, "status" to status.trim().take(120), "about" to about.trim().take(600),
             "search" to buildSearch(nm, u.nick, ct))
         if (photo != null) patch["photo"] = photo
+        if (cover != null && cover in listOf("blue", "sunset", "sea", "night", "rose", "gold")) patch["cover"] = cover
         db.collection("users").document(me).update(patch).await()
     }
 

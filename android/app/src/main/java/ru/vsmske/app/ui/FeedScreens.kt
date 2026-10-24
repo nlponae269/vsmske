@@ -81,6 +81,9 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -136,6 +139,9 @@ fun FeedScreen() {
     val ids = remember(me?.friends) { listOf(Store.uid) + (me?.friends ?: emptyList()).takeLast(29) }
     val (posts, more) = rememberPosts(tab to ids) { lim -> if (tab == "all") Api.allQuery(lim) else Api.feedQuery(ids, lim) }
     val unseen = Store.notifs.collectAsState().value.let { Store.unseenNotifs() }
+    var stories by remember { mutableStateOf<List<ru.vsmske.app.data.Story>>(emptyList()) }
+    var storyVer by remember { mutableStateOf(0) }
+    LaunchedEffect(ids, storyVer) { stories = runCatching { ru.vsmske.app.data.Media.stories(ids) }.getOrDefault(emptyList()); Store.need(stories.map { it.ownerId }) }
     val scroll = TopAppBarDefaults.enterAlwaysScrollBehavior()
     Scaffold(
         modifier = Modifier.nestedScroll(scroll.nestedScrollConnection),
@@ -155,10 +161,12 @@ fun FeedScreen() {
         floatingActionButton = { ExtendedFloatingActionButton(onClick = { compose = true }, icon = { Icon(Icons.Rounded.Edit, null) }, text = { Text("Запись") }) },
     ) { pad ->
         PostList(posts, more, PaddingValues(top = pad.calculateTopPadding(), bottom = 96.dp)) {
+            item { StoriesRow(stories) { storyVer++ } }
+            item { LiveNowCard() }
             item {
-                Row(Modifier.padding(horizontal = 16.dp, vertical = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    FilterChip(tab == "friends", { tab = "friends" }, { Text("Друзья") })
-                    FilterChip(tab == "all", { tab = "all" }, { Text("Все записи") })
+                Row(Modifier.padding(horizontal = 16.dp, vertical = 4.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    FilterChip(tab == "friends", { tab = "friends" }, { Text("Друзья") }, shape = CircleShape)
+                    FilterChip(tab == "all", { tab = "all" }, { Text("Все записи") }, shape = CircleShape)
                 }
             }
         }
@@ -195,7 +203,7 @@ fun PostCard(p: Post, open: Boolean = false) {
     var menu by remember { mutableStateOf(false) }
     var ask by remember { mutableStateOf(false) }
     val canDel = p.authorId == me || p.wallId == me || Store.me.value?.admin == true
-    Card(Modifier.fillMaxWidth().padding(horizontal = 12.dp).animateContentSize(), shape = RoundedCornerShape(24.dp),
+    Card(Modifier.fillMaxWidth().padding(horizontal = 12.dp).animateContentSize(), shape = RoundedCornerShape(28.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -216,7 +224,7 @@ fun PostCard(p: Post, open: Boolean = false) {
             }
             if (p.text.isNotEmpty()) Text(p.text, style = MaterialTheme.typography.bodyLarge)
             if (p.repostOf.isNotEmpty()) RepostBox(p.repostOf)
-            Pics(p, a?.banned == true)
+            Pics(p, a?.banned == true) { if (!liked) scope.safe(toast) { Api.toggleLike(p) } }
             p.poll?.let { PollBox(p) }
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 FilterChip(liked, { scope.safe(toast) { Api.toggleLike(p) } },
@@ -224,6 +232,8 @@ fun PostCard(p: Post, open: Boolean = false) {
                     leadingIcon = { Icon(if (liked) Icons.Rounded.Favorite else Icons.Rounded.FavoriteBorder, null, Modifier.size(18.dp)) }, shape = CircleShape)
                 if (!open) FilterChip(false, { nav.navigate("post/${p.id}") }, { Text(if (p.commentCount == 0) "Комментировать" else "${p.commentCount}") },
                     leadingIcon = { Icon(Icons.Outlined.ChatBubbleOutline, null, Modifier.size(18.dp)) }, shape = CircleShape)
+                if (p.authorId != me && p.groupId.isEmpty()) FilterChip(false, { scope.safe(toast) { ru.vsmske.app.data.Media.repost(p); toast("Репост на вашей стене") } },
+                    { Text(if (p.reposts > 0) "${p.reposts}" else "") }, leadingIcon = { Icon(Icons.Rounded.Repeat, "Поделиться", Modifier.size(18.dp)) }, shape = CircleShape)
             }
         }
     }
@@ -233,19 +243,26 @@ fun PostCard(p: Post, open: Boolean = false) {
 }
 
 @Composable
-private fun Pics(p: Post, banned: Boolean) {
+private fun Pics(p: Post, banned: Boolean, onDoubleLike: () -> Unit) {
     var viewer by remember { mutableStateOf<String?>(null) }
+    var heart by remember { mutableStateOf(0) }
+    val hk by androidx.compose.animation.core.animateFloatAsState(if (heart % 2 == 1) 1f else 0f, androidx.compose.animation.core.spring(dampingRatio = 0.4f, stiffness = 400f), label = "heart",
+        finishedListener = { if (heart % 2 == 1) heart++ })
+    fun tap(src: String) = Modifier.pointerInput(src) { detectTapGestures(onDoubleTap = { onDoubleLike(); if (heart % 2 == 0) heart++ }, onTap = { viewer = src }) }
     val imgs = p.images
     if (imgs.isEmpty()) return
     val shape = RoundedCornerShape(16.dp)
     if (banned) { Locked("Фото недоступно", Modifier.fillMaxWidth().aspectRatio(16 / 10f).clip(shape)); return }
-    if (imgs.size == 1) DbImage(imgs[0], Modifier.fillMaxWidth().heightIn(max = 460.dp).clip(shape).clickable { viewer = imgs[0] }, ContentScale.FillWidth)
-    else Column(Modifier.clip(shape), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-        imgs.chunked(2).forEach { row ->
-            Row(horizontalArrangement = Arrangement.spacedBy(3.dp)) {
-                row.forEach { src -> DbImage(src, Modifier.weight(1f).aspectRatio(1f).clickable { viewer = src }) }
+    Box(contentAlignment = Alignment.Center) {
+        if (imgs.size == 1) DbImage(imgs[0], Modifier.fillMaxWidth().heightIn(max = 460.dp).clip(shape).then(tap(imgs[0])), ContentScale.FillWidth)
+        else Column(Modifier.clip(shape), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+            imgs.chunked(2).forEach { row ->
+                Row(horizontalArrangement = Arrangement.spacedBy(3.dp)) {
+                    row.forEach { src -> DbImage(src, Modifier.weight(1f).aspectRatio(1f).then(tap(src))) }
+                }
             }
         }
+        if (hk > 0.01f) Icon(Icons.Rounded.Favorite, null, tint = Color.White, modifier = Modifier.size(110.dp).graphicsLayer { scaleX = hk; scaleY = hk; alpha = hk })
     }
     viewer?.let { src ->
         androidx.compose.ui.window.Dialog({ viewer = null }, androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false)) {
@@ -255,12 +272,6 @@ private fun Pics(p: Post, banned: Boolean) {
         }
     }
 }
-
-@Composable
-fun Locked(text: String, modifier: Modifier = Modifier) =
-    Box(modifier.background(MaterialTheme.colorScheme.surfaceContainerHighest), contentAlignment = Alignment.Center) {
-        Text("🔒 $text", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
-    }
 
 @Composable
 private fun RepostBox(id: String) {

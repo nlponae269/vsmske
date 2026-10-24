@@ -86,7 +86,7 @@ fun FriendsScreen() {
         contentWindowInsets = WindowInsets(0),
         topBar = {
             Column {
-                TopAppBar(title = { Text("Друзья") })
+                TopAppBar(title = { Text("Друзья") }, navigationIcon = { IconButton({ nav.popBackStack() }) { Icon(Icons.AutoMirrored.Rounded.ArrowBack, "Назад") } })
                 PrimaryTabRow(tab) {
                     Tab(tab == 0, { tab = 0 }, text = { Text("Друзья") })
                     Tab(tab == 1, { tab = 1 }, text = { Row(verticalAlignment = Alignment.CenterVertically) { Text("Заявки"); if (inc.isNotEmpty()) Badge(Modifier.padding(start = 6.dp)) { Text("${inc.size}") } } })

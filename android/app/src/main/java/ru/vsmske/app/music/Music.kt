@@ -2,7 +2,9 @@ package ru.vsmske.app.music
 
 import android.content.ComponentName
 import android.content.Context
+import android.os.SystemClock
 import android.util.Base64
+import androidx.media3.common.PlaybackParameters
 import androidx.core.net.toUri
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
@@ -32,7 +34,16 @@ object Music {
         val repeat: Int = Player.REPEAT_MODE_OFF,
         val shuffle: Boolean = false,
         val error: String? = null,
-    ) { val track: Track? get() = queue.getOrNull(index) }
+        val at: Long = 0,            // когда снята позиция (elapsedRealtime) — для плавного текста песни
+        val speed: Float = 1f,
+        val pitch: Boolean = true,   // сохранять тон при смене скорости
+        val sleepAt: Long = 0,       // таймер сна: когда выключить (elapsedRealtime), 0 — нет
+        val sleepEnd: Boolean = false, // выключить в конце трека
+    ) {
+        val track: Track? get() = queue.getOrNull(index)
+        /** Позиция «сейчас» с поправкой на время с последнего опроса */
+        fun smooth(): Long = if (!playing) position else (position + ((SystemClock.elapsedRealtime() - at) * speed).toLong()).coerceAtMost(duration.takeIf { it > 0 } ?: Long.MAX_VALUE)
+    }
 
     val state = MutableStateFlow(State())
     private var ctl: MediaController? = null
@@ -40,7 +51,14 @@ object Music {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
     private var shared = ""
 
+    private var prefs: android.content.SharedPreferences? = null
+
     fun connect(ctx: Context) {
+        if (prefs == null) {
+            val p = ctx.getSharedPreferences("vs", Context.MODE_PRIVATE); prefs = p
+            state.value = state.value.copy(speed = p.getFloat("rate", 1f), pitch = p.getBoolean("pitch", true))
+            Eq.load(ctx)
+        }
         if (ctl != null) return
         val f = MediaController.Builder(ctx, SessionToken(ctx, ComponentName(ctx, PlaybackService::class.java))).buildAsync()
         f.addListener({
@@ -50,10 +68,43 @@ object Music {
                 override fun onEvents(player: Player, events: Player.Events) = sync()
                 override fun onPlayerError(error: PlaybackException) { state.value = state.value.copy(error = "Не получилось включить трек", buffering = false) }
             })
+            applySpeed()
             pending?.invoke(c); pending = null
             sync()
         }, MoreExecutors.directExecutor())
-        scope.launch { while (true) { if (state.value.playing) sync(); delay(250) } }
+        scope.launch { while (true) { if (state.value.playing) { sync(); sleepTick() }; delay(250) } }
+    }
+
+    /* ---------- Скорость (как vs_rate / vs_pitch на сайте) ---------- */
+    fun setSpeed(r: Float, keepPitch: Boolean = state.value.pitch) {
+        val v = r.coerceIn(0.5f, 2f)
+        state.value = state.value.copy(speed = v, pitch = keepPitch)
+        prefs?.edit()?.putFloat("rate", v)?.putBoolean("pitch", keepPitch)?.apply()
+        applySpeed()
+    }
+    private fun applySpeed() {
+        val s = state.value
+        ctl?.playbackParameters = PlaybackParameters(s.speed, if (s.pitch) 1f else s.speed)
+    }
+
+    /* ---------- Таймер сна: последние 10 секунд — плавное затухание ---------- */
+    fun sleepIn(min: Int) { state.value = state.value.copy(sleepAt = if (min > 0) SystemClock.elapsedRealtime() + min * 60_000L else 0, sleepEnd = false); ctl?.volume = 1f }
+    fun sleepAtEnd() { state.value = state.value.copy(sleepAt = 0, sleepEnd = true); ctl?.volume = 1f }
+    fun sleepLeft(): Long = state.value.sleepAt.let { if (it == 0L) 0 else (it - SystemClock.elapsedRealtime()).coerceAtLeast(0) }
+    private var sleepIdx = -1
+    private fun sleepTick() {
+        val c = ctl ?: return
+        val s = state.value
+        if (s.sleepAt > 0) {
+            val left = s.sleepAt - SystemClock.elapsedRealtime()
+            if (left <= 0) { c.pause(); c.volume = 1f; state.value = state.value.copy(sleepAt = 0); return }
+            c.volume = if (left < 10_000) (left / 10_000f).coerceIn(0f, 1f) else 1f
+        } else if (s.sleepEnd) {
+            if (sleepIdx == -1) sleepIdx = s.index
+            val left = s.duration - s.position
+            c.volume = if (s.duration > 0 && left < 8_000) (left / 8_000f).coerceIn(0.05f, 1f) else 1f
+            if (s.index != sleepIdx || (s.duration > 0 && left < 300)) { c.pause(); c.volume = 1f; sleepIdx = -1; state.value = state.value.copy(sleepEnd = false) }
+        } else sleepIdx = -1
     }
 
     private fun sync() {
@@ -64,11 +115,11 @@ object Music {
             playing = c.isPlaying, buffering = c.playbackState == Player.STATE_BUFFERING,
             position = c.currentPosition.coerceAtLeast(0),
             duration = c.duration.takeIf { it > 0 } ?: ((s.track?.duration ?: 0.0) * 1000).toLong(),
-            repeat = c.repeatMode, shuffle = c.shuffleModeEnabled,
+            repeat = c.repeatMode, shuffle = c.shuffleModeEnabled, at = SystemClock.elapsedRealtime(),
         )
         val t = state.value.track
         val key = if (t != null && c.isPlaying) t.id else ""
-        if (key != shared) { shared = key; Api.setListening(if (key.isEmpty()) null else t) }
+        if (key != shared && prefs?.getBoolean("listen", true) != false) { shared = key; Api.setListening(if (key.isEmpty()) null else t) }
     }
 
     private fun item(t: Track): MediaItem {
@@ -86,13 +137,28 @@ object Music {
         with(ctx) { c -> c.setMediaItems(list.map(::item), start, 0); c.prepare(); c.play() }
     }
 
+    fun setPlaying(on: Boolean) { ctl?.let { if (on && !it.isPlaying) it.play() else if (!on && it.isPlaying) it.pause() } }
     fun toggle() { ctl?.let { if (it.isPlaying) it.pause() else it.play() } }
     fun next() { ctl?.let { if (it.hasNextMediaItem()) it.seekToNextMediaItem() } }
     fun prev() { ctl?.let { if (it.currentPosition > 3000 || !it.hasPreviousMediaItem()) it.seekTo(0) else it.seekToPreviousMediaItem() } }
     fun seek(ms: Long) { ctl?.seekTo(ms); state.value = state.value.copy(position = ms) }
     fun jump(i: Int) { ctl?.let { it.seekTo(i, 0); it.play() } }
+    /** Сыграть следующим (после текущего) */
+    fun playNext(ctx: Context, t: Track) {
+        val s = state.value
+        if (s.track == null) { play(ctx, listOf(t), 0); return }
+        val at = s.index + 1
+        state.value = s.copy(queue = s.queue.toMutableList().also { it.add(at, t) })
+        ctl?.addMediaItem(at, item(t))
+    }
+    fun removeAt(i: Int) {
+        val s = state.value
+        if (i == s.index || i !in s.queue.indices) return
+        state.value = s.copy(queue = s.queue.toMutableList().also { it.removeAt(i) }, index = if (i < s.index) s.index - 1 else s.index)
+        ctl?.removeMediaItem(i)
+    }
     fun cycleRepeat() { ctl?.let { it.repeatMode = when (it.repeatMode) { Player.REPEAT_MODE_OFF -> Player.REPEAT_MODE_ALL; Player.REPEAT_MODE_ALL -> Player.REPEAT_MODE_ONE; else -> Player.REPEAT_MODE_OFF } } }
     fun toggleShuffle() { ctl?.let { it.shuffleModeEnabled = !it.shuffleModeEnabled } }
-    fun stop() { ctl?.let { it.stop(); it.clearMediaItems() }; state.value = State() }
+    fun stop() { ctl?.let { it.stop(); it.clearMediaItems() }; state.value = State(speed = state.value.speed, pitch = state.value.pitch) }
     fun clearError() { state.value = state.value.copy(error = null) }
 }

@@ -137,20 +137,30 @@
   Исключения — страница видео: там обновляются только части страницы, чтобы плеер не перезапускался (см. `playerKey`), и Клипы (`clipsKey`, окна — в `#clipsOv`).
 
 ## Android-приложение (папка `android/`)
-**2.0 — написано заново по просьбе владельца** (старый код 1.x не используется). Без прямой просьбы приложение не трогаем.
+**3.0 — по просьбе владельца («супер красиво», всё с сайта, размер до 500 МБ можно).** 2.0 написано с нуля (код 1.x не используется). Без прямой просьбы приложение не трогаем.
 Нативное приложение (Kotlin + Jetpack Compose, Material 3), не обёртка над сайтом. Та же база Firebase; документы пишутся **ровно в том виде, что у сайта**
-(правила Firestore для приложения не менялись). Если меняешь формат записи на сайте — поправь и `data/Api.kt`.
+(правила Firestore для приложения не менялись). Если меняешь формат записи на сайте — поправь и `data/Api.kt` / `data/Media.kt`.
 - `data/Fire.kt` — подключение настройками веб-приложения (без google-services.json), `-Pemu=true` — эмуляторы 10.0.2.2:8080/9099 (только для проверки).
-- `data/Models.kt` — модели из документов (User, Post, Comment, Chat, Message, Track, Notif, FriendRequest); `User.masked()` — «Deleted Account» для забаненных (как на сайте).
+- `data/Models.kt` — модели из документов (User, Post, Comment, Chat, Message, Track, Notif, FriendRequest, Video, Album, Photo, DiskFile, Story, Stream, Playlist, Gift);
+  `User.masked()` — «Deleted Account» для забаненных (как на сайте).
 - `data/Store.kt` — сессия (`Phase`: Loading/SignedOut/NeedProfile/Ready), живые слушатели (мой профиль, чаты, сигналы, заявки), кэш людей `users` + `need(ids)`.
-- `data/Api.kt` — все записи в базу (профиль+ник одной пачкой, записи, лайки с уведомлением `like_<post>_<uid>`, опросы, комментарии с `commentCount`, друзья по заявке,
-  сообщения с обновлением `chats`, прочтение, реакции, треки, «сейчас слушает»); `data/Text.kt` — `buildSearch`, `extractTags`, `ago`, `parseLyrics`…; `data/Images.kt` — dataURL JPEG.
-- `music/` — `FileSource` (адрес `vsmske://file/<id>` → куски `files/{id}/chunks` склеиваются в файл в кэше), `PlaybackService` (Media3, фон и шторка),
-  `Music` (очередь и состояние для экранов), `Upload` (теги ID3v2 + cp1251, загрузка кусками по 700 000).
-- `ui/` — Material You: `Theme.kt` (динамический цвет из обоев, Android 12+), `Root.kt` (`NavigationBar`: Лента, Чаты, Музыка, Друзья, Профиль; мини-плеер),
-  экраны `AuthScreens`, `FeedScreens` (лента, запись, комментарии, новая запись), `ProfileScreens`, `FriendsScreens` (+ сигналы), `ChatScreens`, `MusicScreens`,
-  `PlayerScreen` — плеер как медиаплеер Android: цвета из обложки, волнистая перемотка `WavySeek`, кнопка «играть» меняет форму; текст песни по умолчанию как в Apple Music
-  (`AppleLyrics`), переключатель на «Обычный» (SharedPreferences `vs` → `lyr_style` = `apple` | `plain`).
+- `data/Api.kt` — записи, лайки, комментарии, друзья, сообщения, треки, «сейчас слушает», профиль (с `cover`); `data/Media.kt` (3.0) — видео (файл/ссылка, лайки, просмотры,
+  комментарии), альбомы (`photos` + `photoFull` одной пачкой), Диск (`files` kind `disk`), истории, плейлисты, Поток (`streamPage`), подарки (`GIFTS`), репост, эфиры;
+  `data/Files.kt` — файлы кусками по 700 000 (`DISK_MAX` 10 МБ, `VIDEO_MAX` 20 МБ); `data/Lyrics.kt` — разбор LRC 3.0 (несколько тайм-кодов, `[offset]`, слова `<мм:сс>`,
+  оценка конца строки, паузы-«проигрыши»); `data/Text.kt` — `buildSearch`, `extractTags`, `ago`…; `data/Images.kt` — dataURL JPEG.
+- `music/` — `FileSource` (`vsmske://file/<id>` → куски склеиваются в файл в кэше; так же играются видео), `PlaybackService` (Media3, фон и шторка, свой `DefaultAudioSink`
+  с `EqProcessor`), `Eq.kt` — эквалайзер как на сайте (10 полос ±12 дБ, басы 0–12 дБ, пресеты, запас громкости и мягкий лимитер; SharedPreferences `vs` → `eq`),
+  `Music` (очередь, скорость `rate`/`pitch`, таймер сна с затуханием, «играть следующим», `smooth()` — позиция для плавного текста), `Upload` (теги ID3v2 + cp1251).
+- `rtc/` (3.0) — WebRTC (`io.getstream:stream-webrtc-android`), протокол сайта без изменений: `Rtc.kt` (те же ICE, SDP без trickle, `trim()` под предел правил 16 000),
+  `Live.kt` — эфир: стример с камеры отдаёт до 3 зрителям, зритель в приложении берёт видео у узла `nodes` и дальше не передаёт (cap 0); чат/счётчик по каналу данных;
+  `Call.kt` — звонки 1:1 (входящие — по уведомлению `call` из `Store.notifs`, `Call.watch()` в MainActivity), «Слушать вместе» (`tog`/`mus`), запись итога в переписку.
+- `ui/` — Material You 3.0: `Theme.kt` (динамический цвет, шрифт Onest, логотип Unbounded), `Shapes.kt` (фигуры Expressive: «печенька» `CookieShape`, `ExpressiveLoader`),
+  `Kit.kt` (аватар, скелетоны, пустые экраны, плитки). Нижняя панель (`Root.kt`): Лента, Видео, Музыка, Чаты, Меню. Экраны: лента с историями (`StoriesScreens`), «Сейчас в эфире»,
+  репостом и двойным тапом; профиль с обложкой `COVERS`, подарками и кнопками звонка; `VideoScreens` (главная, просмотр ExoPlayer/встроенный YouTube·Rutube·VK, загрузка),
+  `ClipsScreen` (вертикальная лента), `AlbumsScreens` (+ Диск), `RtcScreens` (эфиры, комната, экран звонка `CallOverlay`), `MusicScreens` (главная как на сайте, списки, плейлисты),
+  `MenuScreen` (все разделы, настройки), `PlayerScreen` + `PlayerSheets` (эквалайзер, скорость, сон, в плейлист), `LyricsView` — текст песни 3.0: по умолчанию как в Apple Music
+  (заливка по словам мягким краем каждый кадр, строки едут «волной» на пружинах, размытие дальних, точки в паузах, свободная прокрутка пальцем), «Обычный» — по центру
+  (SharedPreferences `vs` → `lyr_style` = `apple` | `plain`).
 - Сборка: GitHub Actions (`.github/workflows/android.yml`) при изменении `android/` в main собирает APK и кладёт в релиз с тегом `android`
   (ссылка `releases/download/android/VSmske.apk` — кнопка «Скачать APK» на сайте). Перед каждым изменением поднимай `versionCode`/`versionName` в `android/app/build.gradle.kts`.
 - Ключ подписи `android/app/vsmske.jks` лежит в репозитории намеренно (ставится не из Google Play; обновление требует того же ключа).
