@@ -11,7 +11,7 @@ import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSessionService
 import ru.vsmske.app.MainActivity
 
-/** Музыка играет в фоне, с управлением в шторке уведомлений и на экране блокировки */
+/** Музыка играет здесь: в фоне, с управлением в шторке и на экране блокировки (Media3). */
 @UnstableApi
 class PlaybackService : MediaSessionService() {
     private var session: MediaSession? = null
@@ -19,18 +19,17 @@ class PlaybackService : MediaSessionService() {
     override fun onCreate() {
         super.onCreate()
         val player = ExoPlayer.Builder(this)
-            .setMediaSourceFactory(DefaultMediaSourceFactory(FirestoreDataSource.Factory(this)))
+            .setMediaSourceFactory(DefaultMediaSourceFactory(FileSource.Factory(this)))
             .setAudioAttributes(AudioAttributes.Builder().setUsage(C.USAGE_MEDIA).setContentType(C.AUDIO_CONTENT_TYPE_MUSIC).build(), true)
             .setHandleAudioBecomingNoisy(true)
+            .setWakeMode(C.WAKE_MODE_NETWORK)
             .build()
-        val open = PendingIntent.getActivity(
-            this, 0, Intent(this, MainActivity::class.java).putExtra("openPlayer", true),
-            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
-        )
+        val open = PendingIntent.getActivity(this, 0, Intent(this, MainActivity::class.java).putExtra("openPlayer", true),
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
         session = MediaSession.Builder(this, player).setSessionActivity(open).build()
     }
 
-    override fun onGetSession(controllerInfo: MediaSession.ControllerInfo) = session
+    override fun onGetSession(info: MediaSession.ControllerInfo) = session
 
     override fun onTaskRemoved(rootIntent: Intent?) {
         val p = session?.player

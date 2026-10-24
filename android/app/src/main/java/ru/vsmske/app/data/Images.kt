@@ -3,82 +3,75 @@ package ru.vsmske.app.data
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
-import android.graphics.ImageDecoder
+import android.graphics.Matrix
 import android.net.Uri
-import android.os.Build
 import android.util.Base64
 import android.util.LruCache
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.exifinterface.media.ExifInterface
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.ByteArrayOutputStream
-import kotlin.math.max
-import kotlin.math.min
-import kotlin.math.roundToInt
 
-/* Фото хранятся прямо в Firestore как dataURL JPEG (Storage на бесплатном тарифе нет) — как на сайте. */
+/** Фото в базе — dataURL JPEG прямо в документах (Storage на бесплатном тарифе нет). */
 object Images {
-    const val MAX_AVATAR = 120_000
-    const val MAX_POST_IMG = 700_000
-    const val MAX_MSG_IMG = 380_000
-
-    class TooBig : Exception("Фото слишком большое даже после сжатия")
-
-    private fun load(ctx: Context, uri: Uri): Bitmap =
-        if (Build.VERSION.SDK_INT >= 28) ImageDecoder.decodeBitmap(ImageDecoder.createSource(ctx.contentResolver, uri)) { d, info, _ ->
-            d.allocator = ImageDecoder.ALLOCATOR_SOFTWARE
-            val s = max(info.size.width, info.size.height)
-            if (s > 2560) d.setTargetSampleSize(s / 2560 + 1)
-        } else ctx.contentResolver.openInputStream(uri)!!.use { BitmapFactory.decodeStream(it) }
-
-    /** Как compress() на сайте: уменьшаем сторону и качество, пока dataURL не влезет в maxLen */
-    suspend fun compress(ctx: Context, uri: Uri, maxSide: Int, maxLen: Int, square: Boolean = false): String = withContext(Dispatchers.Default) {
-        compressBitmap(load(ctx, uri), maxSide, maxLen, square)
-    }
-
-    fun compressBitmap(img: Bitmap, maxSide: Int, maxLen: Int, square: Boolean = false): String {
-        var side = maxSide; var q = 80; var out = ""
-        repeat(8) {
-            val bmp = if (square) {
-                val s = min(img.width, img.height)
-                val crop = Bitmap.createBitmap(img, (img.width - s) / 2, (img.height - s) / 2, s, s)
-                val t = min(side, s); Bitmap.createScaledBitmap(crop, t, t, true)
-            } else {
-                val k = min(1f, side.toFloat() / max(img.width, img.height))
-                Bitmap.createScaledBitmap(img, max(1, (img.width * k).roundToInt()), max(1, (img.height * k).roundToInt()), true)
-            }
-            val bos = ByteArrayOutputStream()
-            bmp.compress(Bitmap.CompressFormat.JPEG, q, bos)
-            out = "data:image/jpeg;base64," + Base64.encodeToString(bos.toByteArray(), Base64.NO_WRAP)
-            if (out.length <= maxLen) return out
-            q = max(50, q - 10); side = (side * 0.85).roundToInt()
-        }
-        throw TooBig()
-    }
-
+    private val IMG_RE = Regex("^data:image/(jpeg|png|webp|gif);base64,")
     private val cache = object : LruCache<String, ImageBitmap>(48 * 1024 * 1024) {
         override fun sizeOf(key: String, value: ImageBitmap) = value.width * value.height * 4
     }
 
-    fun cached(src: String): ImageBitmap? = cache.get(key(src))
-    private fun key(src: String) = src.length.toString() + ":" + src.hashCode() + ":" + src.takeLast(32)
-
-    /** dataURL → картинка (с кэшем). Ссылки https (фото Google) грузит Coil, сюда они не попадают. */
-    suspend fun decode(src: String): ImageBitmap? {
-        if (!src.startsWith("data:image/")) return null
-        cached(src)?.let { return it }
-        return withContext(Dispatchers.Default) {
-            runCatching {
-                val bytes = Base64.decode(src.substringAfter(","), Base64.DEFAULT)
-                BitmapFactory.decodeByteArray(bytes, 0, bytes.size)?.asImageBitmap()?.also { cache.put(key(src), it) }
-            }.getOrNull()
-        }
-    }
-
+    /** Только загруженные фото и фото Google — как safePhoto() на сайте */
     fun safe(src: String?): String {
         val s = src ?: return ""
-        return if (Regex("^data:image/(jpeg|png|webp|gif);base64,").containsMatchIn(s) ||
-            Regex("^https://[a-z0-9-]+[.]googleusercontent[.]com/").containsMatchIn(s)) s else ""
+        return if (IMG_RE.containsMatchIn(s) || Regex("^https://[a-z0-9-]+\\.googleusercontent\\.com/").containsMatchIn(s)) s else ""
+    }
+
+    fun cached(src: String): ImageBitmap? = cache.get(src.hashCode().toString() + src.length)
+
+    suspend fun decode(src: String): ImageBitmap? = withContext(Dispatchers.Default) {
+        if (!IMG_RE.containsMatchIn(src)) return@withContext null
+        val key = src.hashCode().toString() + src.length
+        cache.get(key) ?: runCatching {
+            val bytes = Base64.decode(src.substringAfter(','), Base64.DEFAULT)
+            BitmapFactory.decodeByteArray(bytes, 0, bytes.size)?.asImageBitmap()?.also { cache.put(key, it) }
+        }.getOrNull()
+    }
+
+    fun bitmapOf(src: String): Bitmap? = runCatching {
+        if (!IMG_RE.containsMatchIn(src)) return null
+        val bytes = Base64.decode(src.substringAfter(','), Base64.DEFAULT)
+        BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+    }.getOrNull()
+
+    /** Сжать картинку в dataURL JPEG: сторона не больше maxSide, длина строки не больше maxChars */
+    suspend fun compress(ctx: Context, uri: Uri, maxSide: Int, maxChars: Int, square: Boolean = false): String = withContext(Dispatchers.IO) {
+        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        ctx.contentResolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, bounds) }
+        var sample = 1
+        while (maxOf(bounds.outWidth, bounds.outHeight) / (sample * 2) >= maxSide) sample *= 2
+        var bmp = ctx.contentResolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, BitmapFactory.Options().apply { inSampleSize = sample }) }
+            ?: error("Не удалось открыть картинку")
+        val rot = runCatching { ctx.contentResolver.openInputStream(uri)?.use { ExifInterface(it).rotationDegrees } ?: 0 }.getOrDefault(0)
+        if (rot != 0) bmp = Bitmap.createBitmap(bmp, 0, 0, bmp.width, bmp.height, Matrix().apply { postRotate(rot.toFloat()) }, true)
+        fromBitmap(bmp, maxSide, maxChars, square)
+    }
+
+    fun fromBitmap(src: Bitmap, maxSide: Int, maxChars: Int, square: Boolean = false): String {
+        var bmp = src
+        if (square) { val s = minOf(bmp.width, bmp.height); bmp = Bitmap.createBitmap(bmp, (bmp.width - s) / 2, (bmp.height - s) / 2, s, s) }
+        var side = maxSide
+        while (true) {
+            val k = minOf(1f, side.toFloat() / maxOf(bmp.width, bmp.height))
+            val scaled = if (k < 1f) Bitmap.createScaledBitmap(bmp, (bmp.width * k).toInt().coerceAtLeast(1), (bmp.height * k).toInt().coerceAtLeast(1), true) else bmp
+            for (q in intArrayOf(85, 75, 65, 55, 45)) {
+                val out = ByteArrayOutputStream()
+                scaled.compress(Bitmap.CompressFormat.JPEG, q, out)
+                val s = "data:image/jpeg;base64," + Base64.encodeToString(out.toByteArray(), Base64.NO_WRAP)
+                if (s.length <= maxChars) return s
+            }
+            side = (side * 0.75f).toInt()
+            if (side < 120) error("Картинка слишком большая")
+        }
     }
 }

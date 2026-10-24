@@ -1,10 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <style name="Theme.Vs" parent="android:Theme.Material.NoActionBar">
+    <!-- Окно до запуска Compose: светлое или тёмное, как в системе (дальше цвета — Material You из Theme.kt) -->
+    <style name="Theme.Vs" parent="android:Theme.Material.Light.NoActionBar">
         <item name="android:windowBackground">@color/bg</item>
         <item name="android:statusBarColor">@android:color/transparent</item>
         <item name="android:navigationBarColor">@android:color/transparent</item>
-        <item name="android:windowLightStatusBar">false</item>
     </style>
-    <color name="bg">#0B0614</color>
+    <color name="bg">#FEF7FF</color>
 </resources>

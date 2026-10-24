@@ -1,11 +1,11 @@
 package ru.vsmske.app
 
 import android.app.Application
-import ru.vsmske.app.data.Fb
+import ru.vsmske.app.data.Fire
 
 class VsApp : Application() {
     override fun onCreate() {
         super.onCreate()
-        Fb.init(this)
+        Fire.init(this)
     }
 }

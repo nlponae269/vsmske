@@ -137,28 +137,24 @@
   Исключения — страница видео: там обновляются только части страницы, чтобы плеер не перезапускался (см. `playerKey`), и Клипы (`clipsKey`, окна — в `#clipsOv`).
 
 ## Android-приложение (папка `android/`)
-**1.1 (по просьбе владельца): дизайн Material You.** Иначе приложение по-прежнему не трогаем без прямой просьбы.
-- Тема (`ui/Theme.kt`): динамический цвет из обоев (Android 12+, `dynamicLight/DarkColorScheme`), на старых — палитра M3; светлая/тёмная по системе.
-  Имена `Vs.*` остались, но это роли темы (`Vs.accent` = primary, `Vs.muted` = onSurfaceVariant…, `@Composable`-геттеры). Стекла больше нет: `ui/Glass.kt` удалён,
-  `glassCard()` (`ui/Surfaces.kt`) — заполненная карточка surfaceContainerLow; кнопки — M3 `Button`/`FilledTonalButton`, вкладки — `SegmentedButton`, аватарки круглые.
-- Каркас (`ui/App.kt`): верхняя панель 64 dp, `NavigationBar` (Лента, Чаты, Музыка, Друзья, Профиль) с «пилюлей», мини-плеер — карточка secondaryContainer с полоской прогресса.
-- Плеер (`ui/screens/Player.kt`) — как медиаплеер Android: цвета из обложки (`seedOf()`/`colorsFrom()`), волнистая полоса перемотки `WavySlider`
-  (волна бежит во время игры, на паузе выпрямляется), кнопка «играть» меняет форму (`PlayButton`), «таблетки» Текст/Очередь.
-  Текст песни: по умолчанию как в Apple Music (`AppleLyrics`: крупные строки, заливка текущей по ходу, размытие дальних), можно переключить на «Обычный»
-  (`PlainLyrics`); выбор — SharedPreferences `vs` → `lyr_style` = `ap` | `plain`.
-Настоящее нативное приложение (Kotlin + Jetpack Compose), не обёртка над сайтом. Работает с той же базой Firebase и пишет
-документы **ровно в том же виде, что сайт** — правила Firestore для него не менялись. Если меняешь формат записи на сайте, поправь и `android/.../data/Repo.kt`.
-- Подключение — настройками веб-приложения в коде (`data/Fb.kt`), без `google-services.json` и без регистрации в консоли.
-- Что есть: вход/регистрация (почта+пароль), лента (друзья/все, фото, опросы, лайки, комментарии), профиль и правка, друзья и заявки,
-  поиск людей, чаты (личные и беседы, фото, голосовые с сайта играются), сигналы, музыка (мои/все, загрузка mp3 с тегами и обложкой,
-  добавить чужой трек к себе, фоновое воспроизведение Media3 с управлением в шторке, полноэкранный плеер с текстом песни и очередью).
-- Треки играются через `music/FirestoreDataSource.kt`: адрес `vsmske://file/<id>` → куски из `files/{id}/chunks` склеиваются в файл в кэше.
+**2.0 — написано заново по просьбе владельца** (старый код 1.x не используется). Без прямой просьбы приложение не трогаем.
+Нативное приложение (Kotlin + Jetpack Compose, Material 3), не обёртка над сайтом. Та же база Firebase; документы пишутся **ровно в том виде, что у сайта**
+(правила Firestore для приложения не менялись). Если меняешь формат записи на сайте — поправь и `data/Api.kt`.
+- `data/Fire.kt` — подключение настройками веб-приложения (без google-services.json), `-Pemu=true` — эмуляторы 10.0.2.2:8080/9099 (только для проверки).
+- `data/Models.kt` — модели из документов (User, Post, Comment, Chat, Message, Track, Notif, FriendRequest); `User.masked()` — «Deleted Account» для забаненных (как на сайте).
+- `data/Store.kt` — сессия (`Phase`: Loading/SignedOut/NeedProfile/Ready), живые слушатели (мой профиль, чаты, сигналы, заявки), кэш людей `users` + `need(ids)`.
+- `data/Api.kt` — все записи в базу (профиль+ник одной пачкой, записи, лайки с уведомлением `like_<post>_<uid>`, опросы, комментарии с `commentCount`, друзья по заявке,
+  сообщения с обновлением `chats`, прочтение, реакции, треки, «сейчас слушает»); `data/Text.kt` — `buildSearch`, `extractTags`, `ago`, `parseLyrics`…; `data/Images.kt` — dataURL JPEG.
+- `music/` — `FileSource` (адрес `vsmske://file/<id>` → куски `files/{id}/chunks` склеиваются в файл в кэше), `PlaybackService` (Media3, фон и шторка),
+  `Music` (очередь и состояние для экранов), `Upload` (теги ID3v2 + cp1251, загрузка кусками по 700 000).
+- `ui/` — Material You: `Theme.kt` (динамический цвет из обоев, Android 12+), `Root.kt` (`NavigationBar`: Лента, Чаты, Музыка, Друзья, Профиль; мини-плеер),
+  экраны `AuthScreens`, `FeedScreens` (лента, запись, комментарии, новая запись), `ProfileScreens`, `FriendsScreens` (+ сигналы), `ChatScreens`, `MusicScreens`,
+  `PlayerScreen` — плеер как медиаплеер Android: цвета из обложки, волнистая перемотка `WavySeek`, кнопка «играть» меняет форму; текст песни по умолчанию как в Apple Music
+  (`AppleLyrics`), переключатель на «Обычный» (SharedPreferences `vs` → `lyr_style` = `apple` | `plain`).
 - Сборка: GitHub Actions (`.github/workflows/android.yml`) при изменении `android/` в main собирает APK и кладёт в релиз с тегом `android`
-  (ссылка `releases/download/android/VSmske.apk` — на неё ведёт кнопка «Скачать APK» в настройках сайта, `androidCard()`). Перед каждым изменением
-  приложения поднимай `versionCode`/`versionName` в `android/app/build.gradle.kts`.
+  (ссылка `releases/download/android/VSmske.apk` — кнопка «Скачать APK» на сайте). Перед каждым изменением поднимай `versionCode`/`versionName` в `android/app/build.gradle.kts`.
 - Ключ подписи `android/app/vsmske.jks` лежит в репозитории намеренно (ставится не из Google Play; обновление требует того же ключа).
-- Проверка локально: `cd android && ./gradlew assembleRelease testReleaseUnitTest` (нужны JDK 17+ и Android SDK). Сборка с `-Pemu=true`
-  подключается к локальным эмуляторам Firebase (10.0.2.2:8080/9099) — только для проверки.
+- Сборка локально: `cd android && ./gradlew assembleRelease testReleaseUnitTest` (JDK 17+, Android SDK). Владелец просил не гонять эмулятор — проверяет приложение сам.
 
 ## Коллекции Firestore
 `users`, `usernames` (уникальные короткие имена), `friendRequests` (id = `от_кому`), `posts` + `posts/{id}/comments`,
@@ -229,7 +225,7 @@
 Анимации 3.3: `animate()` в конце `render()` ставит класс `a-in` (появление) и `pop` (прыжок сердечка/счётчика) только тому, что появилось впервые
 (ключ — класс + data-id/href/текст; при смене страницы ключи сбрасываются), перерисовка посреди анимации продолжает её отрицательной задержкой.
 Окна (`ANIM_ONCE`) анимируются при каждом открытии. Выключается в настройках (localStorage `vs_anim`, `data-anim="off"` на `<html>`) и системной настройкой «уменьшить движение».
-Дизайн 5.0 «Фиолетовое стекло» (Liquid Glass, `glass.css`, `syncGlass()`/`lensMap()`, шарики `.orbs`) удалён в 8.0 — вместо него дизайн «Газета» (`paper.css`). В Android-приложении стекло убрано в 1.1 (Material You).
+Дизайн 5.0 «Фиолетовое стекло» (Liquid Glass, `glass.css`, `syncGlass()`/`lensMap()`, шарики `.orbs`) удалён в 8.0 — вместо него дизайн «Газета» (`paper.css`). В Android-приложении стекла тоже нет (2.0, Material You).
 Поля 2.1: `messages.edited` (сообщение исправлено), `users.saved` (закладки, id записей, до 500).
 Хранится не больше `NOTIF_KEEP` уведомлений на человека: лишние удаляет клиент получателя (запрос без orderBy, чтобы не нужен был индекс).
 
