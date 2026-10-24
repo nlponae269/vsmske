@@ -137,7 +137,28 @@
   Исключения — страница видео: там обновляются только части страницы, чтобы плеер не перезапускался (см. `playerKey`), и Клипы (`clipsKey`, окна — в `#clipsOv`).
 
 ## Android-приложение (папка `android/`)
-**3.0 — по просьбе владельца («супер красиво», всё с сайта, размер до 500 МБ можно).** 2.0 написано с нуля (код 1.x не используется). Без прямой просьбы приложение не трогаем.
+**3.0 — по просьбе владельца («супер красиво», всё с сайта, размер до 500 МБ можно). 3.1 — версия для планшетов: при ширине от 600 dp боковая панель `SideRail` вместо нижней, содержимое до 880 dp по центру, плеер до 640 dp (`Root.kt`, `PlayerScreen.kt`).**
+**3.2 (владелец попросил «придумай сам и сделай без багов», правила Firestore не менялись):** ревизия 3.0 (жесты с `rememberUpdatedState`, эффекты по id, порядок закрытия WebRTC, квота);
+`data/Markup.kt` — разметка как `tagify()`/`linkify()` сайта (`Piece`, `Markup.parse/plain/mentions`, тесты `MarkupTest`), `ui/RichText.kt` — `RichText()` (спойлеры, #тег → `tag/{tag}`,
+@ник → профиль через `usernames`, ссылки на свой сайт — `siteRoute()` внутри приложения), `FormatBar`/`wrapMark` в новой записи, `Api.notifyMentions` (тип `mention`);
+голосовые — `music/VoiceRec.kt` (AAC 32 кбит/с до 60 с → `data:audio/mp4`, `Api.sendMessage(audio, dur)`), панель `VoiceRecBar` в чате; закладки (`users.saved`, `Api.toggleBookmark`,
+`SavedScreen`), поиск `SearchScreen` (`search`), правка своего трека `TrackEditSheet` (название, исполнитель, обложка, текст; поиск в LRCLIB `Media.searchLyrics`),
+статистика прослушиваний на телефоне (`Music.topPlayed()`, prefs `plays`), «Микс дня» `dayMix()` и «Чаще всего слушаю», значки типов в сигналах, окно «Что нового» (`WhatsNew.kt`, prefs `seen_ver`).
+**3.3:** тема `ThemePref` (prefs `theme` = system|light|dark, Меню → Настройки; значки строки состояния под тему, на тёмных экранах — `DarkSystemBars()`);
+чаты — поиск, закрепление долгим нажатием (prefs `chatpins`), кнопка «Избранное», ответ свайпом вправо по сообщению; кольцо историй на аватарке профиля (просмотр и «Ещё история»).
+**3.4:** сообщества — `ClubsScreens.kt` (`ClubsScreen` `clubs`, `ClubScreen` `club/{id}`, `GroupAvatar`, кэш `Groups` и подпись `GroupLabel` у записей), данные `Group` в Models,
+`Media.groupsQuery/groupsByIds/setSubscribed/createGroup` (подписка — пачка `users.groups` + `membersCount` ±1, как на сайте), запись от админа — `Composer(wall, group = true)` → `groupId`;
+защита от вылетов: битые ID3-теги, повторяющиеся треки в плейлисте (ключи строк с номером).
+**3.5:** беседы — `Api.createRoom(name, ids)` (id `g_…`, «Беседа создана», как на сайте), `Api.leaveRoom`, шторка `NewRoomSheet` (кнопка в «Чатах»), выход из беседы в шапке чата (не владельцу).
+**3.6:** правка своей записи (`Api.editPost` — text, tags, editedAt); `ServicesScreens.kt` — ВС Заметки (`notes`, `Api.notesQuery/saveNote/deleteNote`, цвета как на сайте), Погода (`weather`, Open-Meteo,
+город в prefs `weather_city`), Курсы (`rates`, cbr-xml-daily.ru, конвертер); вход через Google — `Api.signInGoogle` (Credential Manager → idToken web-клиента `GOOGLE_CLIENT` → `signInWithCredential`).
+Чтобы вход через Google работал, в Google Cloud → Credentials нужен OAuth-клиент типа Android: пакет `ru.vsmske.app`, SHA-1 `94:74:DA:67:A3:F1:1D:47:10:8B:78:3D:5E:D2:F9:BB:81:B3:35:93` (ключ `vsmske.jks`).
+**3.7:** ВС Радио (`radio`, станции сайта; трек с `type = "radio"` и `fileId` = адрес потока — `Music.item()` берёт его напрямую, без статистики, в плеере «Прямой эфир» без ♡/плейлистов);
+ВС Маркет (`MarketScreens.kt`: `market`, `lot/{id}`; `Lot`, `Media.MKT_CATS/marketQuery/createLot/setSold/deleteLot`); ВС События (`EventsScreens.kt`: `events`, `event/{id}`; `Event`,
+`Media.eventsQuery/createEvent/toggleGoing/deleteEvent`, дата и время — DatePicker/TimePicker M3). **3.8:** ВС Почта (`MailScreens.kt`: `mail`, `mail/{id}`, `MailCompose`; входящие — `Store.mailIn`, значок в Меню и на вкладке; `Api.sendMail/markMailRead/deleteMail` — как на сайте),
+ВС Ответы (`AnswersScreens.kt`: `answers`, `q/{id}`; `Api.Q_CATS/questionsQuery/ask/answer/likeAnswer/bestAnswer/deleteAnswer/deleteQuestion`, уведомления `answer`/`best` ведут на вопрос),
+гости страницы (`Api.recordGuest` раз в 30 мин на страницу, prefs `guest_<uid>`; экран `GuestsScreen`), сервисы без базы `ToolsScreens.kt` — `games/2048`, `calc`, `timer`, `dice`
+(логика в `data/Games.kt`: `Calc.eval/fmt`, `G2048`; тесты `GamesTest`); Меню разложено по разделам (`MenuSection`). Правила не менялись. 2.0 написано с нуля (код 1.x не используется). Без прямой просьбы приложение не трогаем.
 Нативное приложение (Kotlin + Jetpack Compose, Material 3), не обёртка над сайтом. Та же база Firebase; документы пишутся **ровно в том виде, что у сайта**
 (правила Firestore для приложения не менялись). Если меняешь формат записи на сайте — поправь и `data/Api.kt` / `data/Media.kt`.
 - `data/Fire.kt` — подключение настройками веб-приложения (без google-services.json), `-Pemu=true` — эмуляторы 10.0.2.2:8080/9099 (только для проверки).

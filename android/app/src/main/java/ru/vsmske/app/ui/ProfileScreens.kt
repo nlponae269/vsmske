@@ -110,6 +110,8 @@ fun ProfileScreen(id: String, tab: Boolean = false) {
     val meU by Store.me.collectAsState()
     val own = id == Store.uid
     LaunchedEffect(id) { runCatching { Store.fetchUser(id) }.onFailure { toast(errText(it)) } }
+    val ctx = androidx.compose.ui.platform.LocalContext.current
+    LaunchedEffect(id) { if (!own) Api.recordGuest(ctx, id) }
     val u = if (own) meU else users[id]
     var compose by rememberSaveable { mutableStateOf(false) }
     var askOut by remember { mutableStateOf(false) }
@@ -168,6 +170,12 @@ private fun ProfileHeader(u: User, own: Boolean) {
     var callVideo by remember { mutableStateOf(false) }
     LaunchedEffect(u.friends) { Store.need(u.friends.take(12)) }
     LaunchedEffect(u.id) { gifts = runCatching { Media.giftsOf(u.id) }.getOrDefault(emptyList()); Store.need(gifts.map { it.from }) }
+    var stories by remember(u.id) { mutableStateOf<List<ru.vsmske.app.data.Story>>(emptyList()) }
+    var showStories by remember { mutableStateOf(false) }
+    var addStory by remember { mutableStateOf<Uri?>(null) }
+    val pickStory = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri -> if (uri != null) addStory = uri }
+    var storiesVer by remember { mutableStateOf(0) }
+    LaunchedEffect(u.id, storiesVer) { if (!u.banned) stories = runCatching { Media.stories(listOf(u.id)) }.getOrDefault(emptyList()) }
     val call = rememberAvPermission { scope.safe(toast) { Call.start(ctx, u.id, callVideo) } }
     Column(Modifier.fillMaxWidth()) {
         Box(Modifier.fillMaxWidth().height(230.dp)) {
@@ -175,8 +183,17 @@ private fun ProfileHeader(u: User, own: Boolean) {
                 .background(Brush.linearGradient(COVERS[u.cover] ?: COVERS["blue"]!!))) {
                 Text(u.emoji.ifEmpty { "✦" }, fontSize = 140.sp, color = Color.White.copy(alpha = 0.12f), modifier = Modifier.align(Alignment.CenterEnd).offset(x = 30.dp, y = 10.dp))
             }
-            Box(Modifier.align(Alignment.BottomStart).padding(start = 20.dp).size(124.dp).clip(CookieShape).background(cs.surface), contentAlignment = Alignment.Center) {
-                Avatar(u, 112.dp, shape = CookieShape, showOnline = false)
+            // свежие истории — цветное кольцо вокруг «печеньки» (серое, если всё просмотрено), нажатие открывает их
+            val ring = when {
+                stories.isEmpty() -> Brush.linearGradient(listOf(cs.surface, cs.surface))
+                stories.all { Store.uid in it.views || it.ownerId == Store.uid } -> Brush.linearGradient(listOf(cs.outlineVariant, cs.outlineVariant))
+                else -> Brush.sweepGradient(listOf(cs.primary, cs.tertiary, Color(0xFFFF8A65), cs.primary))
+            }
+            Box(Modifier.align(Alignment.BottomStart).padding(start = 20.dp).size(124.dp).clip(CookieShape).background(ring)
+                .then(if (stories.isNotEmpty()) Modifier.clickable { showStories = true } else Modifier), contentAlignment = Alignment.Center) {
+                Box(Modifier.size(if (stories.isEmpty()) 124.dp else 117.dp).clip(CookieShape).background(cs.surface), contentAlignment = Alignment.Center) {
+                    Avatar(u, 108.dp, shape = CookieShape, showOnline = false)
+                }
             }
             if (u.online && !own) Chip("в сети", Color(0xFF34C759), Color.White, Modifier.align(Alignment.BottomStart).padding(start = 110.dp, bottom = 8.dp))
         }
@@ -193,7 +210,7 @@ private fun ProfileHeader(u: User, own: Boolean) {
                 Stat("${gifts.size}", plural(gifts.size, "подарок", "подарка", "подарков")) { if (!own) giftSheet = true }
                 if (u.city.isNotEmpty()) Stat("📍", u.city) {}
             }
-            if (u.about.isNotEmpty()) Text(u.about, style = MaterialTheme.typography.bodyMedium, color = cs.onSurfaceVariant, modifier = Modifier.padding(top = 6.dp))
+            if (u.about.isNotEmpty()) RichText(u.about, style = MaterialTheme.typography.bodyMedium, color = cs.onSurfaceVariant, modifier = Modifier.padding(top = 6.dp))
             if (!own) Row(Modifier.padding(top = 12.dp), verticalAlignment = Alignment.CenterVertically) {
                 FriendButtons(u, Modifier.weight(1f, fill = false))
                 Spacer(Modifier.width(8.dp))
@@ -232,6 +249,8 @@ private fun ProfileHeader(u: User, own: Boolean) {
         }
         Text("Записи", style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(start = 20.dp, top = 20.dp, bottom = 4.dp))
     }
+    if (showStories && stories.isNotEmpty()) StoryViewer(listOf(stories), 0, onAdd = { showStories = false; pickStory.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) }) { showStories = false; storiesVer++ }
+    addStory?.let { uri -> StoryComposer(uri) { posted -> addStory = null; if (posted) storiesVer++ } }
     if (giftSheet) GiftSheet(u) { sent -> giftSheet = false; if (sent) scope.safe(toast) { gifts = Media.giftsOf(u.id) } }
 }
 

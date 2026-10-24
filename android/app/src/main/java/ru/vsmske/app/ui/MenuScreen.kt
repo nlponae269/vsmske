@@ -1,5 +1,21 @@
 package ru.vsmske.app.ui
 
+import androidx.compose.material.icons.rounded.Mail
+import androidx.compose.material.icons.rounded.Visibility
+import androidx.compose.material.icons.rounded.GridView
+import androidx.compose.material.icons.rounded.Calculate
+import androidx.compose.material.icons.rounded.Timer
+import androidx.compose.material.icons.rounded.Casino
+import androidx.compose.material.icons.rounded.Lightbulb
+import androidx.compose.material.icons.rounded.Event
+import androidx.compose.material.icons.rounded.Storefront
+import androidx.compose.material.icons.rounded.Radio
+import androidx.compose.material.icons.rounded.CurrencyExchange
+import androidx.compose.material.icons.rounded.WbSunny
+import androidx.compose.material.icons.rounded.StickyNote2
+import androidx.compose.material.icons.rounded.Groups
+import androidx.compose.material.icons.rounded.Search
+import androidx.compose.material.icons.rounded.Bookmark
 import android.content.Context
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -70,6 +86,7 @@ fun MenuScreen() {
     val me by Store.me.collectAsState()
     val reqs = Store.incoming.collectAsState().value.size
     val unseen = Store.notifs.collectAsState().value.let { Store.unseenNotifs() }
+    val mailNew = Store.mailIn.collectAsState().value.count { !it.read }
     var settings by remember { mutableStateOf(false) }
     var eq by remember { mutableStateOf(false) }
     val scroll = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
@@ -90,14 +107,35 @@ fun MenuScreen() {
                     Icon(Icons.AutoMirrored.Rounded.KeyboardArrowRight, null, tint = Color.White)
                 }
             }
+            item(span = { GridItemSpan(maxLineSpan) }) { MenuSection("Общение") }
             item { MenuTile(Icons.Rounded.Group, "Друзья", if (reqs > 0) "$reqs ${ru.vsmske.app.data.plural(reqs, "заявка", "заявки", "заявок")}" else "${me?.friends?.size ?: 0}", Color(0xFF2F44D0), reqs) { nav.navigate("friends") } }
             item { MenuTile(Icons.Rounded.Notifications, "Сигналы", if (unseen > 0) "новых: $unseen" else "уведомления", Color(0xFFD0462F), unseen) { nav.navigate("notifs") } }
+            item { MenuTile(Icons.Rounded.Mail, "Почта", if (mailNew > 0) "новых: $mailNew" else "${me?.nick ?: ""}@vsmske", Color(0xFF2F44D0), mailNew) { nav.navigate("mail") } }
+            item { MenuTile(Icons.Rounded.Visibility, "Гости", "кто заходил", Color(0xFF4E5B76)) { nav.navigate("guests") } }
+            item { MenuTile(Icons.Rounded.Groups, "Сообщества", "${me?.groups?.size ?: 0} подписок", Color(0xFF1F8A5B)) { nav.navigate("clubs") } }
+            item { MenuTile(Icons.Rounded.Bookmark, "Закладки", "${me?.saved?.size ?: 0}", Color(0xFF2B8BB5)) { nav.navigate("saved") } }
+            item { MenuTile(Icons.Rounded.Search, "Поиск", "люди, теги, треки", Color(0xFF4E5B76)) { nav.navigate("search") } }
+            item { MenuTile(Icons.Rounded.Lightbulb, "Ответы", "спросить у людей", Color(0xFFC98A12)) { nav.navigate("answers") } }
+            item(span = { GridItemSpan(maxLineSpan) }) { MenuSection("Медиа") }
             item { MenuTile(Icons.Rounded.PhotoLibrary, "Фотоальбомы", "мои фото", Color(0xFF2B8BB5)) { nav.navigate("albums/${Store.uid}") } }
             item { MenuTile(Icons.Rounded.SmartDisplay, "Клипы", "короткие видео", Color(0xFFB4398F)) { nav.navigate("clips/-") } }
             item { MenuTile(Icons.Rounded.Sensors, "Эфиры", "прямые трансляции", Color(0xFFE53935)) { nav.navigate("live") } }
-            item { MenuTile(Icons.Rounded.Cloud, "Диск", "файлы до 10 МБ", Color(0xFF1F8A5B)) { nav.navigate("disk") } }
             item { MenuTile(Icons.AutoMirrored.Rounded.QueueMusic, "Плейлисты", "ВС Музыка", Color(0xFF6A47C9)) { nav.navigate("music/playlists") } }
             item { MenuTile(Icons.Rounded.Favorite, "Мои треки", "сохранённое", Color(0xFFC026D3)) { nav.navigate("music/liked") } }
+            item { MenuTile(Icons.Rounded.Radio, "Радио", "прямой эфир станций", Color(0xFFD0462F)) { nav.navigate("radio") } }
+            item { MenuTile(Icons.Rounded.Cloud, "Диск", "файлы до 10 МБ", Color(0xFF1F8A5B)) { nav.navigate("disk") } }
+            item(span = { GridItemSpan(maxLineSpan) }) { MenuSection("Сервисы") }
+            item { MenuTile(Icons.Rounded.StickyNote2, "Заметки", "только для вас", Color(0xFFC98A12)) { nav.navigate("notes") } }
+            item { MenuTile(Icons.Rounded.Event, "События", "встречи и «Пойду»", Color(0xFF6A47C9)) { nav.navigate("events") } }
+            item { MenuTile(Icons.Rounded.Storefront, "Маркет", "купить и продать", Color(0xFFB4398F)) { nav.navigate("market") } }
+            item { MenuTile(Icons.Rounded.WbSunny, "Погода", "на неделю", Color(0xFF2B8BB5)) { nav.navigate("weather") } }
+            item { MenuTile(Icons.Rounded.CurrencyExchange, "Курсы валют", "ЦБ РФ, конвертер", Color(0xFF1F8A5B)) { nav.navigate("rates") } }
+            item(span = { GridItemSpan(maxLineSpan) }) { MenuSection("Игры и инструменты") }
+            item { MenuTile(Icons.Rounded.GridView, "2048", "головоломка", Color(0xFFC98A12)) { nav.navigate("games/2048") } }
+            item { MenuTile(Icons.Rounded.Calculate, "Калькулятор", "с историей", Color(0xFF4E5B76)) { nav.navigate("calc") } }
+            item { MenuTile(Icons.Rounded.Timer, "Таймер", "и секундомер", Color(0xFFD0462F)) { nav.navigate("timer") } }
+            item { MenuTile(Icons.Rounded.Casino, "Жребий", "монетка, кубики", Color(0xFF6A47C9)) { nav.navigate("dice") } }
+            item(span = { GridItemSpan(maxLineSpan) }) { MenuSection("Приложение") }
             item { MenuTile(Icons.Rounded.Equalizer, "Эквалайзер", "звук музыки", Color(0xFFC98A12)) { eq = true } }
             item { MenuTile(Icons.Rounded.Settings, "Настройки", "приложение", cs.outline) { settings = true } }
             item(span = { GridItemSpan(maxLineSpan) }) {
@@ -109,6 +147,10 @@ fun MenuScreen() {
     if (eq) EqSheet { eq = false }
     if (settings) SettingsSheet { settings = false }
 }
+
+@Composable
+private fun MenuSection(title: String) =
+    Text(title, style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(start = 6.dp, top = 10.dp))
 
 @Composable
 private fun MenuTile(icon: ImageVector, title: String, sub: String, tint: Color, badge: Int = 0, onClick: () -> Unit) =
@@ -131,6 +173,13 @@ fun SettingsSheet(onClose: () -> Unit) {
                 Text("Друзья увидят трек у вас в профиле", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             Switch(listen, { listen = it; p.edit().putBoolean("listen", it).apply(); if (!it) ru.vsmske.app.data.Api.setListening(null) })
+        }
+        Text("Тема", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = 18.dp, bottom = 6.dp))
+        val theme by ThemePref.mode.collectAsState()
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            listOf("system" to "Как в системе", "light" to "Светлая", "dark" to "Тёмная").forEach { (k, l) ->
+                FilterChip(theme == k, { ThemePref.set(ctx, k) }, { Text(l) }, shape = CircleShape)
+            }
         }
         Text("Текст песни", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = 18.dp, bottom = 6.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {

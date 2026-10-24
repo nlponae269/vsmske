@@ -239,7 +239,12 @@ object Live {
         scope.launch {
             peer.state.first { it == PeerConnection.PeerConnectionState.FAILED || it == PeerConnection.PeerConnectionState.CLOSED || it == PeerConnection.PeerConnectionState.DISCONNECTED }
             if (peer.state.value == PeerConnection.PeerConnectionState.DISCONNECTED) { delay(6000); if (peer.state.value == PeerConnection.PeerConnectionState.CONNECTED) return@launch }
-            if (up === peer && ui.value.sid == sid) { up = null; upChan = null; chan.close(); peer.close(); connect(sid) }
+            if (up === peer && ui.value.sid == sid) {
+                up = null; upChan = null
+                ui.value = ui.value.copy(status = "connecting", video = null)
+                delay(250); chan.close(); peer.close()
+                connect(sid)
+            }
         }
         return true
     }
@@ -258,11 +263,16 @@ object Live {
         if (u.sid.isEmpty()) return
         jobs.forEach { it.cancel() }; jobs.clear()
         subs.forEach { it.remove() }; subs.clear()
-        kids.values.forEach { it.chan?.close(); it.peer.close() }; kids.clear()
-        upChan?.close(); up?.close(); up = null; upChan = null
-        local?.stop(); local = null
+        val oldKids = kids.values.toList(); kids.clear()
+        val oldUp = up; val oldChan = upChan; up = null; upChan = null
+        val oldLocal = local; local = null
         seenPeers.clear(); seenMsg.clear(); last.clear(); muted.clear()
+        // сначала убираем видео с экрана (экран отцепится от дорожки), потом закрываем соединения и камеру
         ui.value = if (ended) u.copy(status = "ended", video = null) else Ui()
+        delay(250)
+        oldKids.forEach { it.chan?.close(); it.peer.close() }
+        oldChan?.close(); oldUp?.close()
+        oldLocal?.stop()
         if (u.host) runCatching {
             db.collection("streams").document(u.sid).update(mapOf("live" to false, "endedAt" to FieldValue.serverTimestamp())).await()
             for (sub in listOf("peers", "nodes")) {

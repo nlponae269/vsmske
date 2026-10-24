@@ -21,6 +21,35 @@ object Api {
     suspend fun reset(email: String) { Fire.auth.sendPasswordResetEmail(email.trim()).await() }
     fun signOut() = Fire.auth.signOut()
 
+    /** Web client проекта — тот же, что GOOGLE_CLIENT на сайте (Firebase принимает его токены) */
+    private const val GOOGLE_CLIENT = "195735209722-8tjsd33moqquhreivj07f48l5cga0r3d.apps.googleusercontent.com"
+
+    /**
+     * Вход через Google: системное окно выбора аккаунта (Credential Manager) → idToken → Firebase.
+     * Тот же аккаунт, что на сайте. Для работы владелец один раз добавляет в Google Cloud Android-клиент
+     * (пакет ru.vsmske.app и SHA-1 ключа подписи) — иначе Google отвечает ошибкой настройки.
+     * ctx — экран (Activity). Возвращает false, если человек сам закрыл окно.
+     */
+    suspend fun signInGoogle(ctx: android.content.Context): Boolean {
+        val cm = androidx.credentials.CredentialManager.create(ctx)
+        val req = androidx.credentials.GetCredentialRequest.Builder()
+            .addCredentialOption(com.google.android.libraries.identity.googleid.GetSignInWithGoogleOption.Builder(GOOGLE_CLIENT).build()).build()
+        val res = try { cm.getCredential(ctx, req) }
+        catch (e: androidx.credentials.exceptions.GetCredentialCancellationException) { return false }
+        catch (e: androidx.credentials.exceptions.NoCredentialException) { error("На телефоне нет аккаунта Google — добавьте его в настройках телефона") }
+        catch (e: androidx.credentials.exceptions.GetCredentialException) {
+            val m = (e.message ?: "") + " " + e.type
+            error(if ("10" in m || "developer" in m.lowercase() || "configuration" in m.lowercase()) "Вход через Google в приложении ещё не настроен — войдите по почте или на сайте"
+                  else "Google не дал войти: ${e.message ?: "попробуйте ещё раз"}")
+        }
+        val c = res.credential
+        if (c !is androidx.credentials.CustomCredential || c.type != com.google.android.libraries.identity.googleid.GoogleIdTokenCredential.TYPE_GOOGLE_ID_TOKEN_CREDENTIAL)
+            error("Google не вернул данные входа")
+        val token = com.google.android.libraries.identity.googleid.GoogleIdTokenCredential.createFrom(c.data).idToken
+        Fire.auth.signInWithCredential(com.google.firebase.auth.GoogleAuthProvider.getCredential(token, null)).await()
+        return true
+    }
+
     /** Новый профиль: ник и профиль — одной пачкой (так требуют правила) */
     suspend fun createProfile(name: String, nick: String, city: String) {
         val n = nick.trim().lowercase()
@@ -56,22 +85,36 @@ object Api {
         (if (id != null) db.collection("notifs").document(id) else db.collection("notifs").document()).set(data)
     }
 
+    /** @ники в тексте → уведомление «mention» (как notifyMentions() на сайте); skip — кого уже уведомили */
+    fun notifyMentions(text: String, postId: String, skip: List<String>) {
+        for (nick in Markup.mentions(text)) {
+            db.collection("usernames").document(nick).get().addOnSuccessListener { s ->
+                val to = s.getString("uid")
+                if (!to.isNullOrEmpty() && to !in skip) notify(to, "mention", postId, text)
+            }
+        }
+    }
+
     /* ---------- Записи ---------- */
     fun feedQuery(ids: List<String>, limit: Long): Query =
         db.collection("posts").whereIn("authorId", ids.take(30)).orderBy("createdAt", Query.Direction.DESCENDING).limit(limit)
     fun allQuery(limit: Long): Query = db.collection("posts").orderBy("createdAt", Query.Direction.DESCENDING).limit(limit)
+    /** Записи с хэштегом (без сортировки — индекс не нужен; сортируем на телефоне) */
+    fun tagQuery(tag: String, limit: Long): Query = db.collection("posts").whereArrayContains("tags", tag).limit(limit)
     fun wallQuery(uid: String, limit: Long): Query =
         db.collection("posts").whereEqualTo("wallId", uid).orderBy("createdAt", Query.Direction.DESCENDING).limit(limit)
 
-    suspend fun createPost(wall: String, text: String, images: List<String>, poll: Pair<String, List<String>>?) {
+    suspend fun createPost(wall: String, text: String, images: List<String>, poll: Pair<String, List<String>>?, group: Boolean = false) {
         val t = text.trim().take(4000)
         val data = mutableMapOf<String, Any>("authorId" to me, "wallId" to wall, "text" to t, "image" to (if (images.size == 1) images[0] else ""),
             "likes" to emptyList<String>(), "commentCount" to 0, "createdAt" to now)
         if (images.size > 1) data["images"] = images.take(4)
         val tags = extractTags(t); if (tags.isNotEmpty()) data["tags"] = tags
+        if (group) data["groupId"] = wall   // запись сообщества: правила пускают только его админов
         if (poll != null) data["poll"] = mapOf("q" to poll.first.take(200), "options" to poll.second.take(6), "votes" to emptyMap<String, Int>())
         val ref = db.collection("posts").add(data).await()
-        if (wall != me) notify(wall, "wall", ref.id, t.ifEmpty { poll?.first ?: "Фото" })
+        if (wall != me && !group) notify(wall, "wall", ref.id, t.ifEmpty { poll?.first ?: "Фото" })
+        notifyMentions(t, ref.id, listOf(me, wall))
     }
 
     suspend fun toggleLike(p: Post) {
@@ -84,7 +127,122 @@ object Api {
         }
     }
 
+    /** Закладки (users.saved, до 500 — как на сайте) */
+    suspend fun toggleBookmark(p: Post): Boolean {
+        val saved = Store.me.value?.saved ?: emptyList()
+        val has = p.id in saved
+        if (!has && saved.size >= 500) error("Закладок уже 500 — уберите старые")
+        db.collection("users").document(me).update("saved", if (has) FieldValue.arrayRemove(p.id) else FieldValue.arrayUnion(p.id)).await()
+        return !has
+    }
+    suspend fun postsByIds(ids: List<String>): List<Post> {
+        val got = ids.distinct().chunked(10).flatMap { part -> db.collection("posts").whereIn(FieldPath.documentId(), part).get().await().documents.map(Post::from) }
+        return ids.mapNotNull { id -> got.firstOrNull { it.id == id } }
+    }
+
     suspend fun vote(p: Post, i: Int) { db.collection("posts").document(p.id).update(FieldPath.of("poll", "votes", me), i).await() }
+
+    /** Правка своей записи: текст, теги, отметка «изменено» (как на сайте) */
+    suspend fun editPost(p: Post, text: String) {
+        val t = text.trim().take(4000)
+        if (t.isEmpty() && p.images.isEmpty() && p.poll == null && p.repostOf.isEmpty()) error("Запись не может быть пустой")
+        db.collection("posts").document(p.id).update(mapOf("text" to t, "tags" to extractTags(t), "editedAt" to now)).await()
+    }
+
+    /* ---------- ВС Заметки (видит только хозяин) ---------- */
+    fun notesQuery(): Query = db.collection("notes").whereEqualTo("ownerId", me).limit(300)
+    suspend fun saveNote(id: String?, title: String, text: String, color: String, pinned: Boolean): String {
+        val ref = if (id == null) db.collection("notes").document() else db.collection("notes").document(id)
+        ref.set(mapOf("ownerId" to me, "title" to title.trim().take(120), "text" to text.take(20000),
+            "color" to (color.takeIf { it in listOf("yellow", "green", "blue", "pink", "violet") } ?: ""), "pinned" to pinned, "updatedAt" to now)).await()
+        return ref.id
+    }
+    suspend fun deleteNote(id: String) { db.collection("notes").document(id).delete().await() }
+
+    /* ---------- Гости страницы (как recordGuest() на сайте: не чаще раза в 30 минут на страницу) ---------- */
+    fun recordGuest(ctx: android.content.Context, pid: String) {
+        if (pid.isEmpty() || pid == me || Store.me.value?.isBanned != false) return
+        val p = ctx.getSharedPreferences("vs", android.content.Context.MODE_PRIVATE)
+        val k = "guest_$pid"
+        if (System.currentTimeMillis() - p.getLong(k, 0) < 30 * 60_000L) return
+        p.edit().putLong(k, System.currentTimeMillis()).apply()
+        db.collection("users").document(pid).collection("guests").document(me).set(mapOf("at" to now))
+    }
+    suspend fun guests(): List<Pair<String, Long>> =
+        db.collection("users").document(me).collection("guests").orderBy("at", Query.Direction.DESCENDING).limit(50).get().await()
+            .documents.map { it.id to ((it.get("at") as? com.google.firebase.Timestamp)?.toDate()?.time ?: 0L) }
+
+    /* ---------- ВС Ответы ---------- */
+    val Q_CATS = linkedMapOf("life" to "Жизнь", "study" to "Учёба", "tech" to "Техника", "games" to "Игры", "sport" to "Спорт",
+        "love" to "Отношения", "food" to "Еда", "other" to "Другое")
+    /** Как на сайте: «Все» — по дате, раздел и «Мои» — без orderBy (сортировка на телефоне, индекс не нужен) */
+    fun questionsQuery(cat: String): Query = when (cat) {
+        "mine" -> db.collection("questions").whereEqualTo("authorId", me).limit(100)
+        "all" -> db.collection("questions").orderBy("createdAt", Query.Direction.DESCENDING).limit(60)
+        else -> db.collection("questions").whereEqualTo("category", cat).limit(100)
+    }
+    fun answersQuery(qid: String): Query = db.collection("questions").document(qid).collection("answers").orderBy("createdAt", Query.Direction.ASCENDING).limit(300)
+    suspend fun ask(title: String, text: String, cat: String): String {
+        val t = title.trim()
+        if (t.length < 5) error("Вопрос слишком короткий")
+        val ref = db.collection("questions").document()
+        ref.set(mapOf("authorId" to me, "title" to t.take(150), "text" to text.trim().take(2000), "category" to (cat.takeIf { it in Q_CATS } ?: "other"),
+            "answersCount" to 0, "bestId" to "", "createdAt" to now)).await()
+        return ref.id
+    }
+    suspend fun answer(q: Question, text: String) {
+        val t = text.trim().take(3000); if (t.isEmpty()) return
+        val b = db.batch()
+        b.set(db.collection("questions").document(q.id).collection("answers").document(), mapOf("authorId" to me, "text" to t, "likes" to emptyList<String>(), "createdAt" to now))
+        b.update(db.collection("questions").document(q.id), "answersCount", FieldValue.increment(1))
+        b.commit().await()
+        notify(q.authorId, "answer", q.id, t)
+    }
+    suspend fun likeAnswer(qid: String, a: Answer) {
+        db.collection("questions").document(qid).collection("answers").document(a.id)
+            .update("likes", if (me in a.likes) FieldValue.arrayRemove(me) else FieldValue.arrayUnion(me)).await()
+    }
+    suspend fun bestAnswer(q: Question, a: Answer) {
+        db.collection("questions").document(q.id).update("bestId", a.id).await()
+        notify(a.authorId, "best", q.id, q.title)
+    }
+    suspend fun deleteAnswer(q: Question, a: Answer) {
+        val qref = db.collection("questions").document(q.id)
+        // правила разрешают менять bestId и answersCount только по отдельности — поэтому снятие «лучшего» идёт своей записью
+        if (q.bestId == a.id && q.authorId == me) qref.update("bestId", "").await()
+        val b = db.batch()
+        b.delete(qref.collection("answers").document(a.id))
+        b.update(qref, "answersCount", FieldValue.increment(-1))
+        b.commit().await()
+    }
+    suspend fun deleteQuestion(q: Question) {
+        val refs = db.collection("questions").document(q.id).collection("answers").get().await().documents.map { it.reference }
+        refs.chunked(400).forEach { part -> val b = db.batch(); part.forEach(b::delete); b.commit().await() }
+        db.collection("questions").document(q.id).delete().await()
+    }
+
+    /* ---------- ВС Почта (адрес — ник@vsmske) ---------- */
+    fun mailOutQuery(): Query = db.collection("mail").whereEqualTo("from", me).limit(300)
+    /** Отправить письмо; адрес — ник, «@ник» или «ник@vsmske» */
+    suspend fun sendMail(address: String, subject: String, text: String) {
+        val nick = address.trim().lowercase().removePrefix("@").removeSuffix("@vsmske")
+        val t = text.trim()
+        if (nick.isEmpty()) error("Укажите адрес")
+        if (t.isEmpty()) error("Письмо пустое")
+        val to = db.collection("usernames").document(nick).get().await().getString("uid") ?: error("Нет пользователя с адресом $nick@vsmske")
+        db.collection("mail").add(mapOf("from" to me, "to" to to, "subject" to subject.trim().take(200), "text" to t.take(10000),
+            "read" to (to == me), "delFrom" to false, "delTo" to false, "createdAt" to now)).await()
+    }
+    suspend fun markMailRead(m: Mail) { if (m.to == me && !m.read) db.collection("mail").document(m.id).update("read", true).await() }
+    /** Удалить у себя; документ стирается, когда удалили оба (как на сайте) */
+    suspend fun deleteMail(m: Mail) {
+        val ref = db.collection("mail").document(m.id)
+        when {
+            m.from == me && m.to == me -> { ref.update("delTo", true).await(); ref.delete().await() }
+            m.to == me -> if (m.delFrom) ref.delete().await() else ref.update("delTo", true).await()
+            else -> if (m.delTo) ref.delete().await() else ref.update("delFrom", true).await()
+        }
+    }
 
     suspend fun deletePost(p: Post) { db.collection("posts").document(p.id).delete().await() }
 
@@ -95,6 +253,7 @@ object Api {
             b.update(db.collection("posts").document(p.id), "commentCount", FieldValue.increment(1))
         }.await()
         notify(p.authorId, "comment", p.id, t)
+        notifyMentions(t, p.id, listOf(me, p.authorId))
     }
 
     suspend fun deleteComment(p: Post, c: Comment) {
@@ -148,18 +307,29 @@ object Api {
     fun messagesQuery(cid: String): Query =
         db.collection("chats").document(cid).collection("messages").orderBy("createdAt", Query.Direction.ASCENDING).limitToLast(200)
 
-    suspend fun sendMessage(key: String, text: String, image: String = "", replyTo: Message? = null) {
+    suspend fun sendMessage(key: String, text: String, image: String = "", replyTo: Message? = null, audio: String = "", dur: Double = 0.0) {
         val cid = chatKeyId(me, key)
         val msg = mutableMapOf<String, Any>("from" to me, "text" to text.take(2000), "createdAt" to now)
         if (image.isNotEmpty()) msg["image"] = image
+        if (audio.isNotEmpty()) { msg["audio"] = audio; msg["dur"] = dur }
         if (replyTo != null) msg["replyTo"] = mapOf("id" to replyTo.id, "from" to replyTo.from, "text" to replyTo.text.ifEmpty { if (replyTo.image.isNotEmpty()) "📷 Фото" else "🎤 Голосовое" }.take(120))
-        val last = mutableMapOf<String, Any>("lastText" to text.ifEmpty { "📷 Фото" }.take(200), "lastFrom" to me, "lastAt" to now, "read" to mapOf(me to now))
+        val last = mutableMapOf<String, Any>("lastText" to text.ifEmpty { if (audio.isNotEmpty()) "🎤 Голосовое" else "📷 Фото" }.take(200), "lastFrom" to me, "lastAt" to now, "read" to mapOf(me to now))
         if (!isRoom(key)) last["members"] = listOf(me, key).sorted()
         db.runBatch { b ->
             b.set(db.collection("chats").document(cid).collection("messages").document(), msg)
             b.set(db.collection("chats").document(cid), last, SetOptions.merge())
         }.await()
     }
+
+    /** Беседа (как на сайте): id g_…, я — владелец и участник, до 50 человек */
+    suspend fun createRoom(name: String, ids: List<String>): String {
+        val rid = "g_" + db.collection("chats").document().id
+        db.collection("chats").document(rid).set(mapOf("members" to (listOf(me) + ids.filter { it != me }.distinct()).take(50), "group" to true,
+            "name" to name.trim().ifEmpty { "Беседа" }.take(60), "ownerId" to me, "lastText" to "Беседа создана", "lastFrom" to me,
+            "lastAt" to now, "read" to mapOf(me to now))).await()
+        return rid
+    }
+    suspend fun leaveRoom(rid: String) { db.collection("chats").document(rid).update("members", FieldValue.arrayRemove(me)).await() }
 
     fun markRead(c: Chat) {
         if (!c.unread(me)) return

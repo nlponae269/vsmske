@@ -28,6 +28,8 @@ object Media {
     suspend fun toggleVideoLike(v: Video) {
         db.collection("videos").document(v.id).update("likes", if (me in v.likes) FieldValue.arrayRemove(me) else FieldValue.arrayUnion(me)).await()
     }
+    /** Двойной тап: только поставить «нравится» (повторный тап не снимает) */
+    suspend fun likeVideo(v: Video) { db.collection("videos").document(v.id).update("likes", FieldValue.arrayUnion(me)).await() }
     private val viewed = mutableSetOf<String>()
     /** Просмотр: +1 один раз за заход */
     fun countView(v: Video) {
@@ -160,6 +162,40 @@ object Media {
     }
     suspend fun tracksOf(uid: String): List<Track> =
         db.collection("tracks").whereEqualTo("ownerId", uid).limit(300).get().await().documents.map(Track::from).sortedByDescending { it.createdAt }
+    /** Правка своего трека: название, исполнитель, текст (правило update пускает только автора) */
+    suspend fun updateTrack(t: Track, title: String, artist: String, lyrics: String) {
+        db.collection("tracks").document(t.id).update(mapOf("title" to title.trim().take(120).ifEmpty { t.title }, "artist" to artist.trim().take(120), "lyrics" to lyrics.take(20000))).await()
+    }
+    suspend fun setTrackCover(ctx: Context, t: Track, uri: Uri): String {
+        val cover = Images.compress(ctx, uri, 600, 290_000, square = true)
+        db.collection("tracks").document(t.id).update("cover", cover).await()
+        return cover
+    }
+
+    /** Найденный текст песни в открытой базе LRCLIB (бесплатно, без ключа — как findLyrics() на сайте) */
+    data class LrcHit(val title: String, val artist: String, val duration: Double, val synced: String, val plain: String) {
+        val text get() = synced.ifEmpty { plain }
+    }
+    suspend fun searchLyrics(title: String, artist: String): List<LrcHit> = withContext(Dispatchers.IO) {
+        fun get(q: String): List<LrcHit> {
+            val c = java.net.URL("https://lrclib.net/api/search?$q").openConnection() as java.net.HttpURLConnection
+            c.connectTimeout = 10_000; c.readTimeout = 15_000
+            c.setRequestProperty("User-Agent", "VSmske Android (https://nlponae269.github.io/vsmske/)")
+            try {
+                if (c.responseCode != 200) return emptyList()
+                val arr = org.json.JSONArray(c.inputStream.bufferedReader().use { it.readText() })
+                return (0 until minOf(arr.length(), 20)).mapNotNull { i ->
+                    val o = arr.optJSONObject(i) ?: return@mapNotNull null
+                    LrcHit(o.optString("trackName"), o.optString("artistName"), o.optDouble("duration", 0.0),
+                        o.optString("syncedLyrics").takeIf { it != "null" } ?: "", o.optString("plainLyrics").takeIf { it != "null" } ?: "")
+                }.filter { it.text.isNotBlank() }
+            } finally { c.disconnect() }
+        }
+        val enc = { s: String -> java.net.URLEncoder.encode(s.trim(), "UTF-8") }
+        val first = if (artist.isNotBlank()) get("track_name=${enc(title)}&artist_name=${enc(artist)}") else emptyList()
+        first.ifEmpty { get("q=${enc((artist + " " + title).trim())}") }
+    }
+
     suspend fun saveLyrics(t: Track, lyrics: String) { db.collection("tracks").document(t.id).update("lyrics", lyrics.take(20000)).await() }
 
     /* ---------- Подарки ---------- */
@@ -184,6 +220,60 @@ object Media {
         }.await()
         Api.notify(p.authorId, "repost", orig, p.text)
     }
+
+    /* ---------- Сообщества (как на сайте: подписка — users.groups и membersCount ±1 одной пачкой) ---------- */
+    fun groupsQuery(): Query = db.collection("groups").orderBy("createdAt", Query.Direction.DESCENDING).limit(100)
+    suspend fun groupsByIds(ids: List<String>): List<Group> {
+        val got = ids.distinct().take(100).chunked(10).flatMap { part -> db.collection("groups").whereIn(FieldPath.documentId(), part).get().await().documents.map(Group::from) }
+        return ids.mapNotNull { id -> got.firstOrNull { it.id == id } }
+    }
+    suspend fun setSubscribed(g: Group, on: Boolean) {
+        val mine = g.id in (Store.me.value?.groups ?: emptyList())
+        if (on == mine) return
+        if (on && (Store.me.value?.groups?.size ?: 0) >= 500) error("Подписок уже 500 — отпишитесь от старых")
+        db.runBatch { b ->
+            b.update(db.collection("users").document(me), "groups", if (on) FieldValue.arrayUnion(g.id) else FieldValue.arrayRemove(g.id))
+            b.update(db.collection("groups").document(g.id), "membersCount", FieldValue.increment(if (on) 1L else -1L))
+        }.await()
+    }
+    suspend fun createGroup(name: String, about: String): String {
+        val ref = db.collection("groups").document()
+        db.runBatch { b ->
+            b.set(ref, mapOf("name" to name.trim().take(60), "about" to about.trim().take(600), "photo" to "", "cover" to listOf("blue", "sunset", "sea", "night", "rose", "gold").random(),
+                "ownerId" to me, "admins" to listOf(me), "membersCount" to 1, "createdAt" to now))
+            b.update(db.collection("users").document(me), "groups", FieldValue.arrayUnion(ref.id))
+        }.await()
+        return ref.id
+    }
+
+    /* ---------- ВС Маркет (как на сайте) ---------- */
+    val MKT_CATS = linkedMapOf("electronics" to "Электроника", "clothes" to "Одежда", "home" to "Для дома", "auto" to "Авто",
+        "hobby" to "Хобби и спорт", "kids" to "Детям", "services" to "Услуги", "other" to "Другое")
+    fun marketQuery(cat: String): Query = when (cat) {
+        "mine" -> db.collection("market").whereEqualTo("ownerId", me).limit(100)
+        "all" -> db.collection("market").orderBy("createdAt", Query.Direction.DESCENDING).limit(60)
+        else -> db.collection("market").whereEqualTo("category", cat).limit(100)
+    }
+    suspend fun createLot(ctx: Context, title: String, price: Long, cat: String, city: String, text: String, photo: Uri?): String {
+        val image = if (photo != null) Images.compress(ctx, photo, 1080, 440_000) else ""
+        return db.collection("market").add(mapOf("ownerId" to me, "title" to title.trim().take(100), "price" to price.coerceIn(0, 1_000_000_000),
+            "category" to (cat.takeIf { it in MKT_CATS } ?: "other"), "city" to city.trim().take(40), "text" to text.trim().take(3000),
+            "image" to image, "sold" to false, "createdAt" to now)).await().id
+    }
+    suspend fun setSold(l: Lot, sold: Boolean) { db.collection("market").document(l.id).update("sold", sold).await() }
+    suspend fun deleteLot(l: Lot) { db.collection("market").document(l.id).delete().await() }
+
+    /* ---------- ВС События ---------- */
+    fun eventsQuery(): Query = db.collection("events").limit(200)
+    suspend fun createEvent(ctx: Context, title: String, text: String, place: String, at: Long, cover: Uri?): String {
+        val img = if (cover != null) Images.compress(ctx, cover, 1280, 440_000) else ""
+        return db.collection("events").add(mapOf("ownerId" to me, "title" to title.trim().take(100), "text" to text.trim().take(2000), "place" to place.trim().take(120),
+            "at" to com.google.firebase.Timestamp(java.util.Date(at)), "cover" to img, "going" to listOf(me), "createdAt" to now)).await().id
+    }
+    suspend fun toggleGoing(e: Event) {
+        db.collection("events").document(e.id).update("going", if (me in e.going) FieldValue.arrayRemove(me) else FieldValue.arrayUnion(me)).await()
+    }
+    suspend fun deleteEvent(e: Event) { db.collection("events").document(e.id).delete().await() }
 
     /* ---------- Эфиры ---------- */
     fun liveQuery(): Query = db.collection("streams").whereEqualTo("live", true).limit(30)

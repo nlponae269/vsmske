@@ -136,14 +136,15 @@ fun StoryViewer(groups: List<List<Story>>, startGroup: Int, onAdd: () -> Unit, o
     var paused by remember { mutableStateOf(false) }
     var reply by remember { mutableStateOf("") }
     var dragY by remember { mutableStateOf(0f) }
-    val prog = remember { Animatable(0f) }
-    val list = groups.getOrNull(g) ?: run { onClose(); return }
-    val s = list.getOrNull(i) ?: run { onClose(); return }
+    val list = groups.getOrNull(g)
+    val s = list?.getOrNull(i)
+    if (list == null || s == null) { LaunchedEffect(Unit) { onClose() }; return }   // закрываем не во время отрисовки, а сразу после
+    val prog = remember(s.id) { Animatable(0f) }   // у каждой истории своя полоска — без гонки «обнулить/запустить»
     val owner = Store.users.collectAsState().value[s.ownerId]
     val mine = s.ownerId == Store.uid
     fun next() { if (i < list.size - 1) i++ else if (g < groups.size - 1) { g++; i = 0 } else onClose() }
     fun prev() { if (i > 0) i-- else if (g > 0) { g--; i = 0 } }
-    LaunchedEffect(s.id) { Media.viewStory(s); prog.snapTo(0f) }
+    LaunchedEffect(s.id) { Media.viewStory(s) }
     LaunchedEffect(s.id, paused, reply.isNotEmpty()) {
         if (paused || reply.isNotEmpty()) return@LaunchedEffect
         prog.animateTo(1f, tween(((1f - prog.value) * 6000).toInt(), easing = LinearEasing))

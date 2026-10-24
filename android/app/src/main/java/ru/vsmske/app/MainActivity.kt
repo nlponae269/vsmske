@@ -20,6 +20,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
+        ru.vsmske.app.ui.ThemePref.load(applicationContext)
         Store.start()
         Music.connect(applicationContext)
         ru.vsmske.app.rtc.Call.watch(applicationContext)

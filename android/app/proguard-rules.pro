@@ -3,3 +3,6 @@
 # WebRTC работает через JNI — классы нельзя переименовывать
 -keep class org.webrtc.** { *; }
 -dontwarn org.webrtc.**
+# вход через Google (Credential Manager) — как советует документация androidx.credentials
+-if class androidx.credentials.CredentialManager
+-keep class androidx.credentials.playservices.** { *; }

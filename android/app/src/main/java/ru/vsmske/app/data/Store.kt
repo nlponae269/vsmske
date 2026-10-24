@@ -24,6 +24,7 @@ object Store {
     val notifs = MutableStateFlow<List<Notif>>(emptyList())
     val incoming = MutableStateFlow<List<FriendRequest>>(emptyList())
     val outgoing = MutableStateFlow<List<FriendRequest>>(emptyList())
+    val mailIn = MutableStateFlow<List<Mail>>(emptyList())   // входящие письма ВС Почты (как cache.mailIn на сайте)
     private val _users = MutableStateFlow<Map<String, User>>(emptyMap())
     val users: StateFlow<Map<String, User>> = _users
 
@@ -33,7 +34,7 @@ object Store {
     private var started = false
 
     val uid get() = Fire.uid
-    private val iAmAdmin get() = me.value?.admin == true
+    val iAmAdmin get() = me.value?.admin == true
 
     fun start() {
         if (started) return
@@ -71,11 +72,14 @@ object Store {
                 val list = s.documents.map(FriendRequest::from); incoming.value = list; need(list.map { it.from }) }
         subs += db.collection("friendRequests").whereEqualTo("from", id)
             .addSnapshotListener { s, _ -> s ?: return@addSnapshotListener; outgoing.value = s.documents.map(FriendRequest::from) }
+        subs += db.collection("mail").whereEqualTo("to", id).limit(300)
+            .addSnapshotListener { s, _ -> s ?: return@addSnapshotListener
+                val list = s.documents.map(Mail::from).filter { !it.delTo }.sortedByDescending { it.createdAt }; mailIn.value = list; need(list.map { it.from }) }
     }
 
     private fun stop() {
         subs.forEach { it.remove() }; subs.clear()
-        chats.value = emptyList(); notifs.value = emptyList(); incoming.value = emptyList(); outgoing.value = emptyList()
+        chats.value = emptyList(); notifs.value = emptyList(); incoming.value = emptyList(); outgoing.value = emptyList(); mailIn.value = emptyList()
         _users.value = emptyMap(); loading.clear()
     }
 

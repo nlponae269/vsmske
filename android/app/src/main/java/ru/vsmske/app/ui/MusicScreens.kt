@@ -132,17 +132,21 @@ fun MusicScreen(onOpenPlayer: () -> Unit) {
     var q by remember { mutableStateOf("") }
     var searching by remember { mutableStateOf(false) }
     val upload = rememberUploader { mine = null }
+    var top by remember { mutableStateOf<List<Track>>(emptyList()) }
+    LaunchedEffect(Unit) { top = runCatching { Media.tracksByIds(Music.topPlayed(12).map { it.first }) }.getOrDefault(emptyList()) }
     LaunchedEffect(Unit) {
         stream = runCatching { Media.streamPage(null, 60) }.getOrElse { toast(errText(it)); emptyList() }
         Store.need(stream!!.map { it.ownerId })
         playlists = runCatching { Media.playlistsMine() }.getOrDefault(emptyList())
         recent = runCatching { Media.tracksByIds(recentIds(ctx)) }.getOrDefault(emptyList())
     }
-    LaunchedEffect(me?.tracks?.size, mine == null) { if (mine == null || me != null) mine = runCatching { Api.tracksMine(me?.tracks ?: emptyList()) }.getOrDefault(emptyList()) }
+    // «Мои треки» грузим один раз (и после загрузки нового трека): каждое ♡ не должно заново читать сотни документов из бесплатной квоты
+    LaunchedEffect(mine == null) { if (mine == null) mine = runCatching { Api.tracksMine(Store.me.value?.tracks ?: emptyList()) }.getOrDefault(emptyList()) }
     LaunchedEffect(ms.error) { ms.error?.let { toast(it); Music.clearError() } }
     val hour = Calendar.getInstance().get(Calendar.HOUR_OF_DAY)
     val hello = when (hour) { in 5..11 -> "Доброе утро"; in 12..17 -> "Добрый день"; in 18..22 -> "Добрый вечер"; else -> "Доброй ночи" }
     val scroll = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
+    val mix = remember(mine, top, stream) { dayMix(mine.orEmpty(), top, stream.orEmpty(), Store.users.value) }
     val friends = remember(users, me?.friends) { (me?.friends ?: emptyList()).mapNotNull { users[it] }.filter { it.listening.isNotEmpty() && !it.banned } }
     Scaffold(
         modifier = Modifier.nestedScroll(scroll.nestedScrollConnection),
@@ -168,7 +172,7 @@ fun MusicScreen(onOpenPlayer: () -> Unit) {
             }
             item {
                 Row(Modifier.padding(horizontal = 16.dp, vertical = 8.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    QuickMusic("Мои треки", "${mine?.size ?: 0}", Icons.Rounded.Favorite, listOf(Color(0xFF7C3AED), Color(0xFFC026D3)), Modifier.weight(1f),
+                    QuickMusic("Мои треки", "${maxOf(mine?.size ?: 0, me?.tracks?.size ?: 0)}", Icons.Rounded.Favorite, listOf(Color(0xFF7C3AED), Color(0xFFC026D3)), Modifier.weight(1f),
                         onPlay = { mine?.takeIf { it.isNotEmpty() }?.let { playList(ctx, it, it[0]) } }) { nav.navigate("music/liked") }
                     QuickMusic("Плейлисты", "${playlists.size}", Icons.AutoMirrored.Rounded.QueueMusic, listOf(Color(0xFF1F8A5B), Color(0xFF2B8BB5)), Modifier.weight(1f)) { nav.navigate("music/playlists") }
                 }
@@ -184,6 +188,28 @@ fun MusicScreen(onOpenPlayer: () -> Unit) {
                     }
                     Box(Modifier.align(Alignment.TopEnd).padding(16.dp).size(52.dp).clip(CircleShape).background(Color.White), contentAlignment = Alignment.Center) {
                         Icon(Icons.Rounded.PlayArrow, "Слушать Поток", tint = Color.Black, modifier = Modifier.size(32.dp))
+                    }
+                }
+            }
+            if (mix.size >= 3) item {
+                Box(Modifier.padding(horizontal = 16.dp).fillMaxWidth().height(110.dp).clip(RoundedCornerShape(28.dp))
+                    .background(Brush.linearGradient(listOf(Color(0xFF1F8A5B), Color(0xFF2B8BB5), Color(0xFF6A47C9))))
+                    .clickable { playList(ctx, mix, mix[0]) }) {
+                    Column(Modifier.align(Alignment.CenterStart).padding(20.dp)) {
+                        Text("Микс дня", style = MaterialTheme.typography.headlineSmall, color = Color.White)
+                        Text("${mix.size} ${plural(mix.size, "трек", "трека", "треков")} · ваше любимое, каждый день по-новому", style = MaterialTheme.typography.bodySmall, color = Color.White.copy(alpha = 0.85f))
+                    }
+                    Box(Modifier.align(Alignment.CenterEnd).padding(16.dp).size(48.dp).clip(CircleShape).background(Color.White), contentAlignment = Alignment.Center) {
+                        Icon(Icons.Rounded.PlayArrow, "Слушать Микс дня", tint = Color.Black, modifier = Modifier.size(30.dp))
+                    }
+                }
+            }
+            val topOk = top.filter { users[it.ownerId]?.banned != true }
+            if (topOk.isNotEmpty()) {
+                item { SectionTitle("Чаще всего слушаю") }
+                item {
+                    LazyRow(contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        items(topOk, key = { "top" + it.id }) { t -> CoverCard(t) { playList(ctx, topOk, t) } }
                     }
                 }
             }
@@ -280,6 +306,7 @@ fun TrackRow(t: Track, list: List<Track>, ms: Music.State, onOpenPlayer: () -> U
     var menu by remember { mutableStateOf(false) }
     var ask by remember { mutableStateOf(false) }
     var pick by remember { mutableStateOf(false) }
+    var editing by remember { mutableStateOf(false) }
     Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp).clip(RoundedCornerShape(20.dp)).background(if (cur) cs.secondaryContainer else Color.Transparent)
         .clickable(enabled = !hidden) { if (cur) onOpenPlayer() else playList(ctx, list, t) }.padding(horizontal = 8.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
         Box(contentAlignment = Alignment.Center) {
@@ -300,12 +327,14 @@ fun TrackRow(t: Track, list: List<Track>, ms: Music.State, onOpenPlayer: () -> U
                     DropdownMenuItem({ Text("В плейлист") }, { menu = false; pick = true }, leadingIcon = { Icon(Icons.AutoMirrored.Rounded.PlaylistAdd, null) })
                     if (playlist != null && playlist.ownerId == Store.uid) DropdownMenuItem({ Text("Убрать из плейлиста") }, {
                         menu = false; scope.safe(toast) { Media.savePlaylist(playlist.id, playlist.title, playlist.tracks - t.id, playlist.color); onChanged() } }, leadingIcon = { Icon(Icons.Rounded.Delete, null) })
+                    if (mine) DropdownMenuItem({ Text("Изменить: название, обложка, текст") }, { menu = false; editing = true }, leadingIcon = { Icon(Icons.Rounded.MusicNote, null) })
                     if (mine) DropdownMenuItem({ Text("Удалить трек") }, { menu = false; ask = true }, leadingIcon = { Icon(Icons.Rounded.Delete, null) })
                 }
             }
         }
     }
     if (pick) PlaylistPickSheet(t) { pick = false }
+    if (editing) TrackEditSheet(t) { editing = false; onChanged() }
     if (ask) AlertDialog({ ask = false }, title = { Text("Удалить «${t.title}»?") },
         confirmButton = { TextButton({ ask = false; scope.safe(toast) { Api.deleteTrack(t); toast("Трек удалён"); onChanged() } }) { Text("Удалить") } }, dismissButton = { TextButton({ ask = false }) { Text("Отмена") } })
 }
@@ -365,7 +394,7 @@ fun TrackListScreen(kind: String, arg: String, onOpenPlayer: () -> Unit) {
                 all.isEmpty() -> item { EmptyState(when (kind) { "liked" -> "Здесь будут ваши треки"; "pl" -> "Плейлист пуст"; else -> "Треков нет" },
                     if (kind == "liked") "Жмите ♡ у треков в Потоке — они появятся здесь" else "", "🎵") }
                 else -> {
-                    itemsIndexed(all, key = { _, t -> t.id }) { _, t -> TrackRow(t, all, ms, onOpenPlayer, pl) { reload++ } }
+                    itemsIndexed(all, key = { i, t -> "$i-${t.id}" }) { _, t -> TrackRow(t, all, ms, onOpenPlayer, pl) { reload++ } }   // в плейлисте трек может стоять дважды — ключ с номером
                     if (kind == "stream" && more && all.size >= 50) item {
                         LaunchedEffect(all.size) {
                             val next = runCatching { Media.streamPage(all.last().createdAt) }.getOrDefault(emptyList())
@@ -464,3 +493,12 @@ fun rememberUploader(onDone: () -> Unit): Uploader {
     }
 }
 
+
+/** «Микс дня» (как buildMix() на сайте): мои треки, самые слушаемые и треки тех же исполнителей из Потока, перемешаны от даты — весь день один и тот же */
+fun dayMix(mine: List<Track>, top: List<Track>, stream: List<Track>, users: Map<String, ru.vsmske.app.data.User>): List<Track> {
+    val artists = (mine + top).map { it.artist.trim().lowercase() }.filter { it.isNotEmpty() }.toSet()
+    val pool = (top + mine + stream.filter { it.artist.trim().lowercase() in artists })
+        .distinctBy { it.id }.filter { users[it.ownerId]?.banned != true }
+    val day = java.text.SimpleDateFormat("yyyyMMdd", java.util.Locale.US).format(java.util.Date())
+    return pool.shuffled(kotlin.random.Random((day + Store.uid).hashCode())).take(40)
+}
