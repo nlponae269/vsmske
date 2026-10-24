@@ -221,6 +221,31 @@ object Media {
         Api.notify(p.authorId, "repost", orig, p.text)
     }
 
+    /* ---------- Сообщества (как на сайте: подписка — users.groups и membersCount ±1 одной пачкой) ---------- */
+    fun groupsQuery(): Query = db.collection("groups").orderBy("createdAt", Query.Direction.DESCENDING).limit(100)
+    suspend fun groupsByIds(ids: List<String>): List<Group> {
+        val got = ids.distinct().take(100).chunked(10).flatMap { part -> db.collection("groups").whereIn(FieldPath.documentId(), part).get().await().documents.map(Group::from) }
+        return ids.mapNotNull { id -> got.firstOrNull { it.id == id } }
+    }
+    suspend fun setSubscribed(g: Group, on: Boolean) {
+        val mine = g.id in (Store.me.value?.groups ?: emptyList())
+        if (on == mine) return
+        if (on && (Store.me.value?.groups?.size ?: 0) >= 500) error("Подписок уже 500 — отпишитесь от старых")
+        db.runBatch { b ->
+            b.update(db.collection("users").document(me), "groups", if (on) FieldValue.arrayUnion(g.id) else FieldValue.arrayRemove(g.id))
+            b.update(db.collection("groups").document(g.id), "membersCount", FieldValue.increment(if (on) 1L else -1L))
+        }.await()
+    }
+    suspend fun createGroup(name: String, about: String): String {
+        val ref = db.collection("groups").document()
+        db.runBatch { b ->
+            b.set(ref, mapOf("name" to name.trim().take(60), "about" to about.trim().take(600), "photo" to "", "cover" to listOf("blue", "sunset", "sea", "night", "rose", "gold").random(),
+                "ownerId" to me, "admins" to listOf(me), "membersCount" to 1, "createdAt" to now))
+            b.update(db.collection("users").document(me), "groups", FieldValue.arrayUnion(ref.id))
+        }.await()
+        return ref.id
+    }
+
     /* ---------- Эфиры ---------- */
     fun liveQuery(): Query = db.collection("streams").whereEqualTo("live", true).limit(30)
 }

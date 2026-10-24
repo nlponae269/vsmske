@@ -394,7 +394,7 @@ fun TrackListScreen(kind: String, arg: String, onOpenPlayer: () -> Unit) {
                 all.isEmpty() -> item { EmptyState(when (kind) { "liked" -> "Здесь будут ваши треки"; "pl" -> "Плейлист пуст"; else -> "Треков нет" },
                     if (kind == "liked") "Жмите ♡ у треков в Потоке — они появятся здесь" else "", "🎵") }
                 else -> {
-                    itemsIndexed(all, key = { _, t -> t.id }) { _, t -> TrackRow(t, all, ms, onOpenPlayer, pl) { reload++ } }
+                    itemsIndexed(all, key = { i, t -> "$i-${t.id}" }) { _, t -> TrackRow(t, all, ms, onOpenPlayer, pl) { reload++ } }   // в плейлисте трек может стоять дважды — ключ с номером
                     if (kind == "stream" && more && all.size >= 50) item {
                         LaunchedEffect(all.size) {
                             val next = runCatching { Media.streamPage(all.last().createdAt) }.getOrDefault(emptyList())

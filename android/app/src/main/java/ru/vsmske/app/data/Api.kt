@@ -75,15 +75,16 @@ object Api {
     fun wallQuery(uid: String, limit: Long): Query =
         db.collection("posts").whereEqualTo("wallId", uid).orderBy("createdAt", Query.Direction.DESCENDING).limit(limit)
 
-    suspend fun createPost(wall: String, text: String, images: List<String>, poll: Pair<String, List<String>>?) {
+    suspend fun createPost(wall: String, text: String, images: List<String>, poll: Pair<String, List<String>>?, group: Boolean = false) {
         val t = text.trim().take(4000)
         val data = mutableMapOf<String, Any>("authorId" to me, "wallId" to wall, "text" to t, "image" to (if (images.size == 1) images[0] else ""),
             "likes" to emptyList<String>(), "commentCount" to 0, "createdAt" to now)
         if (images.size > 1) data["images"] = images.take(4)
         val tags = extractTags(t); if (tags.isNotEmpty()) data["tags"] = tags
+        if (group) data["groupId"] = wall   // запись сообщества: правила пускают только его админов
         if (poll != null) data["poll"] = mapOf("q" to poll.first.take(200), "options" to poll.second.take(6), "votes" to emptyMap<String, Int>())
         val ref = db.collection("posts").add(data).await()
-        if (wall != me) notify(wall, "wall", ref.id, t.ifEmpty { poll?.first ?: "Фото" })
+        if (wall != me && !group) notify(wall, "wall", ref.id, t.ifEmpty { poll?.first ?: "Фото" })
         notifyMentions(t, ref.id, listOf(me, wall))
     }
 

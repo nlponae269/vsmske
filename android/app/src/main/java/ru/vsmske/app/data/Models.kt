@@ -24,6 +24,7 @@ data class User(
     val tracks: List<String> = emptyList(),
     val blocked: List<String> = emptyList(),
     val saved: List<String> = emptyList(),
+    val groups: List<String> = emptyList(),
     val lastSeen: Long = 0,
     val notifSeenAt: Long = 0,
     val createdAt: Long = 0,
@@ -47,7 +48,7 @@ data class User(
             return User(
                 id = d.id, name = d.str("name"), nick = d.str("nick"), city = d.str("city"), status = d.str("status"),
                 about = d.str("about"), photo = d.str("photo"), color = d.str("color"), friends = d.strs("friends"),
-                tracks = d.strs("tracks"), blocked = d.strs("blocked"), saved = d.strs("saved"), lastSeen = d.ms("lastSeen"), notifSeenAt = d.ms("notifSeenAt"),
+                tracks = d.strs("tracks"), blocked = d.strs("blocked"), saved = d.strs("saved"), groups = d.strs("groups"), lastSeen = d.ms("lastSeen"), notifSeenAt = d.ms("notifSeenAt"),
                 createdAt = d.ms("createdAt"), emoji = d.str("emoji"), admin = d.get("admin").let { it == true || it == "true" },
                 banUntil = ban?.let { b -> b["until"]?.tsMs() ?: 0L }, banReason = ban?.get("reason") as? String ?: "",
                 cover = d.str("cover").ifEmpty { "blue" },
@@ -252,4 +253,13 @@ data class Playlist(val id: String, val ownerId: String, val title: String, val 
 
 data class Gift(val id: String, val from: String, val gift: String, val text: String, val createdAt: Long) {
     companion object { fun from(d: DocumentSnapshot) = Gift(d.id, d.str("from"), d.str("gift"), d.str("text"), d.ms("createdAt")) }
+}
+
+/** Сообщество (groups): записи — posts с wallId = groupId и полем groupId, пишут только админы */
+data class Group(val id: String, val name: String, val about: String, val photo: String, val cover: String, val ownerId: String,
+                 val admins: List<String>, val membersCount: Int, val createdAt: Long) {
+    companion object {
+        fun from(d: DocumentSnapshot) = Group(d.id, d.str("name").ifEmpty { "Сообщество" }, d.str("about"), d.str("photo"), d.str("cover").ifEmpty { "blue" },
+            d.str("ownerId"), d.strs("admins"), (d.getLong("membersCount") ?: 0).toInt().coerceAtLeast(0), d.ms("createdAt"))
+    }
 }

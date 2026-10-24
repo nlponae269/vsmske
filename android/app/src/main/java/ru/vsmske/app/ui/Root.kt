@@ -160,6 +160,8 @@ private fun Main(openPlayer: MutableState<Boolean>) {
                             composable("tag/{tag}") { TagScreen(it.arguments?.getString("tag") ?: "") }
                             composable("search") { SearchScreen(onOpenPlayer = open) }
                             composable("saved") { SavedScreen() }
+                            composable("clubs") { ClubsScreen() }
+                            composable("club/{id}") { ClubScreen(it.arguments?.getString("id") ?: "") }
                             composable("edit") { EditProfileScreen() }
                             composable("profile/{id}", listOf(navArgument("id") { type = NavType.StringType })) { ProfileScreen(it.arguments?.getString("id") ?: Store.uid) }
                             composable("chat/{key}", listOf(navArgument("key") { type = NavType.StringType })) { ChatScreen(it.arguments?.getString("key") ?: "") }

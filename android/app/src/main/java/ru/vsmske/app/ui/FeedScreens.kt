@@ -218,6 +218,7 @@ fun PostCard(p: Post, open: Boolean = false) {
                         if (wall != null) { Text("  →  ", color = MaterialTheme.colorScheme.onSurfaceVariant); UserName(wall, modifier = Modifier.clickable { nav.openProfile(wall.id) }) }
                     }
                     Text(ago(p.createdAt) + if (p.editedAt > 0) " · изменено" else "", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    if (p.groupId.isNotEmpty()) GroupLabel(p.groupId)
                 }
                 Box {
                     val saved = p.id in (Store.me.collectAsState().value?.saved ?: emptyList())
@@ -338,7 +339,7 @@ private fun PollBox(p: Post) {
 /** Новая запись — шторка снизу: текст, до 4 фото, опрос */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun Composer(wall: String, onDone: () -> Unit) {
+fun Composer(wall: String, group: Boolean = false, onDone: () -> Unit) {
     val ctx = LocalContext.current
     val toast = LocalToast.current
     val scope = rememberCoroutineScope()
@@ -354,7 +355,7 @@ fun Composer(wall: String, onDone: () -> Unit) {
     val ready = !busy && (text.isNotBlank() || pics.isNotEmpty() || (poll && opts.count { it.isNotBlank() } >= 2))
     ModalBottomSheet(onDismissRequest = onDone, sheetState = sheet) {
         Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp).padding(bottom = 16.dp).imePadding(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            Text(if (wall == Store.uid) "Новая запись" else "Запись на стене", style = MaterialTheme.typography.titleLarge)
+            Text(if (group) "Запись в сообществе" else if (wall == Store.uid) "Новая запись" else "Запись на стене", style = MaterialTheme.typography.titleLarge)
             OutlinedTextField(field, { if (it.text.length <= 4000) field = it }, placeholder = { Text("Что у вас нового?") }, modifier = Modifier.fillMaxWidth().heightIn(min = 120.dp))
             FormatBar { mark -> field = wrapMark(field, mark) }
             if (pics.isNotEmpty()) LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -383,7 +384,7 @@ fun Composer(wall: String, onDone: () -> Unit) {
                         val n = pics.size
                         val imgs = pics.map { Images.compress(ctx, it, if (n > 1) 1080 else 1280, if (n > 1) 880_000 / n else 700_000) }
                         val pl = if (poll) (q.ifBlank { "Опрос" } to opts.map { it.trim() }.filter { it.isNotEmpty() }) else null
-                        Api.createPost(wall, text, imgs, pl)
+                        Api.createPost(wall, text, imgs, pl, group)
                         toast("Опубликовано"); onDone()
                     }
                 }, enabled = ready) { if (busy) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp) else Text("Опубликовать") }
