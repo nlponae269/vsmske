@@ -190,6 +190,16 @@ object Api {
         }.await()
     }
 
+    /** Беседа (как на сайте): id g_…, я — владелец и участник, до 50 человек */
+    suspend fun createRoom(name: String, ids: List<String>): String {
+        val rid = "g_" + db.collection("chats").document().id
+        db.collection("chats").document(rid).set(mapOf("members" to (listOf(me) + ids.filter { it != me }.distinct()).take(50), "group" to true,
+            "name" to name.trim().ifEmpty { "Беседа" }.take(60), "ownerId" to me, "lastText" to "Беседа создана", "lastFrom" to me,
+            "lastAt" to now, "read" to mapOf(me to now))).await()
+        return rid
+    }
+    suspend fun leaveRoom(rid: String) { db.collection("chats").document(rid).update("members", FieldValue.arrayRemove(me)).await() }
+
     fun markRead(c: Chat) {
         if (!c.unread(me)) return
         db.collection("chats").document(c.id).update(FieldPath.of("read", me), now)

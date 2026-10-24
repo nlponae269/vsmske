@@ -1,5 +1,8 @@
 package ru.vsmske.app.ui
 
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material.icons.automirrored.rounded.Logout
+import androidx.compose.material.icons.rounded.GroupAdd
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 
 import androidx.compose.ui.input.pointer.pointerInput
@@ -129,12 +132,14 @@ fun ChatsScreen() {
     fun togglePin(id: String) { pins = if (id in pins) pins - id else pins + id; prefs.edit().putString("chatpins", pins.joinToString(",")).apply() }
     var q by rememberSaveable { mutableStateOf("") }
     var menuFor by remember { mutableStateOf<String?>(null) }
+    var newRoom by remember { mutableStateOf(false) }
     fun title(c: ru.vsmske.app.data.Chat): String { val k = c.key(me); return if (c.group) c.name else if (k == me) "Избранное" else users[k]?.name ?: "" }
     val shown = chats.filter { c -> q.isBlank() || title(c).contains(q.trim(), true) || c.lastText.contains(q.trim(), true) }
         .sortedWith(compareByDescending<ru.vsmske.app.data.Chat> { it.id in pins }.thenByDescending { it.lastAt })
     val scroll = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
     Scaffold(Modifier.nestedScroll(scroll.nestedScrollConnection), contentWindowInsets = WindowInsets(0),
         topBar = { LargeTopAppBar(title = { Text("Чаты") }, scrollBehavior = scroll, actions = {
+            IconButton({ newRoom = true }) { Icon(Icons.Rounded.GroupAdd, "Новая беседа") }
             IconButton({ nav.navigate("chat/$me") }) { Icon(Icons.Rounded.Bookmark, "Избранное — заметки для себя") }
         }) }) { pad ->
         LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(top = pad.calculateTopPadding(), bottom = 24.dp)) {
@@ -196,6 +201,7 @@ fun ChatsScreen() {
             }
         }
     }
+    if (newRoom) NewRoomSheet { rid -> newRoom = false; if (rid != null) nav.navigate("chat/$rid") }
 }
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
@@ -236,6 +242,7 @@ fun ChatScreen(key: String) {
     }
     val readAt = chat?.read?.filterKeys { it != me }?.values?.maxOrNull() ?: 0L
     var callVideo by remember { mutableStateOf(false) }
+    var askLeave by remember { mutableStateOf(false) }
     var rec by remember { mutableStateOf<ru.vsmske.app.music.VoiceRec?>(null) }
     val askMic = rememberAvPermission {
         runCatching { ru.vsmske.app.music.VoiceRec(ctx) { scope.launch { toast("Минута — это максимум, жмите «Отправить»") } } }
@@ -266,6 +273,8 @@ fun ChatScreen(key: String) {
                         IconButton({ callVideo = false; call(false) }) { Icon(Icons.Rounded.Call, "Позвонить") }
                         IconButton({ callVideo = true; call(true) }) { Icon(Icons.Rounded.Videocam, "Видеозвонок") }
                     }
+                    // беседа: участник может выйти (владелец остаётся — как правила на сайте)
+                    if (room && chat != null && chat.ownerId != me) IconButton({ askLeave = true }) { Icon(Icons.AutoMirrored.Rounded.Logout, "Выйти из беседы") }
                 },
             )
         },
@@ -327,6 +336,10 @@ fun ChatScreen(key: String) {
         }
     }
 
+    if (askLeave) androidx.compose.material3.AlertDialog({ askLeave = false }, title = { Text("Выйти из беседы «${chat?.name ?: ""}»?") },
+        text = { Text("Вернуть вас сможет только создатель беседы") },
+        confirmButton = { androidx.compose.material3.TextButton({ askLeave = false; scope.safe(toast) { Api.leaveRoom(key); toast("Вы вышли из беседы"); nav.popBackStack() } }) { Text("Выйти") } },
+        dismissButton = { androidx.compose.material3.TextButton({ askLeave = false }) { Text("Отмена") } })
     menu?.let { m ->
         ModalBottomSheet({ menu = null }) {
             Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp), horizontalArrangement = Arrangement.SpaceEvenly) {
@@ -474,5 +487,40 @@ private fun VoiceRecBar(r: ru.vsmske.app.music.VoiceRec, onCancel: () -> Unit, o
             levels.forEach { v -> Box(Modifier.weight(1f).fillMaxHeight(0.15f + 0.85f * kotlin.math.sqrt(v)).clip(CircleShape).background(cs.primary)) }
         }
         androidx.compose.material3.FilledIconButton(onSend) { Icon(Icons.AutoMirrored.Rounded.Send, "Отправить голосовое") }
+    }
+}
+
+/** Новая беседа: название и друзья (2–50 человек вместе с вами) */
+@Composable
+private fun NewRoomSheet(onDone: (String?) -> Unit) {
+    val toast = LocalToast.current
+    val scope = rememberCoroutineScope()
+    val me by Store.me.collectAsState()
+    val users by Store.users.collectAsState()
+    LaunchedEffect(me?.friends) { Store.need(me?.friends ?: emptyList()) }
+    var name by remember { mutableStateOf("") }
+    var sel by remember { mutableStateOf(emptySet<String>()) }
+    var busy by remember { mutableStateOf(false) }
+    val friends = (me?.friends ?: emptyList()).mapNotNull { users[it] }.filter { !it.banned }.sortedBy { it.name }
+    VsSheet({ if (!busy) onDone(null) }) {
+        Text("Новая беседа", style = MaterialTheme.typography.headlineSmall)
+        OutlinedTextField(name, { name = it.take(60) }, Modifier.fillMaxWidth().padding(vertical = 10.dp), label = { Text("Название") }, singleLine = true)
+        Text("Участники · ${sel.size}", style = MaterialTheme.typography.titleSmall)
+        if (friends.isEmpty()) Text("Сначала добавьте друзей — в беседу зовут из друзей", color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(vertical = 12.dp))
+        LazyColumn(Modifier.fillMaxWidth().heightIn(max = 340.dp)) {
+            items(friends, key = { it.id }) { u ->
+                val on = u.id in sel
+                Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).clickable { sel = if (on) sel - u.id else if (sel.size < 49) sel + u.id else sel }.padding(8.dp),
+                    verticalAlignment = Alignment.CenterVertically) {
+                    Avatar(u, 40.dp)
+                    Text(u.name, Modifier.weight(1f).padding(horizontal = 12.dp), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    androidx.compose.material3.Checkbox(on, { sel = if (on) sel - u.id else if (sel.size < 49) sel + u.id else sel })
+                }
+            }
+        }
+        androidx.compose.material3.Button({
+            busy = true
+            scope.safe({ busy = false; toast(it) }) { val rid = Api.createRoom(name, sel.toList()); toast("Беседа создана"); onDone(rid) }
+        }, Modifier.fillMaxWidth().padding(top = 12.dp).height(52.dp), enabled = sel.isNotEmpty() && !busy) { if (busy) ExpressiveLoader(24.dp, MaterialTheme.colorScheme.onPrimary) else Text("Создать беседу") }
     }
 }
