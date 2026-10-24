@@ -1,5 +1,8 @@
 package ru.vsmske.app.ui
 
+import androidx.compose.material.icons.rounded.Share
+import androidx.compose.material.icons.rounded.BookmarkRemove
+import androidx.compose.material.icons.rounded.BookmarkAdd
 import androidx.compose.foundation.horizontalScroll
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -151,7 +154,7 @@ fun FeedScreen() {
             TopAppBar(
                 title = { Row(verticalAlignment = Alignment.CenterVertically) { Logo(); Spacer(Modifier.width(12.dp)); Text("VСмске") } },
                 actions = {
-                    IconButton({ nav.navigate("friends") }) { Icon(Icons.Rounded.Search, "Найти людей") }
+                    IconButton({ nav.navigate("search") }) { Icon(Icons.Rounded.Search, "Поиск") }
                     IconButton({ nav.navigate("notifs") }) {
                         BadgedBox(badge = { if (unseen > 0) Badge { Text(if (unseen > 99) "99+" else "$unseen") } }) { Icon(Icons.Outlined.Notifications, "Сигналы") }
                     }
@@ -216,10 +219,17 @@ fun PostCard(p: Post, open: Boolean = false) {
                     }
                     Text(ago(p.createdAt) + if (p.editedAt > 0) " · изменено" else "", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
-                if (canDel) Box {
+                Box {
+                    val saved = p.id in (Store.me.collectAsState().value?.saved ?: emptyList())
+                    val ctx = androidx.compose.ui.platform.LocalContext.current
                     IconButton({ menu = true }) { Icon(Icons.Rounded.MoreVert, "Ещё") }
                     DropdownMenu(menu, { menu = false }) {
-                        DropdownMenuItem({ Text("Удалить") }, leadingIcon = { Icon(Icons.Rounded.Delete, null) }, onClick = { menu = false; ask = true })
+                        DropdownMenuItem({ Text(if (saved) "Убрать из закладок" else "В закладки") },
+                            leadingIcon = { Icon(if (saved) Icons.Rounded.BookmarkRemove else Icons.Rounded.BookmarkAdd, null) },
+                            onClick = { menu = false; scope.safe(toast) { toast(if (Api.toggleBookmark(p)) "Добавлено в закладки" else "Убрано из закладок") } })
+                        DropdownMenuItem({ Text("Поделиться ссылкой") }, leadingIcon = { Icon(Icons.Rounded.Share, null) },
+                            onClick = { menu = false; share(ctx, SITE + "post/" + p.id) })
+                        if (canDel) DropdownMenuItem({ Text("Удалить") }, leadingIcon = { Icon(Icons.Rounded.Delete, null) }, onClick = { menu = false; ask = true })
                     }
                 }
             }
@@ -482,4 +492,23 @@ fun wrapMark(v: androidx.compose.ui.text.input.TextFieldValue, mark: String): an
     if (t.length > 4000) return v
     val sel = if (a == b) androidx.compose.ui.text.TextRange(a + mark.length) else androidx.compose.ui.text.TextRange(a + mark.length, b + mark.length)
     return v.copy(text = t, selection = sel)
+}
+
+/** Закладки — записи, сохранённые в users.saved (новые сверху, как на сайте) */
+@Composable
+fun SavedScreen() {
+    val toast = LocalToast.current
+    val me by Store.me.collectAsState()
+    var posts by remember { mutableStateOf<List<Post>?>(null) }
+    val ids = me?.saved ?: emptyList()
+    val asked = remember { mutableSetOf<String>() }   // какие id уже запрашивали (удалённые записи не перечитываем каждый раз)
+    LaunchedEffect(ids) {
+        val have = posts
+        if (have != null && asked.containsAll(ids)) { posts = ids.reversed().mapNotNull { id -> have.firstOrNull { it.id == id } }; return@LaunchedEffect }
+        asked += ids
+        posts = runCatching { Api.postsByIds(ids.reversed()) }.onSuccess { l -> Store.need(l.flatMap { listOf(it.authorId, it.wallId) }) }.getOrElse { toast(errText(it)); emptyList() }
+    }
+    BackScaffold("Закладки") { pad ->
+        PostList(posts, {}, PaddingValues(top = pad.calculateTopPadding() + 4.dp, bottom = 24.dp), empty = "Закладок пока нет — нажмите «⋯» у записи и «В закладки»")
+    }
 }

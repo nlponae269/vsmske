@@ -97,6 +97,19 @@ object Api {
         }
     }
 
+    /** Закладки (users.saved, до 500 — как на сайте) */
+    suspend fun toggleBookmark(p: Post): Boolean {
+        val saved = Store.me.value?.saved ?: emptyList()
+        val has = p.id in saved
+        if (!has && saved.size >= 500) error("Закладок уже 500 — уберите старые")
+        db.collection("users").document(me).update("saved", if (has) FieldValue.arrayRemove(p.id) else FieldValue.arrayUnion(p.id)).await()
+        return !has
+    }
+    suspend fun postsByIds(ids: List<String>): List<Post> {
+        val got = ids.distinct().chunked(10).flatMap { part -> db.collection("posts").whereIn(FieldPath.documentId(), part).get().await().documents.map(Post::from) }
+        return ids.mapNotNull { id -> got.firstOrNull { it.id == id } }
+    }
+
     suspend fun vote(p: Post, i: Int) { db.collection("posts").document(p.id).update(FieldPath.of("poll", "votes", me), i).await() }
 
     suspend fun deletePost(p: Post) { db.collection("posts").document(p.id).delete().await() }

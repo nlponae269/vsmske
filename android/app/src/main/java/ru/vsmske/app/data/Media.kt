@@ -162,6 +162,40 @@ object Media {
     }
     suspend fun tracksOf(uid: String): List<Track> =
         db.collection("tracks").whereEqualTo("ownerId", uid).limit(300).get().await().documents.map(Track::from).sortedByDescending { it.createdAt }
+    /** Правка своего трека: название, исполнитель, текст (правило update пускает только автора) */
+    suspend fun updateTrack(t: Track, title: String, artist: String, lyrics: String) {
+        db.collection("tracks").document(t.id).update(mapOf("title" to title.trim().take(120).ifEmpty { t.title }, "artist" to artist.trim().take(120), "lyrics" to lyrics.take(20000))).await()
+    }
+    suspend fun setTrackCover(ctx: Context, t: Track, uri: Uri): String {
+        val cover = Images.compress(ctx, uri, 600, 290_000, square = true)
+        db.collection("tracks").document(t.id).update("cover", cover).await()
+        return cover
+    }
+
+    /** Найденный текст песни в открытой базе LRCLIB (бесплатно, без ключа — как findLyrics() на сайте) */
+    data class LrcHit(val title: String, val artist: String, val duration: Double, val synced: String, val plain: String) {
+        val text get() = synced.ifEmpty { plain }
+    }
+    suspend fun searchLyrics(title: String, artist: String): List<LrcHit> = withContext(Dispatchers.IO) {
+        fun get(q: String): List<LrcHit> {
+            val c = java.net.URL("https://lrclib.net/api/search?$q").openConnection() as java.net.HttpURLConnection
+            c.connectTimeout = 10_000; c.readTimeout = 15_000
+            c.setRequestProperty("User-Agent", "VSmske Android (https://nlponae269.github.io/vsmske/)")
+            try {
+                if (c.responseCode != 200) return emptyList()
+                val arr = org.json.JSONArray(c.inputStream.bufferedReader().use { it.readText() })
+                return (0 until minOf(arr.length(), 20)).mapNotNull { i ->
+                    val o = arr.optJSONObject(i) ?: return@mapNotNull null
+                    LrcHit(o.optString("trackName"), o.optString("artistName"), o.optDouble("duration", 0.0),
+                        o.optString("syncedLyrics").takeIf { it != "null" } ?: "", o.optString("plainLyrics").takeIf { it != "null" } ?: "")
+                }.filter { it.text.isNotBlank() }
+            } finally { c.disconnect() }
+        }
+        val enc = { s: String -> java.net.URLEncoder.encode(s.trim(), "UTF-8") }
+        val first = if (artist.isNotBlank()) get("track_name=${enc(title)}&artist_name=${enc(artist)}") else emptyList()
+        first.ifEmpty { get("q=${enc((artist + " " + title).trim())}") }
+    }
+
     suspend fun saveLyrics(t: Track, lyrics: String) { db.collection("tracks").document(t.id).update("lyrics", lyrics.take(20000)).await() }
 
     /* ---------- Подарки ---------- */

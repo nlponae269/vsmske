@@ -1,5 +1,7 @@
 package ru.vsmske.app.ui
 
+import androidx.compose.material.icons.rounded.Search
+import androidx.compose.material.icons.rounded.Bookmark
 import android.content.Context
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -98,6 +100,8 @@ fun MenuScreen() {
             item { MenuTile(Icons.Rounded.Cloud, "Диск", "файлы до 10 МБ", Color(0xFF1F8A5B)) { nav.navigate("disk") } }
             item { MenuTile(Icons.AutoMirrored.Rounded.QueueMusic, "Плейлисты", "ВС Музыка", Color(0xFF6A47C9)) { nav.navigate("music/playlists") } }
             item { MenuTile(Icons.Rounded.Favorite, "Мои треки", "сохранённое", Color(0xFFC026D3)) { nav.navigate("music/liked") } }
+            item { MenuTile(Icons.Rounded.Bookmark, "Закладки", "${me?.saved?.size ?: 0}", Color(0xFF2B8BB5)) { nav.navigate("saved") } }
+            item { MenuTile(Icons.Rounded.Search, "Поиск", "люди, теги, треки", Color(0xFF4E5B76)) { nav.navigate("search") } }
             item { MenuTile(Icons.Rounded.Equalizer, "Эквалайзер", "звук музыки", Color(0xFFC98A12)) { eq = true } }
             item { MenuTile(Icons.Rounded.Settings, "Настройки", "приложение", cs.outline) { settings = true } }
             item(span = { GridItemSpan(maxLineSpan) }) {

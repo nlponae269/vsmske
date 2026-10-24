@@ -158,6 +158,8 @@ private fun Main(openPlayer: MutableState<Boolean>) {
                             composable("music/pl/{id}") { TrackListScreen("pl", it.arguments?.getString("id") ?: "", open) }
                             composable("notifs") { NotifsScreen() }
                             composable("tag/{tag}") { TagScreen(it.arguments?.getString("tag") ?: "") }
+                            composable("search") { SearchScreen(onOpenPlayer = open) }
+                            composable("saved") { SavedScreen() }
                             composable("edit") { EditProfileScreen() }
                             composable("profile/{id}", listOf(navArgument("id") { type = NavType.StringType })) { ProfileScreen(it.arguments?.getString("id") ?: Store.uid) }
                             composable("chat/{key}", listOf(navArgument("key") { type = NavType.StringType })) { ChatScreen(it.arguments?.getString("key") ?: "") }
@@ -172,6 +174,7 @@ private fun Main(openPlayer: MutableState<Boolean>) {
             PlayerScreen(onClose = { openPlayer.value = false })
         }
         if (openPlayer.value && hasPlayer) BackHandler { openPlayer.value = false }
+        if (!(openPlayer.value && hasPlayer)) WhatsNew()
         CallOverlay()
     }
 }

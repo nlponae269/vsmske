@@ -51,6 +51,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.PlaylistAdd
 import androidx.compose.material.icons.rounded.Bedtime
 import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.Equalizer
 import androidx.compose.material.icons.rounded.Favorite
 import androidx.compose.material.icons.rounded.FavoriteBorder
@@ -185,6 +186,7 @@ fun PlayerScreen(onClose: () -> Unit) {
                 Spacer(Modifier.weight(1f))
                 ViewSwitch(view, t.lyrics.isNotBlank(), accent, onAccent) { view = it }
                 Spacer(Modifier.weight(1f))
+                if (t.ownerId == Store.uid) IconButton({ sheet = "edit" }) { Icon(Icons.Rounded.Edit, "Изменить трек и текст", tint = Color.White) }
                 IconButton({ sheet = "playlist" }) { Icon(Icons.AutoMirrored.Rounded.PlaylistAdd, "В плейлист", tint = Color.White) }
             }
 
@@ -246,6 +248,7 @@ fun PlayerScreen(onClose: () -> Unit) {
         "speed" -> SpeedSheet { sheet = "" }
         "sleep" -> SleepSheet { sheet = "" }
         "playlist" -> PlaylistPickSheet(t) { sheet = "" }
+        "edit" -> TrackEditSheet(t) { sheet = "" }
     }
 }
 

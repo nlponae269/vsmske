@@ -23,6 +23,7 @@ data class User(
     val friends: List<String> = emptyList(),
     val tracks: List<String> = emptyList(),
     val blocked: List<String> = emptyList(),
+    val saved: List<String> = emptyList(),
     val lastSeen: Long = 0,
     val notifSeenAt: Long = 0,
     val createdAt: Long = 0,
@@ -46,7 +47,7 @@ data class User(
             return User(
                 id = d.id, name = d.str("name"), nick = d.str("nick"), city = d.str("city"), status = d.str("status"),
                 about = d.str("about"), photo = d.str("photo"), color = d.str("color"), friends = d.strs("friends"),
-                tracks = d.strs("tracks"), blocked = d.strs("blocked"), lastSeen = d.ms("lastSeen"), notifSeenAt = d.ms("notifSeenAt"),
+                tracks = d.strs("tracks"), blocked = d.strs("blocked"), saved = d.strs("saved"), lastSeen = d.ms("lastSeen"), notifSeenAt = d.ms("notifSeenAt"),
                 createdAt = d.ms("createdAt"), emoji = d.str("emoji"), admin = d.get("admin").let { it == true || it == "true" },
                 banUntil = ban?.let { b -> b["until"]?.tsMs() ?: 0L }, banReason = ban?.get("reason") as? String ?: "",
                 cover = d.str("cover").ifEmpty { "blue" },
