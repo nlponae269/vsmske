@@ -39,6 +39,24 @@ import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.SkipNext
 import androidx.compose.material.icons.rounded.ViewAgenda
+import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.material.icons.outlined.AccountCircle
+import androidx.compose.material.icons.outlined.ChatBubbleOutline
+import androidx.compose.material.icons.outlined.Group
+import androidx.compose.material.icons.outlined.Home
+import androidx.compose.material.icons.outlined.MusicNote
+import androidx.compose.material.icons.outlined.Notifications
+import androidx.compose.material.icons.rounded.AccountCircle
+import androidx.compose.material.icons.rounded.Home
+import androidx.compose.material3.Badge
+import androidx.compose.material3.BadgedBox
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.NavigationBar
+import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.Surface
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -93,7 +111,7 @@ import ru.vsmske.app.ui.screens.PeopleScreen
 import ru.vsmske.app.ui.screens.PostScreen
 import ru.vsmske.app.ui.screens.ProfileScreen
 
-/** Отступы, чтобы содержимое уходило под стеклянные шапку и док, но не пряталось за ними навсегда */
+/** Отступы, чтобы содержимое не пряталось под верхней панелью, нижней навигацией и мини-плеером */
 val LocalPad = compositionLocalOf { PaddingValues() }
 val LocalNav = staticCompositionLocalOf<NavHostController> { error("нет навигации") }
 
@@ -117,9 +135,9 @@ private val TABS = listOf("feed", "chats", "friends", "music", "profile/{id}")
 fun VsRoot(openPlayer: MutableState<Boolean>) {
     VsTheme {
         val phase by Session.phase.collectAsState()
-        Box(Modifier.fillMaxSize().background(Vs.bg)) {
+        Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surface)) {
             when (phase) {
-                Session.Phase.Loading -> Box(Modifier.fillMaxSize()) { Orbs(); Box(Modifier.align(Alignment.Center)) { Logo() } }
+                Session.Phase.Loading -> Box(Modifier.align(Alignment.Center)) { Logo() }
                 Session.Phase.SignedOut -> AuthScreen()
                 Session.Phase.NeedProfile -> OnboardScreen()
                 Session.Phase.Ready -> Main(openPlayer)
@@ -131,18 +149,17 @@ fun VsRoot(openPlayer: MutableState<Boolean>) {
 @Composable
 fun Logo() {
     Row(verticalAlignment = Alignment.CenterVertically) {
-        Box(Modifier.size(34.dp).clip(RoundedCornerShape(11.dp)).background(Vs.grad), contentAlignment = Alignment.Center) {
-            Text("вс", style = MaterialTheme.typography.labelLarge.copy(fontFamily = Unbounded), color = Color.White)
+        Box(Modifier.size(36.dp).clip(RoundedCornerShape(12.dp)).background(MaterialTheme.colorScheme.primary), contentAlignment = Alignment.Center) {
+            Text("вс", style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Bold), color = MaterialTheme.colorScheme.onPrimary)
         }
-        Spacer(Modifier.width(10.dp))
-        Text("VСмске", style = MaterialTheme.typography.titleLarge.copy(brush = Vs.gradText))
+        Spacer(Modifier.width(12.dp))
+        Text("VСмске", style = MaterialTheme.typography.titleLarge)
     }
 }
 
 @Composable
 private fun Main(openPlayer: MutableState<Boolean>) {
     val nav = rememberNavController()
-    val backdrop = rememberBackdrop()
     val header = remember { mutableStateOf<HeaderSpec?>(null) }
     val snack = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
@@ -157,45 +174,40 @@ private fun Main(openPlayer: MutableState<Boolean>) {
 
     val top = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
     val bottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
+    // верхняя панель 64 dp, нижняя навигация 80 dp, мини-плеер 64 dp + отступ
     val pad = PaddingValues(
-        top = top + 80.dp,
-        bottom = if (inChat) 0.dp else bottom + (if (isTab) 96.dp else 16.dp) + (if (hasPlayer) 74.dp else 0.dp),
+        top = top + 64.dp,
+        bottom = if (inChat) 0.dp else bottom + (if (isTab) 80.dp else 0.dp) + (if (hasPlayer) 76.dp else 12.dp),
     )
     LaunchedEffect(route) { if (route != null && isTab) header.value = null }
 
     CompositionLocalProvider(LocalNav provides nav, LocalPad provides pad, LocalHeader provides header, LocalToast provides toast) {
-        Box(Modifier.fillMaxSize()) {
-            Box(Modifier.fillMaxSize().glassSource(backdrop)) {
-                Orbs()
-                NavHost(nav, startDestination = "feed") {
-                    composable("feed") { FeedScreen() }
-                    composable("chats") { ChatsScreen() }
-                    composable("friends") { FriendsScreen() }
-                    composable("music") { MusicScreen(onOpenPlayer = { openPlayer.value = true }) }
-                    composable("people") { PeopleScreen() }
-                    composable("notifs") { NotifsScreen() }
-                    composable("edit") { EditProfileScreen() }
-                    composable("profile/{id}", listOf(navArgument("id") { type = NavType.StringType })) { ProfileScreen(it.arguments?.getString("id") ?: me) }
-                    composable("chat/{key}", listOf(navArgument("key") { type = NavType.StringType })) { ChatScreen(it.arguments?.getString("key") ?: "") }
-                    composable("post/{id}", listOf(navArgument("id") { type = NavType.StringType })) { PostScreen(it.arguments?.getString("id") ?: "") }
-                }
+        Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surface)) {
+            NavHost(nav, startDestination = "feed") {
+                composable("feed") { FeedScreen() }
+                composable("chats") { ChatsScreen() }
+                composable("friends") { FriendsScreen() }
+                composable("music") { MusicScreen(onOpenPlayer = { openPlayer.value = true }) }
+                composable("people") { PeopleScreen() }
+                composable("notifs") { NotifsScreen() }
+                composable("edit") { EditProfileScreen() }
+                composable("profile/{id}", listOf(navArgument("id") { type = NavType.StringType })) { ProfileScreen(it.arguments?.getString("id") ?: me) }
+                composable("chat/{key}", listOf(navArgument("key") { type = NavType.StringType })) { ChatScreen(it.arguments?.getString("key") ?: "") }
+                composable("post/{id}", listOf(navArgument("id") { type = NavType.StringType })) { PostScreen(it.arguments?.getString("id") ?: "") }
             }
 
-            TopBar(backdrop, isTab, header.value, Modifier.align(Alignment.TopCenter).padding(top = top + 8.dp, start = 12.dp, end = 12.dp))
+            TopBar(isTab, header.value, Modifier.align(Alignment.TopCenter))
 
-            Column(
-                Modifier.align(Alignment.BottomCenter).padding(bottom = bottom + 10.dp, start = 12.dp, end = 12.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
+            Column(Modifier.align(Alignment.BottomCenter).fillMaxWidth()) {
                 AnimatedVisibility(hasPlayer && !inChat, enter = slideInVertically { it } + fadeIn(), exit = slideOutVertically { it } + fadeOut()) {
-                    MiniPlayer(backdrop) { openPlayer.value = true }
+                    MiniPlayer(Modifier.padding(start = 8.dp, end = 8.dp, bottom = if (isTab) 8.dp else bottom + 8.dp)) { openPlayer.value = true }
                 }
-                AnimatedVisibility(isTab, enter = slideInVertically { it } + fadeIn(), exit = slideOutVertically { it } + fadeOut()) {
-                    Dock(backdrop, route, entry?.arguments?.getString("id"), nav)
+                AnimatedVisibility(isTab, enter = slideInVertically { it }, exit = slideOutVertically { it }) {
+                    BottomNav(route, entry?.arguments?.getString("id"), nav)
                 }
             }
 
-            SnackbarHost(snack, Modifier.align(Alignment.TopCenter).padding(top = top + 84.dp))
+            SnackbarHost(snack, Modifier.align(Alignment.BottomCenter).padding(bottom = pad.calculateBottomPadding() + 8.dp))
 
             AnimatedVisibility(openPlayer.value && hasPlayer, enter = slideInVertically { it } + fadeIn(), exit = slideOutVertically { it } + fadeOut()) {
                 FullPlayer(onClose = { openPlayer.value = false })
@@ -207,89 +219,88 @@ private fun Main(openPlayer: MutableState<Boolean>) {
 
 private suspend fun SnackbarHostState.currentSnackbarHostState(m: String) { currentSnackbarData?.dismiss(); showSnackbar(m) }
 
+/** Верхняя панель Material 3: на вкладках — логотип, поиск и сигналы; внутри — «назад» и заголовок */
 @Composable
-private fun TopBar(backdrop: Backdrop, isTab: Boolean, h: HeaderSpec?, modifier: Modifier) {
+private fun TopBar(isTab: Boolean, h: HeaderSpec?, modifier: Modifier) {
     val nav = LocalNav.current
     val unseen = Session.notifs.collectAsState().value.let { Session.unseenNotifs() }
-    GlassPanel(backdrop, modifier.fillMaxWidth().height(60.dp), radius = 24.dp) {
-        Row(Modifier.fillMaxSize().padding(horizontal = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+    Surface(modifier.fillMaxWidth(), color = MaterialTheme.colorScheme.surface) {
+        Row(
+            Modifier.fillMaxWidth().statusBarsPadding().height(64.dp).padding(horizontal = 4.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
             if (!isTab) {
-                IconBtn(Icons.AutoMirrored.Rounded.ArrowBack, "Назад") { nav.popBackStack() }
-                if (h?.user != null) { Avatar(h.user, 36.dp, h.user.online); Spacer(Modifier.width(10.dp)) }
+                IconButton({ nav.popBackStack() }) { Icon(Icons.AutoMirrored.Rounded.ArrowBack, "Назад") }
+                if (h?.user != null) { Avatar(h.user, 40.dp, h.user.online); Spacer(Modifier.width(12.dp)) }
                 Column(Modifier.weight(1f).then(if (h?.onClick != null) Modifier.clickable { h.onClick.invoke() } else Modifier)) {
-                    Text(h?.title ?: "", style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    if (!h?.subtitle.isNullOrEmpty()) Text(h!!.subtitle, style = MaterialTheme.typography.bodySmall, maxLines = 1)
+                    Text(h?.title ?: "", style = MaterialTheme.typography.titleLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    if (!h?.subtitle.isNullOrEmpty()) Text(h!!.subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
                 }
             } else {
-                Spacer(Modifier.width(6.dp))
+                Spacer(Modifier.width(12.dp))
                 Box(Modifier.weight(1f)) { Logo() }
-                IconBtn(Icons.Rounded.Search, "Поиск людей") { nav.navigate("people") }
-                Box {
-                    IconBtn(Icons.Rounded.Notifications, "Сигналы") { nav.navigate("notifs") }
-                    Badge(unseen, Modifier.align(Alignment.TopEnd))
+                IconButton({ nav.navigate("people") }) { Icon(Icons.Rounded.Search, "Поиск людей") }
+                IconButton({ nav.navigate("notifs") }) {
+                    BadgedBox(badge = { if (unseen > 0) Badge { Text(if (unseen > 99) "99+" else unseen.toString()) } }) { Icon(Icons.Outlined.Notifications, "Сигналы") }
                 }
             }
         }
     }
 }
 
+/** Нижняя навигация Material 3 — «пилюля» под значком выбранного раздела */
 @Composable
-private fun Dock(backdrop: Backdrop, route: String?, arg: String?, nav: NavHostController) {
+private fun BottomNav(route: String?, arg: String?, nav: NavHostController) {
     val me = Fb.uid
     val unread = Session.chats.collectAsState().value.count { it.unread(me) }
     val reqs = Session.incoming.collectAsState().value.size
-    data class Item(val r: String, val label: String, val icon: androidx.compose.ui.graphics.vector.ImageVector, val badge: Int = 0)
+    data class Item(val r: String, val label: String, val on: ImageVector, val off: ImageVector, val badge: Int = 0)
     val items = listOf(
-        Item("feed", "Лента", Icons.Rounded.ViewAgenda), Item("chats", "Чаты", Icons.Rounded.ChatBubble, unread),
-        Item("friends", "Друзья", Icons.Rounded.Group, reqs), Item("music", "Музыка", Icons.Rounded.MusicNote),
-        Item("profile/$me", "Профиль", Icons.Rounded.Person),
+        Item("feed", "Лента", Icons.Rounded.Home, Icons.Outlined.Home), Item("chats", "Чаты", Icons.Rounded.ChatBubble, Icons.Outlined.ChatBubbleOutline, unread),
+        Item("music", "Музыка", Icons.Rounded.MusicNote, Icons.Outlined.MusicNote), Item("friends", "Друзья", Icons.Rounded.Group, Icons.Outlined.Group, reqs),
+        Item("profile/$me", "Профиль", Icons.Rounded.AccountCircle, Icons.Outlined.AccountCircle),
     )
-    GlassPanel(backdrop, Modifier.fillMaxWidth().height(70.dp), radius = 28.dp) {
-        Row(Modifier.fillMaxSize().padding(6.dp), horizontalArrangement = Arrangement.SpaceEvenly, verticalAlignment = Alignment.CenterVertically) {
-            items.forEach { it ->
-                val on = if (it.r.startsWith("profile/")) route == "profile/{id}" && arg == me else route == it.r
-                val scale by animateFloatAsState(if (on) 1.08f else 1f, label = "dock")
-                Box(
-                    Modifier.weight(1f).height(58.dp).clip(RoundedCornerShape(20.dp))
-                        .background(if (on) Vs.grad else Brush.linearGradient(listOf(Color.Transparent, Color.Transparent)))
-                        .clickable {
-                            if (!on) nav.navigate(it.r) {
-                                popUpTo("feed") { saveState = true }
-                                launchSingleTop = true; restoreState = true
-                            }
-                        }.graphicsLayer { scaleX = scale; scaleY = scale },
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Icon(it.icon, it.label, tint = if (on) Color.White else Vs.fg.copy(alpha = 0.8f), modifier = Modifier.size(24.dp))
-                        Text(it.label, style = MaterialTheme.typography.labelSmall, color = if (on) Color.White else Vs.muted, maxLines = 1)
+    NavigationBar {
+        items.forEach { it ->
+            val on = if (it.r.startsWith("profile/")) route == "profile/{id}" && arg == me else route == it.r
+            NavigationBarItem(
+                selected = on,
+                onClick = {
+                    if (!on) nav.navigate(it.r) {
+                        popUpTo("feed") { saveState = true }
+                        launchSingleTop = true; restoreState = true
                     }
-                    Badge(it.badge, Modifier.align(Alignment.TopEnd).padding(top = 4.dp, end = 6.dp))
-                }
-            }
+                },
+                icon = { BadgedBox(badge = { if (it.badge > 0) Badge { Text(if (it.badge > 99) "99+" else it.badge.toString()) } }) { Icon(if (on) it.on else it.off, it.label) } },
+                label = { Text(it.label, maxLines = 1) },
+            )
         }
     }
 }
 
+/** Мини-плеер — карточка с обложкой и кнопками, как медиаплеер в шторке Android */
 @Composable
-private fun MiniPlayer(backdrop: Backdrop, onOpen: () -> Unit) {
+private fun MiniPlayer(modifier: Modifier = Modifier, onOpen: () -> Unit) {
     val s by MusicPlayer.state.collectAsState()
     val t = s.track ?: return
-    GlassPanel(backdrop, Modifier.fillMaxWidth().height(64.dp).clickable(onClick = onOpen), radius = 22.dp) {
-        val pct = if (s.duration > 0) s.position.toFloat() / s.duration else 0f
-        Box(Modifier.fillMaxWidth(pct.coerceIn(0f, 1f)).height(64.dp).background(Color(0x22A78BFA)))
-        Row(Modifier.fillMaxSize().padding(horizontal = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-            Box(Modifier.size(46.dp).clip(RoundedCornerShape(12.dp)).background(Vs.grad), contentAlignment = Alignment.Center) {
-                if (t.cover.isNotEmpty()) DbImage(t.cover, Modifier.fillMaxSize()) else Icon(Icons.Rounded.MusicNote, null, tint = Color.White)
+    val cs = MaterialTheme.colorScheme
+    Surface(onClick = onOpen, modifier = modifier.fillMaxWidth().height(64.dp), shape = RoundedCornerShape(16.dp), color = cs.secondaryContainer) {
+        Box {
+            Row(Modifier.fillMaxSize().padding(start = 8.dp, end = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                Box(Modifier.size(48.dp).clip(RoundedCornerShape(10.dp)).background(cs.primaryContainer), contentAlignment = Alignment.Center) {
+                    if (t.cover.isNotEmpty()) DbImage(t.cover, Modifier.fillMaxSize()) else Icon(Icons.Rounded.MusicNote, null, tint = cs.onPrimaryContainer)
+                }
+                Column(Modifier.weight(1f).padding(horizontal = 12.dp)) {
+                    Text(t.title, style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis, color = cs.onSecondaryContainer)
+                    Text(t.artist.ifEmpty { "Неизвестный исполнитель" }, style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis, color = cs.onSecondaryContainer.copy(alpha = 0.75f))
+                }
+                if (s.loading) CircularProgressIndicator(Modifier.padding(horizontal = 12.dp).size(22.dp), strokeWidth = 2.dp)
+                else IconButton({ MusicPlayer.toggle() }) { Icon(if (s.playing) Icons.Rounded.Pause else Icons.Rounded.PlayArrow, "Играть", tint = cs.onSecondaryContainer) }
+                IconButton({ MusicPlayer.next() }) { Icon(Icons.Rounded.SkipNext, "Следующий", tint = cs.onSecondaryContainer) }
             }
-            Column(Modifier.weight(1f).padding(horizontal = 10.dp)) {
-                Text(t.title, style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Text(t.artist.ifEmpty { "Неизвестный исполнитель" }, style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            }
-            if (s.loading) CircularProgressIndicator(Modifier.size(22.dp), color = Vs.accent, strokeWidth = 2.dp)
-            else IconBtn(if (s.playing) Icons.Rounded.Pause else Icons.Rounded.PlayArrow, "Играть") { MusicPlayer.toggle() }
-            IconBtn(Icons.Rounded.SkipNext, "Следующий") { MusicPlayer.next() }
-            IconBtn(Icons.Rounded.Close, "Закрыть", tint = Vs.muted) { MusicPlayer.close() }
+            val pct = if (s.duration > 0) s.position.toFloat() / s.duration else 0f
+            LinearProgressIndicator({ pct.coerceIn(0f, 1f) }, Modifier.align(Alignment.BottomCenter).fillMaxWidth().padding(horizontal = 16.dp).height(3.dp),
+                color = cs.primary, trackColor = cs.primary.copy(alpha = 0.18f))
         }
     }
 }

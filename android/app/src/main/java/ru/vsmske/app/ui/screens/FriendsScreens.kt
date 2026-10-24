@@ -132,7 +132,6 @@ fun FriendsScreen() {
             text = { Text("${u.name} пропадёт из вашего списка друзей.") },
             confirmButton = { TextButton({ confirm = null; scope.safe(toast) { Repo.friendRemove(u.id); friends = friends?.filter { it.id != u.id }; toast("Удалено из друзей") } }) { Text("Удалить", color = Vs.danger) } },
             dismissButton = { TextButton({ confirm = null }) { Text("Отмена") } },
-            containerColor = androidx.compose.ui.graphics.Color(0xFF1E1236),
         )
     }
 }

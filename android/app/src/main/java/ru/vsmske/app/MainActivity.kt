@@ -20,7 +20,7 @@ class MainActivity : ComponentActivity() {
     private val openPlayer = mutableStateOf(false)
 
     override fun onCreate(savedInstanceState: Bundle?) {
-        enableEdgeToEdge(SystemBarStyle.dark(android.graphics.Color.TRANSPARENT), SystemBarStyle.dark(android.graphics.Color.TRANSPARENT))
+        enableEdgeToEdge()   // значки строки состояния — светлые или тёмные по теме (Material You)
         super.onCreate(savedInstanceState)
         Session.init()
         MusicPlayer.connect(applicationContext)

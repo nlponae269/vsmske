@@ -23,6 +23,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -108,7 +109,7 @@ fun ProfileScreen(id: String) {
                 val cover = (COVERS[user.cover] ?: COVERS["blue"]!!).map { parseColor(it) }
                 Box(Modifier.fillMaxWidth().height(120.dp).background(Brush.linearGradient(cover)))
                 Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp).offset(y = (-48).dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                    Box(Modifier.border(4.dp, Vs.bg2, RoundedCornerShape(36.dp)).padding(4.dp)) { Avatar(user, 104.dp, user.online) }
+                    Box(Modifier.border(4.dp, MaterialTheme.colorScheme.surfaceContainerLow, CircleShape).padding(4.dp)) { Avatar(user, 104.dp, user.online) }
                     Spacer(Modifier.height(10.dp))
                     UserName(user, MaterialTheme.typography.headlineSmall)
                     if (user.nick.isNotEmpty()) Text("@" + user.nick, color = Vs.accent, style = MaterialTheme.typography.bodyMedium)
@@ -156,13 +157,12 @@ fun ProfileScreen(id: String) {
         title = { Text("Удалить из друзей?") },
         confirmButton = { androidx.compose.material3.TextButton({ confirmRemove = false; scope.safe(toast) { Repo.friendRemove(id); toast("Удалено из друзей") } }) { Text("Удалить", color = Vs.danger) } },
         dismissButton = { androidx.compose.material3.TextButton({ confirmRemove = false }) { Text("Отмена") } },
-        containerColor = Color(0xFF1E1236),
     )
 }
 
 @Composable
 private fun Chip(t: String) {
-    Text(t, style = MaterialTheme.typography.labelMedium, modifier = Modifier.clip(RoundedCornerShape(50)).background(Color(0x1AFFFFFF)).padding(horizontal = 12.dp, vertical = 6.dp))
+    Text(t, style = MaterialTheme.typography.labelMedium, modifier = Modifier.clip(RoundedCornerShape(8.dp)).background(MaterialTheme.colorScheme.secondaryContainer).padding(horizontal = 12.dp, vertical = 6.dp))
 }
 
 @Composable

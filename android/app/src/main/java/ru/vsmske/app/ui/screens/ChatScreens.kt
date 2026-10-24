@@ -40,6 +40,7 @@ import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -184,7 +185,7 @@ fun ChatScreen(key: String) {
                             Column {
                                 if (older == null || dayLabel(older.createdAt) != dayLabel(m.createdAt)) Text(
                                     dayLabel(m.createdAt), style = MaterialTheme.typography.labelSmall, color = Vs.muted,
-                                    modifier = Modifier.align(Alignment.CenterHorizontally).padding(vertical = 8.dp).clip(RoundedCornerShape(50)).background(Color(0x1AFFFFFF)).padding(horizontal = 10.dp, vertical = 4.dp),
+                                    modifier = Modifier.align(Alignment.CenterHorizontally).padding(vertical = 8.dp).clip(RoundedCornerShape(50)).background(MaterialTheme.colorScheme.surfaceContainerHigh).padding(horizontal = 10.dp, vertical = 4.dp),
                                 )
                                 Bubble(m, mine = m.from == me, showName = room && m.from != me && older?.from != m.from, author = users[m.from],
                                     onLong = { if (m.from == me) del = m }, onImage = { viewer = it })
@@ -212,7 +213,7 @@ fun ChatScreen(key: String) {
         AlertDialog(
             onDismissRequest = { del = null }, title = { Text("Удалить сообщение?") },
             confirmButton = { TextButton({ del = null; scope.safe(toast) { Repo.deleteMessage(key, m.id) } }) { Text("Удалить", color = Vs.danger) } },
-            dismissButton = { TextButton({ del = null }) { Text("Отмена") } }, containerColor = Color(0xFF1E1236),
+            dismissButton = { TextButton({ del = null }) { Text("Отмена") } }, 
         )
     }
     viewer?.let { ImageViewer(it) { viewer = null } }
@@ -225,18 +226,18 @@ private fun Bubble(m: Message, mine: Boolean, showName: Boolean, author: User?, 
     Row(Modifier.fillMaxWidth(), horizontalArrangement = if (mine) Arrangement.End else Arrangement.Start) {
         Column(
             Modifier.widthIn(max = 300.dp).clip(shape)
-                .then(if (mine) Modifier.background(Vs.grad) else Modifier.background(Color(0x1FFFFFFF)).border(1.dp, Color(0x1FFFFFFF), shape))
+                .background(if (mine) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceContainerHigh)
                 .combinedClickable(onClick = {}, onLongClick = onLong).padding(horizontal = 12.dp, vertical = 8.dp),
         ) {
             if (showName) Text(author?.name ?: "…", style = MaterialTheme.typography.labelMedium, color = Vs.accent)
-            if (m.fwdName.isNotEmpty()) Text("↪ Переслано от ${m.fwdName}", style = MaterialTheme.typography.labelSmall, color = if (mine) Color(0xCCFFFFFF) else Vs.muted)
-            if (m.replyText.isNotEmpty()) Text("┃ " + m.replyText, style = MaterialTheme.typography.bodySmall, color = if (mine) Color(0xCCFFFFFF) else Vs.muted, maxLines = 2)
+            if (m.fwdName.isNotEmpty()) Text("↪ Переслано от ${m.fwdName}", style = MaterialTheme.typography.labelSmall, color = if (mine) MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.8f) else Vs.muted)
+            if (m.replyText.isNotEmpty()) Text("┃ " + m.replyText, style = MaterialTheme.typography.bodySmall, color = if (mine) MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.8f) else Vs.muted, maxLines = 2)
             if (m.image.isNotEmpty()) DbImage(m.image, Modifier.padding(vertical = 4.dp).widthIn(max = 280.dp).heightIn(max = 340.dp).clip(RoundedCornerShape(14.dp)).clickable { onImage(m.image) }, scale = ContentScale.FillWidth)
             if (m.audio.isNotEmpty()) VoiceRow(m)
-            if (m.text.isNotEmpty()) Text(m.text, style = MaterialTheme.typography.bodyLarge, color = if (mine) Color.White else Vs.fg)
+            if (m.text.isNotEmpty()) Text(m.text, style = MaterialTheme.typography.bodyLarge, color = if (mine) MaterialTheme.colorScheme.onPrimary else Vs.fg)
             Row(Modifier.align(Alignment.End), verticalAlignment = Alignment.CenterVertically) {
                 if (m.reacts.isNotEmpty()) Text(m.reacts.values.groupingBy { it }.eachCount().entries.joinToString(" ") { if (it.value > 1) it.key + it.value else it.key } + "  ", style = MaterialTheme.typography.labelSmall)
-                Text((if (m.edited) "изм. " else "") + timeOnly(m.createdAt), style = MaterialTheme.typography.labelSmall, color = if (mine) Color(0xB3FFFFFF) else Vs.muted)
+                Text((if (m.edited) "изм. " else "") + timeOnly(m.createdAt), style = MaterialTheme.typography.labelSmall, color = if (mine) MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.7f) else Vs.muted)
             }
         }
     }
@@ -268,8 +269,8 @@ private fun VoiceRow(m: Message) {
     val ctx = LocalContext.current
     val cur by Voice.playing.collectAsState()
     Row(Modifier.padding(vertical = 2.dp).clickable { Voice.toggle(ctx, m.id, m.audio) }, verticalAlignment = Alignment.CenterVertically) {
-        Box(Modifier.size(36.dp).clip(RoundedCornerShape(18.dp)).background(Color(0x33FFFFFF)), contentAlignment = Alignment.Center) {
-            Icon(if (cur == m.id) Icons.Rounded.Pause else Icons.Rounded.PlayArrow, "Голосовое", tint = Color.White)
+        Box(Modifier.size(36.dp).clip(RoundedCornerShape(18.dp)).background(LocalContentColor.current.copy(alpha = 0.18f)), contentAlignment = Alignment.Center) {
+            Icon(if (cur == m.id) Icons.Rounded.Pause else Icons.Rounded.PlayArrow, "Голосовое", tint = LocalContentColor.current)
         }
         Text("  🎤 " + fmtDur(m.dur), style = MaterialTheme.typography.labelLarge)
         Spacer(Modifier.size(8.dp))
