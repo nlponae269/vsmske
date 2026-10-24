@@ -77,6 +77,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -364,12 +365,15 @@ fun WavySeek(value: () -> Float, playing: Boolean, color: Color, modifier: Modif
     val amp by animateFloatAsState(if (playing) 1f else 0f, tween(450), label = "amp")
     val phase by rememberInfiniteTransition(label = "wave").animateFloat(0f, (2 * PI).toFloat(), infiniteRepeatable(tween(1500, easing = LinearEasing)), label = "phase")
     val d = LocalDensity.current
+    // жесты запускаются один раз — берём свежие обработчики (в них длительность текущего трека)
+    val drag by rememberUpdatedState(onDrag)
+    val done by rememberUpdatedState(onDone)
     Canvas(
         modifier.height(40.dp)
-            .pointerInput(Unit) { detectTapGestures { o -> onDrag((o.x / size.width).coerceIn(0f, 1f)); onDone() } }
+            .pointerInput(Unit) { detectTapGestures { o -> drag((o.x / size.width).coerceIn(0f, 1f)); done() } }
             .pointerInput(Unit) {
-                detectHorizontalDragGestures(onDragStart = { o -> onDrag((o.x / size.width).coerceIn(0f, 1f)) }, onDragEnd = onDone, onDragCancel = onDone) { ch, _ ->
-                    onDrag((ch.position.x / size.width).coerceIn(0f, 1f))
+                detectHorizontalDragGestures(onDragStart = { o -> drag((o.x / size.width).coerceIn(0f, 1f)) }, onDragEnd = { done() }, onDragCancel = { done() }) { ch, _ ->
+                    drag((ch.position.x / size.width).coerceIn(0f, 1f))
                 }
             },
     ) {

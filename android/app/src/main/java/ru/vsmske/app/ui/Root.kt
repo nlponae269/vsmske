@@ -98,6 +98,8 @@ fun Root(openPlayer: MutableState<Boolean>) {
 }
 
 private val TABS = setOf("feed", "video", "music", "chats", "menu")
+/** Экраны на весь экран и на планшете (без колонки по центру) */
+private val FULL = setOf("clips/{id}", "live/{id}")
 
 @Composable
 private fun Main(openPlayer: MutableState<Boolean>) {
@@ -132,7 +134,7 @@ private fun Main(openPlayer: MutableState<Boolean>) {
                 ) { pad ->
                     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
                         NavHost(nav, startDestination = "feed",
-                            modifier = Modifier.fillMaxSize().padding(bottom = pad.calculateBottomPadding()).widthIn(max = if (tablet) CONTENT_MAX else Dp.Unspecified)) {
+                            modifier = Modifier.fillMaxSize().padding(bottom = pad.calculateBottomPadding()).widthIn(max = if (tablet && route !in FULL) CONTENT_MAX else Dp.Unspecified)) {
                             val open = { openPlayer.value = true }
                             composable("feed") { FeedScreen() }
                             composable("video") { VideoHome() }
@@ -155,6 +157,7 @@ private fun Main(openPlayer: MutableState<Boolean>) {
                             composable("music/user/{uid}") { TrackListScreen("user", it.arguments?.getString("uid") ?: "", open) }
                             composable("music/pl/{id}") { TrackListScreen("pl", it.arguments?.getString("id") ?: "", open) }
                             composable("notifs") { NotifsScreen() }
+                            composable("tag/{tag}") { TagScreen(it.arguments?.getString("tag") ?: "") }
                             composable("edit") { EditProfileScreen() }
                             composable("profile/{id}", listOf(navArgument("id") { type = NavType.StringType })) { ProfileScreen(it.arguments?.getString("id") ?: Store.uid) }
                             composable("chat/{key}", listOf(navArgument("key") { type = NavType.StringType })) { ChatScreen(it.arguments?.getString("key") ?: "") }

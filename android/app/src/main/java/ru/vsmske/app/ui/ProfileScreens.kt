@@ -193,7 +193,7 @@ private fun ProfileHeader(u: User, own: Boolean) {
                 Stat("${gifts.size}", plural(gifts.size, "подарок", "подарка", "подарков")) { if (!own) giftSheet = true }
                 if (u.city.isNotEmpty()) Stat("📍", u.city) {}
             }
-            if (u.about.isNotEmpty()) Text(u.about, style = MaterialTheme.typography.bodyMedium, color = cs.onSurfaceVariant, modifier = Modifier.padding(top = 6.dp))
+            if (u.about.isNotEmpty()) RichText(u.about, style = MaterialTheme.typography.bodyMedium, color = cs.onSurfaceVariant, modifier = Modifier.padding(top = 6.dp))
             if (!own) Row(Modifier.padding(top = 12.dp), verticalAlignment = Alignment.CenterVertically) {
                 FriendButtons(u, Modifier.weight(1f, fill = false))
                 Spacer(Modifier.width(8.dp))

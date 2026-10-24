@@ -56,10 +56,22 @@ object Api {
         (if (id != null) db.collection("notifs").document(id) else db.collection("notifs").document()).set(data)
     }
 
+    /** @ники в тексте → уведомление «mention» (как notifyMentions() на сайте); skip — кого уже уведомили */
+    fun notifyMentions(text: String, postId: String, skip: List<String>) {
+        for (nick in Markup.mentions(text)) {
+            db.collection("usernames").document(nick).get().addOnSuccessListener { s ->
+                val to = s.getString("uid")
+                if (!to.isNullOrEmpty() && to !in skip) notify(to, "mention", postId, text)
+            }
+        }
+    }
+
     /* ---------- Записи ---------- */
     fun feedQuery(ids: List<String>, limit: Long): Query =
         db.collection("posts").whereIn("authorId", ids.take(30)).orderBy("createdAt", Query.Direction.DESCENDING).limit(limit)
     fun allQuery(limit: Long): Query = db.collection("posts").orderBy("createdAt", Query.Direction.DESCENDING).limit(limit)
+    /** Записи с хэштегом (без сортировки — индекс не нужен; сортируем на телефоне) */
+    fun tagQuery(tag: String, limit: Long): Query = db.collection("posts").whereArrayContains("tags", tag).limit(limit)
     fun wallQuery(uid: String, limit: Long): Query =
         db.collection("posts").whereEqualTo("wallId", uid).orderBy("createdAt", Query.Direction.DESCENDING).limit(limit)
 
@@ -72,6 +84,7 @@ object Api {
         if (poll != null) data["poll"] = mapOf("q" to poll.first.take(200), "options" to poll.second.take(6), "votes" to emptyMap<String, Int>())
         val ref = db.collection("posts").add(data).await()
         if (wall != me) notify(wall, "wall", ref.id, t.ifEmpty { poll?.first ?: "Фото" })
+        notifyMentions(t, ref.id, listOf(me, wall))
     }
 
     suspend fun toggleLike(p: Post) {
@@ -95,6 +108,7 @@ object Api {
             b.update(db.collection("posts").document(p.id), "commentCount", FieldValue.increment(1))
         }.await()
         notify(p.authorId, "comment", p.id, t)
+        notifyMentions(t, p.id, listOf(me, p.authorId))
     }
 
     suspend fun deleteComment(p: Post, c: Comment) {
@@ -148,12 +162,13 @@ object Api {
     fun messagesQuery(cid: String): Query =
         db.collection("chats").document(cid).collection("messages").orderBy("createdAt", Query.Direction.ASCENDING).limitToLast(200)
 
-    suspend fun sendMessage(key: String, text: String, image: String = "", replyTo: Message? = null) {
+    suspend fun sendMessage(key: String, text: String, image: String = "", replyTo: Message? = null, audio: String = "", dur: Double = 0.0) {
         val cid = chatKeyId(me, key)
         val msg = mutableMapOf<String, Any>("from" to me, "text" to text.take(2000), "createdAt" to now)
         if (image.isNotEmpty()) msg["image"] = image
+        if (audio.isNotEmpty()) { msg["audio"] = audio; msg["dur"] = dur }
         if (replyTo != null) msg["replyTo"] = mapOf("id" to replyTo.id, "from" to replyTo.from, "text" to replyTo.text.ifEmpty { if (replyTo.image.isNotEmpty()) "📷 Фото" else "🎤 Голосовое" }.take(120))
-        val last = mutableMapOf<String, Any>("lastText" to text.ifEmpty { "📷 Фото" }.take(200), "lastFrom" to me, "lastAt" to now, "read" to mapOf(me to now))
+        val last = mutableMapOf<String, Any>("lastText" to text.ifEmpty { if (audio.isNotEmpty()) "🎤 Голосовое" else "📷 Фото" }.take(200), "lastFrom" to me, "lastAt" to now, "read" to mapOf(me to now))
         if (!isRoom(key)) last["members"] = listOf(me, key).sorted()
         db.runBatch { b ->
             b.set(db.collection("chats").document(cid).collection("messages").document(), msg)

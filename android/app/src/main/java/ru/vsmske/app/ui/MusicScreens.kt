@@ -138,7 +138,8 @@ fun MusicScreen(onOpenPlayer: () -> Unit) {
         playlists = runCatching { Media.playlistsMine() }.getOrDefault(emptyList())
         recent = runCatching { Media.tracksByIds(recentIds(ctx)) }.getOrDefault(emptyList())
     }
-    LaunchedEffect(me?.tracks?.size, mine == null) { if (mine == null || me != null) mine = runCatching { Api.tracksMine(me?.tracks ?: emptyList()) }.getOrDefault(emptyList()) }
+    // «Мои треки» грузим один раз (и после загрузки нового трека): каждое ♡ не должно заново читать сотни документов из бесплатной квоты
+    LaunchedEffect(mine == null) { if (mine == null) mine = runCatching { Api.tracksMine(Store.me.value?.tracks ?: emptyList()) }.getOrDefault(emptyList()) }
     LaunchedEffect(ms.error) { ms.error?.let { toast(it); Music.clearError() } }
     val hour = Calendar.getInstance().get(Calendar.HOUR_OF_DAY)
     val hello = when (hour) { in 5..11 -> "Доброе утро"; in 12..17 -> "Добрый день"; in 18..22 -> "Добрый вечер"; else -> "Доброй ночи" }
@@ -168,7 +169,7 @@ fun MusicScreen(onOpenPlayer: () -> Unit) {
             }
             item {
                 Row(Modifier.padding(horizontal = 16.dp, vertical = 8.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    QuickMusic("Мои треки", "${mine?.size ?: 0}", Icons.Rounded.Favorite, listOf(Color(0xFF7C3AED), Color(0xFFC026D3)), Modifier.weight(1f),
+                    QuickMusic("Мои треки", "${maxOf(mine?.size ?: 0, me?.tracks?.size ?: 0)}", Icons.Rounded.Favorite, listOf(Color(0xFF7C3AED), Color(0xFFC026D3)), Modifier.weight(1f),
                         onPlay = { mine?.takeIf { it.isNotEmpty() }?.let { playList(ctx, it, it[0]) } }) { nav.navigate("music/liked") }
                     QuickMusic("Плейлисты", "${playlists.size}", Icons.AutoMirrored.Rounded.QueueMusic, listOf(Color(0xFF1F8A5B), Color(0xFF2B8BB5)), Modifier.weight(1f)) { nav.navigate("music/playlists") }
                 }

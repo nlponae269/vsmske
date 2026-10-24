@@ -28,6 +28,8 @@ object Media {
     suspend fun toggleVideoLike(v: Video) {
         db.collection("videos").document(v.id).update("likes", if (me in v.likes) FieldValue.arrayRemove(me) else FieldValue.arrayUnion(me)).await()
     }
+    /** Двойной тап: только поставить «нравится» (повторный тап не снимает) */
+    suspend fun likeVideo(v: Video) { db.collection("videos").document(v.id).update("likes", FieldValue.arrayUnion(me)).await() }
     private val viewed = mutableSetOf<String>()
     /** Просмотр: +1 один раз за заход */
     fun countView(v: Video) {

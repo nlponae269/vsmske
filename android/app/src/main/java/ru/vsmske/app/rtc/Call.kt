@@ -184,7 +184,7 @@ object Call {
     private fun wire(p: Peer): Peer {
         peer = p
         val sid = ui.value.sid
-        scope.launch {
+        jobs += scope.launch {
             p.state.collect { st ->
                 if (ui.value.sid != sid) return@collect
                 when (st) {

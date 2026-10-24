@@ -147,7 +147,7 @@ fun NotifsScreen() {
                 val u = users[n.from]
                 ListItem(
                     headlineContent = { Text("${u?.name ?: "…"} ${NOTIF_TEXT[n.type] ?: ""}") },
-                    supportingContent = { Text((if (n.text.isNotEmpty()) "«${n.text}» · " else "") + ago(n.createdAt), maxLines = 2, color = MaterialTheme.colorScheme.onSurfaceVariant) },
+                    supportingContent = { Text((if (n.text.isNotEmpty()) "«${ru.vsmske.app.data.Markup.plain(n.text)}» · " else "") + ago(n.createdAt), maxLines = 2, color = MaterialTheme.colorScheme.onSurfaceVariant) },
                     leadingContent = { Avatar(u, 44.dp) },
                     colors = ListItemDefaults.colors(containerColor = if (n.createdAt > seen) MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.45f) else Color.Transparent),
                     modifier = Modifier.clickable { if (n.postId.isNotEmpty() && n.type in setOf("like", "comment", "wall", "repost", "mention")) nav.navigate("post/${n.postId}") else nav.openProfile(n.from) },

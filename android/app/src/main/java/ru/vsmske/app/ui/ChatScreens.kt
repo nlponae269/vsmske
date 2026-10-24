@@ -43,6 +43,12 @@ import androidx.compose.material.icons.automirrored.rounded.Send
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.ContentCopy
 import androidx.compose.material.icons.rounded.Delete
+import androidx.compose.material.icons.rounded.Mic
+import androidx.compose.runtime.mutableStateListOf
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.height
+import kotlinx.coroutines.launch
+import androidx.compose.animation.core.animateFloat
 import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.Groups
 import androidx.compose.material.icons.rounded.Image
@@ -117,7 +123,7 @@ fun ChatsScreen() {
                         else if (key == me) Text("Избранное") else UserName(peer, if (unread) MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold) else MaterialTheme.typography.titleSmall)
                     },
                     supportingContent = {
-                        Text((if (c.lastFrom == me) "Вы: " else "") + c.lastText, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                        Text((if (c.lastFrom == me) "Вы: " else "") + ru.vsmske.app.data.Markup.plain(c.lastText), maxLines = 1, overflow = TextOverflow.Ellipsis,
                             color = if (unread) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant)
                     },
                     leadingContent = {
@@ -177,6 +183,13 @@ fun ChatScreen(key: String) {
     }
     val readAt = chat?.read?.filterKeys { it != me }?.values?.maxOrNull() ?: 0L
     var callVideo by remember { mutableStateOf(false) }
+    var rec by remember { mutableStateOf<ru.vsmske.app.music.VoiceRec?>(null) }
+    val askMic = rememberAvPermission {
+        runCatching { ru.vsmske.app.music.VoiceRec(ctx) { scope.launch { toast("Минута — это максимум, жмите «Отправить»") } } }
+            .onSuccess { if (ru.vsmske.app.music.Music.state.value.playing) ru.vsmske.app.music.Music.toggle(); rec = it }
+            .onFailure { toast(errText(it)) }
+    }
+    DisposableEffect(Unit) { onDispose { rec?.cancel() } }   // ушли из чата посреди записи — запись выбрасываем
     val call = rememberAvPermission { scope.safe(toast) { ru.vsmske.app.rtc.Call.start(ctx, key, callVideo) } }
 
     Scaffold(
@@ -210,21 +223,30 @@ fun ChatScreen(key: String) {
                     Icon(if (edit != null) Icons.Rounded.Edit else Icons.AutoMirrored.Rounded.Reply, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(20.dp))
                     Column(Modifier.weight(1f).padding(horizontal = 10.dp)) {
                         Text(if (edit != null) "Изменение" else "Ответ", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
-                        Text(ctxMsg.text.ifEmpty { "📷 Фото" }, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodySmall)
+                        Text(ctxMsg.text.ifEmpty { if (ctxMsg.audio.isNotEmpty()) "🎤 Голосовое" else "📷 Фото" }, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodySmall)
                     }
                     IconButton({ reply = null; if (edit != null) { edit = null; text = "" } }) { Icon(Icons.Rounded.Close, "Отмена") }
                 }
                 if (Store.me.value?.isBanned == true) Text("Ваш аккаунт заблокирован — писать сообщения нельзя", Modifier.fillMaxWidth().padding(16.dp), color = MaterialTheme.colorScheme.error)
                 else Row(Modifier.fillMaxWidth().padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    val recNow = rec
+                    if (recNow != null) VoiceRecBar(recNow, onCancel = { recNow.cancel(); rec = null }) {
+                        val got = recNow.finish(); rec = null
+                        if (got == null) toast("Слишком короткое голосовое — держите запись хотя бы секунду")
+                        else { val r = reply; reply = null; busy = true; scope.safe({ busy = false; toast(it) }) { Api.sendMessage(key, "", replyTo = r, audio = got.first, dur = got.second); busy = false } }
+                    } else {
                     IconButton({ pick.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) }, enabled = !busy) { Icon(Icons.Rounded.Image, "Фото") }
                     TextField(text, { text = it.take(2000) }, placeholder = { Text("Сообщение") }, modifier = Modifier.weight(1f), shape = RoundedCornerShape(24.dp), maxLines = 5,
                         colors = TextFieldDefaults.colors(focusedIndicatorColor = Color.Transparent, unfocusedIndicatorColor = Color.Transparent))
-                    IconButton({
+                    // пустое поле — микрофон (голосовое), есть текст — «отправить», как на сайте
+                    if (text.isBlank() && edit == null) IconButton({ askMic(false) }, enabled = !busy) { Icon(Icons.Rounded.Mic, "Записать голосовое", tint = MaterialTheme.colorScheme.primary) }
+                    else IconButton({
                         val t = text.trim(); if (t.isEmpty()) return@IconButton
                         text = ""
                         val e = edit; val r = reply; edit = null; reply = null
                         scope.safe(toast) { if (e != null) Api.editMessage(key, e, t) else Api.sendMessage(key, t, replyTo = r) }
                     }, enabled = text.isNotBlank()) { Icon(Icons.AutoMirrored.Rounded.Send, "Отправить", tint = MaterialTheme.colorScheme.primary) }
+                    }
                 }
             }
         },
@@ -288,7 +310,7 @@ private fun Bubble(m: Message, mine: Boolean, read: Boolean, author: ru.vsmske.a
         ) {
             if (author != null) Text(author.name, style = MaterialTheme.typography.labelMedium, color = cs.primary)
             if (m.fwdName.isNotEmpty()) Text("↪ Переслано от ${m.fwdName}", style = MaterialTheme.typography.labelSmall, color = fg.copy(alpha = 0.75f))
-            if (m.replyText.isNotEmpty()) Text("│ " + m.replyText, style = MaterialTheme.typography.bodySmall, color = fg.copy(alpha = 0.75f), maxLines = 2, overflow = TextOverflow.Ellipsis)
+            if (m.replyText.isNotEmpty()) Text("│ " + ru.vsmske.app.data.Markup.plain(m.replyText), style = MaterialTheme.typography.bodySmall, color = fg.copy(alpha = 0.75f), maxLines = 2, overflow = TextOverflow.Ellipsis)
             if (m.image.isNotEmpty()) {
                 if (hidden) Text("🔒 Фото недоступно", color = fg.copy(alpha = 0.75f))
                 else DbImage(m.image, Modifier.padding(vertical = 4.dp).widthIn(max = 280.dp).heightIn(max = 340.dp).clip(RoundedCornerShape(14.dp)).clickable { viewer = true }, ContentScale.FillWidth)
@@ -297,8 +319,8 @@ private fun Bubble(m: Message, mine: Boolean, read: Boolean, author: ru.vsmske.a
                 if (hidden) Text("🔒 Голосовое недоступно", color = fg.copy(alpha = 0.75f))
                 else if (m.audio.startsWith("data:video/")) VideoNote(m) else VoiceRow(m, fg)
             }
-            if (m.fwdText.isNotEmpty()) Text(m.fwdText, style = MaterialTheme.typography.bodyLarge, color = fg)
-            if (m.text.isNotEmpty()) Text(m.text, style = MaterialTheme.typography.bodyLarge, color = fg)
+            if (m.fwdText.isNotEmpty()) RichText(m.fwdText, style = MaterialTheme.typography.bodyLarge, color = fg, linkColor = fg)
+            if (m.text.isNotEmpty()) RichText(m.text, style = MaterialTheme.typography.bodyLarge, color = fg, linkColor = fg)
             Row(Modifier.align(Alignment.End), verticalAlignment = Alignment.CenterVertically) {
                 if (m.reacts.isNotEmpty()) Text(m.reacts.values.groupingBy { it }.eachCount().entries.joinToString(" ") { if (it.value > 1) it.key + it.value else it.key } + "  ", style = MaterialTheme.typography.labelMedium)
                 Text((if (m.edited) "изменено · " else "") + clock(m.createdAt) + if (mine) (if (m.pending) " ◷" else if (read) " ✓✓" else " ✓") else "",
@@ -358,5 +380,25 @@ private fun VideoNote(m: Message) {
             setOnPreparedListener { p -> p.isLooping = true; p.setVolume(0f, 0f); start() }
             setOnClickListener { if (isPlaying) pause() else start() }
         } }, Modifier.fillMaxSize())
+    }
+}
+
+/** Идёт запись голосового: мигающая точка, время, громкость; «Удалить» и «Отправить» */
+@Composable
+private fun VoiceRecBar(r: ru.vsmske.app.music.VoiceRec, onCancel: () -> Unit, onSend: () -> Unit) {
+    var ms by remember { mutableStateOf(0L) }
+    val levels = remember { mutableStateListOf<Float>() }
+    LaunchedEffect(r) { while (true) { ms = r.elapsed(); levels.add(r.level()); if (levels.size > 40) levels.removeAt(0); kotlinx.coroutines.delay(100) } }
+    val blink by androidx.compose.animation.core.rememberInfiniteTransition(label = "rec").animateFloat(1f, 0.25f,
+        androidx.compose.animation.core.infiniteRepeatable(androidx.compose.animation.core.tween(600), androidx.compose.animation.core.RepeatMode.Reverse), label = "b")
+    val cs = MaterialTheme.colorScheme
+    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+        IconButton(onCancel) { Icon(Icons.Rounded.Delete, "Удалить запись", tint = cs.error) }
+        Box(Modifier.size(10.dp).clip(CircleShape).background(Color(0xFFE53935).copy(alpha = blink)))
+        Text("  " + ru.vsmske.app.data.fmtDur(ms / 1000.0), style = MaterialTheme.typography.titleSmall)
+        Row(Modifier.weight(1f).height(32.dp).padding(horizontal = 10.dp), horizontalArrangement = Arrangement.spacedBy(2.dp), verticalAlignment = Alignment.CenterVertically) {
+            levels.forEach { v -> Box(Modifier.weight(1f).fillMaxHeight(0.15f + 0.85f * kotlin.math.sqrt(v)).clip(CircleShape).background(cs.primary)) }
+        }
+        androidx.compose.material3.FilledIconButton(onSend) { Icon(Icons.AutoMirrored.Rounded.Send, "Отправить голосовое") }
     }
 }

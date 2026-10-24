@@ -49,6 +49,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -105,14 +106,16 @@ fun ClipsScreen(startId: String) {
     val pager = rememberPagerState { clips.size }
     val player = rememberVideoPlayer()
     LaunchedEffect(muted) { player.volume = if (muted) 0f else 1f }
-    LaunchedEffect(pager.settledPage, clips.size) {
-        val v = clips.getOrNull(pager.settledPage) ?: return@LaunchedEffect
+    // играем только при смене клипа (догрузка новых клипов в конец не перезапускает текущий)
+    val curId = clips.getOrNull(pager.settledPage)?.id
+    LaunchedEffect(curId) {
+        val v = clips.firstOrNull { it.id == curId } ?: return@LaunchedEffect
         if (Music.state.value.playing) Music.toggle()
-        if (users[v.ownerId]?.banned == true) { player.stop(); return@LaunchedEffect }
+        if (Store.user(v.ownerId)?.banned == true) { player.stop(); return@LaunchedEffect }
         player.setMediaItem(MediaItem.fromUri(v.mediaUri())); player.repeatMode = Player.REPEAT_MODE_ONE; player.prepare(); player.playWhenReady = true
-        if (pager.settledPage >= clips.size - 4) limit += 30
         delay(2000); Media.countView(v)
     }
+    LaunchedEffect(pager.settledPage) { if (clips.isNotEmpty() && pager.settledPage >= clips.size - 4) limit += 30 }
     DisposableEffect(pager.settledPage) {
         val v = clips.getOrNull(pager.settledPage)
         val reg = v?.let { c -> Fire.db.collection("videos").document(c.id).addSnapshotListener { s, _ ->
@@ -125,7 +128,7 @@ fun ClipsScreen(startId: String) {
         else VerticalPager(pager, Modifier.fillMaxSize(), beyondViewportPageCount = 1, key = { clips[it].id }) { page ->
             val v = clips[page]
             ClipPage(v, page == pager.settledPage, player, users[v.ownerId]?.banned == true,
-                onLike = { force -> if (!force || Store.uid !in v.likes) scope.safe(toast) { Media.toggleVideoLike(v) } },
+                onLike = { force -> scope.safe(toast) { if (force) Media.likeVideo(v) else Media.toggleVideoLike(v) } },
                 onComments = { comments = v },
                 onShare = { share(ctx, v.title + "\n" + SITE + "clips/" + v.id) })
         }
@@ -146,10 +149,13 @@ private fun ClipPage(v: Video, active: Boolean, player: Player, banned: Boolean,
     val hearts = remember { mutableStateListOf<Pair<Long, Offset>>() }
     val scope = rememberCoroutineScope()
     LaunchedEffect(active) { paused = false }
+    // жесты живут дольше одной перерисовки — берём свежие значения, а не те, что были при первом показе
+    val isActive by rememberUpdatedState(active)
+    val like by rememberUpdatedState(onLike)
     Box(Modifier.fillMaxSize().pointerInput(v.id) {
         detectTapGestures(
-            onDoubleTap = { o -> onLike(true); val k = System.nanoTime(); hearts += k to o; scope.launch { delay(900); hearts.removeAll { it.first == k } } },
-            onTap = { if (active) { paused = !paused; player.playWhenReady = !paused } },
+            onDoubleTap = { o -> like(true); val k = System.nanoTime(); hearts += k to o; scope.launch { delay(900); hearts.removeAll { it.first == k } } },
+            onTap = { if (isActive) { paused = !paused; player.playWhenReady = !paused } },
         )
     }) {
         when {

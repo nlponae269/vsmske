@@ -1,5 +1,6 @@
 package ru.vsmske.app.ui
 
+import androidx.compose.foundation.horizontalScroll
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
@@ -222,7 +223,7 @@ fun PostCard(p: Post, open: Boolean = false) {
                     }
                 }
             }
-            if (p.text.isNotEmpty()) Text(p.text, style = MaterialTheme.typography.bodyLarge)
+            if (p.text.isNotEmpty()) RichText(p.text, style = MaterialTheme.typography.bodyLarge)
             if (p.repostOf.isNotEmpty()) RepostBox(p.repostOf)
             Pics(p, a?.banned == true) { if (!liked) scope.safe(toast) { Api.toggleLike(p) } }
             p.poll?.let { PollBox(p) }
@@ -248,7 +249,8 @@ private fun Pics(p: Post, banned: Boolean, onDoubleLike: () -> Unit) {
     var heart by remember { mutableStateOf(0) }
     val hk by androidx.compose.animation.core.animateFloatAsState(if (heart % 2 == 1) 1f else 0f, androidx.compose.animation.core.spring(dampingRatio = 0.4f, stiffness = 400f), label = "heart",
         finishedListener = { if (heart % 2 == 1) heart++ })
-    fun tap(src: String) = Modifier.pointerInput(src) { detectTapGestures(onDoubleTap = { onDoubleLike(); if (heart % 2 == 0) heart++ }, onTap = { viewer = src }) }
+    val dbl by androidx.compose.runtime.rememberUpdatedState(onDoubleLike)   // свежее «нравится», а не то, что было при первом показе
+    fun tap(src: String) = Modifier.pointerInput(src) { detectTapGestures(onDoubleTap = { dbl(); if (heart % 2 == 0) heart++ }, onTap = { viewer = src }) }
     val imgs = p.images
     if (imgs.isEmpty()) return
     val shape = RoundedCornerShape(16.dp)
@@ -291,7 +293,7 @@ private fun RepostBox(id: String) {
             o == null -> Text("Загружаем…", color = MaterialTheme.colorScheme.onSurfaceVariant)
             else -> {
                 Row(verticalAlignment = Alignment.CenterVertically) { Avatar(users[o.authorId], 28.dp); Spacer(Modifier.width(8.dp)); UserName(users[o.authorId]) }
-                if (o.text.isNotEmpty()) Text(o.text, maxLines = 6, overflow = TextOverflow.Ellipsis)
+                if (o.text.isNotEmpty()) RichText(o.text, maxLines = 6)
                 if (o.images.isNotEmpty()) { if (users[o.authorId]?.banned == true) Locked("Фото недоступно", Modifier.fillMaxWidth().height(160.dp).clip(RoundedCornerShape(12.dp))) else DbImage(o.images[0], Modifier.fillMaxWidth().heightIn(max = 260.dp).clip(RoundedCornerShape(12.dp)), ContentScale.FillWidth) }
             }
         }
@@ -330,7 +332,8 @@ fun Composer(wall: String, onDone: () -> Unit) {
     val ctx = LocalContext.current
     val toast = LocalToast.current
     val scope = rememberCoroutineScope()
-    var text by rememberSaveable { mutableStateOf("") }
+    var field by rememberSaveable(stateSaver = androidx.compose.ui.text.input.TextFieldValue.Saver) { mutableStateOf(androidx.compose.ui.text.input.TextFieldValue("")) }
+    val text = field.text
     val pics = remember { mutableStateListOf<Uri>() }
     var poll by rememberSaveable { mutableStateOf(false) }
     var q by rememberSaveable { mutableStateOf("") }
@@ -342,7 +345,8 @@ fun Composer(wall: String, onDone: () -> Unit) {
     ModalBottomSheet(onDismissRequest = onDone, sheetState = sheet) {
         Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp).padding(bottom = 16.dp).imePadding(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Text(if (wall == Store.uid) "Новая запись" else "Запись на стене", style = MaterialTheme.typography.titleLarge)
-            OutlinedTextField(text, { text = it.take(4000) }, placeholder = { Text("Что у вас нового?") }, modifier = Modifier.fillMaxWidth().heightIn(min = 120.dp))
+            OutlinedTextField(field, { if (it.text.length <= 4000) field = it }, placeholder = { Text("Что у вас нового?") }, modifier = Modifier.fillMaxWidth().heightIn(min = 120.dp))
+            FormatBar { mark -> field = wrapMark(field, mark) }
             if (pics.isNotEmpty()) LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 items(pics.toList()) { u ->
                     Box(Modifier.size(88.dp).clip(RoundedCornerShape(12.dp))) {
@@ -426,7 +430,7 @@ fun PostScreen(id: String) {
                             Avatar(a, 36.dp) { nav.openProfile(c.authorId) }
                             Column(Modifier.padding(start = 10.dp).weight(1f).clip(RoundedCornerShape(4.dp, 18.dp, 18.dp, 18.dp)).background(MaterialTheme.colorScheme.surfaceContainerHigh).padding(horizontal = 12.dp, vertical = 8.dp)) {
                                 UserName(a, MaterialTheme.typography.labelLarge)
-                                Text(c.text, style = MaterialTheme.typography.bodyMedium)
+                                RichText(c.text, style = MaterialTheme.typography.bodyMedium)
                                 Row(verticalAlignment = Alignment.CenterVertically) {
                                     Text(ago(c.createdAt), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                                     Spacer(Modifier.weight(1f))
@@ -444,4 +448,38 @@ fun PostScreen(id: String) {
             }
         }
     }
+}
+
+/** Записи с хэштегом — открывается нажатием на #тег */
+@Composable
+fun TagScreen(tag: String) {
+    val (posts, more) = rememberPosts("tag:$tag") { lim -> Api.tagQuery(tag, lim) }
+    val sorted = remember(posts) { posts?.sortedByDescending { it.createdAt } }
+    BackScaffold("#$tag") { pad ->
+        PostList(sorted, more, PaddingValues(top = pad.calculateTopPadding() + 4.dp, bottom = 24.dp), empty = "С тегом #$tag пока ничего нет")
+    }
+}
+
+/** Кнопки разметки (как «Aa» на сайте): оборачивают выделенное — или ставят пару значков и курсор между ними */
+@Composable
+fun FormatBar(onMark: (String) -> Unit) {
+    Row(Modifier.horizontalScroll(androidx.compose.foundation.rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        listOf("**" to "Ж", "*" to "К", "~~" to "З", "||" to "Спойлер", "`" to "Код").forEach { (m, l) ->
+            FilterChip(false, { onMark(m) }, {
+                Text(l, fontWeight = if (m == "**") androidx.compose.ui.text.font.FontWeight.Bold else null,
+                    fontStyle = if (m == "*") androidx.compose.ui.text.font.FontStyle.Italic else null,
+                    textDecoration = if (m == "~~") androidx.compose.ui.text.style.TextDecoration.LineThrough else null,
+                    fontFamily = if (m == "`") androidx.compose.ui.text.font.FontFamily.Monospace else null)
+            }, shape = CircleShape)
+        }
+    }
+}
+
+fun wrapMark(v: androidx.compose.ui.text.input.TextFieldValue, mark: String): androidx.compose.ui.text.input.TextFieldValue {
+    val a = minOf(v.selection.start, v.selection.end).coerceIn(0, v.text.length)
+    val b = maxOf(v.selection.start, v.selection.end).coerceIn(0, v.text.length)
+    val t = v.text.substring(0, a) + mark + v.text.substring(a, b) + mark + v.text.substring(b)
+    if (t.length > 4000) return v
+    val sel = if (a == b) androidx.compose.ui.text.TextRange(a + mark.length) else androidx.compose.ui.text.TextRange(a + mark.length, b + mark.length)
+    return v.copy(text = t, selection = sel)
 }
