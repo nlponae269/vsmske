@@ -110,6 +110,8 @@ fun ProfileScreen(id: String, tab: Boolean = false) {
     val meU by Store.me.collectAsState()
     val own = id == Store.uid
     LaunchedEffect(id) { runCatching { Store.fetchUser(id) }.onFailure { toast(errText(it)) } }
+    val ctx = androidx.compose.ui.platform.LocalContext.current
+    LaunchedEffect(id) { if (!own) Api.recordGuest(ctx, id) }
     val u = if (own) meU else users[id]
     var compose by rememberSaveable { mutableStateOf(false) }
     var askOut by remember { mutableStateOf(false) }

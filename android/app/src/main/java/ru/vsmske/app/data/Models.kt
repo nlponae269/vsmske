@@ -284,3 +284,25 @@ data class Event(val id: String, val ownerId: String, val title: String, val tex
         fun from(d: DocumentSnapshot) = Event(d.id, d.str("ownerId"), d.str("title"), d.str("text"), d.str("place"), d.ms("at"), d.str("cover"), d.strs("going"), d.ms("createdAt"))
     }
 }
+
+/** ВС Ответы: вопрос и ответ */
+data class Question(val id: String, val authorId: String, val title: String, val text: String, val category: String, val answersCount: Long,
+                    val bestId: String, val createdAt: Long) {
+    companion object {
+        fun from(d: DocumentSnapshot) = Question(d.id, d.str("authorId"), d.str("title"), d.str("text"), d.str("category").ifEmpty { "other" },
+            d.getLong("answersCount") ?: 0, d.str("bestId"), d.ms("createdAt"))
+    }
+}
+
+data class Answer(val id: String, val authorId: String, val text: String, val likes: List<String>, val createdAt: Long) {
+    companion object { fun from(d: DocumentSnapshot) = Answer(d.id, d.str("authorId"), d.str("text"), d.strs("likes"), d.ms("createdAt")) }
+}
+
+/** ВС Почта: письмо с темой; каждый «удаляет» у себя */
+data class Mail(val id: String, val from: String, val to: String, val subject: String, val text: String, val read: Boolean,
+                val delFrom: Boolean, val delTo: Boolean, val createdAt: Long) {
+    companion object {
+        fun from(d: DocumentSnapshot) = Mail(d.id, d.str("from"), d.str("to"), d.str("subject"), d.str("text"), d.getBoolean("read") == true,
+            d.getBoolean("delFrom") == true, d.getBoolean("delTo") == true, d.ms("createdAt"))
+    }
+}

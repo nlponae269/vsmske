@@ -166,6 +166,15 @@ private fun Main(openPlayer: MutableState<Boolean>) {
                             composable("rates") { RatesScreen() }
                             composable("radio") { RadioScreen() }
                             composable("market") { MarketScreen() }
+                            composable("answers") { AnswersScreen() }
+                            composable("games/2048") { Game2048Screen() }
+                            composable("calc") { CalcScreen() }
+                            composable("guests") { GuestsScreen() }
+                            composable("timer") { TimerScreen() }
+                            composable("dice") { DiceScreen() }
+                            composable("q/{id}") { QuestionScreen(it.arguments?.getString("id") ?: "") }
+                            composable("mail") { MailScreen() }
+                            composable("mail/{id}") { MailReadScreen(it.arguments?.getString("id") ?: "") }
                             composable("events") { EventsScreen() }
                             composable("event/{id}") { EventScreen(it.arguments?.getString("id") ?: "") }
                             composable("lot/{id}") { LotScreen(it.arguments?.getString("id") ?: "") }
@@ -199,7 +208,7 @@ private class NavItem(val r: String, val label: String, val on: ImageVector, val
 private fun navItems(): List<NavItem> {
     val me = Store.uid
     val unread = Store.chats.collectAsState().value.count { it.unread(me) }
-    val reqs = Store.incoming.collectAsState().value.size + Store.notifs.collectAsState().value.let { Store.unseenNotifs() }
+    val reqs = Store.incoming.collectAsState().value.size + Store.notifs.collectAsState().value.let { Store.unseenNotifs() } + Store.mailIn.collectAsState().value.count { !it.read }
     return listOf(
         NavItem("feed", "Лента", Icons.Rounded.Home, Icons.Outlined.Home),
         NavItem("video", "Видео", Icons.Rounded.SmartDisplay, Icons.Outlined.SmartDisplay),

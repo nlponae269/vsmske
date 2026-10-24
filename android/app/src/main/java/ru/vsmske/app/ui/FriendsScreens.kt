@@ -164,7 +164,7 @@ fun NotifsScreen() {
                         }
                     },
                     colors = ListItemDefaults.colors(containerColor = if (n.createdAt > seen) MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.45f) else Color.Transparent),
-                    modifier = Modifier.clickable { if (n.postId.isNotEmpty() && n.type in setOf("like", "comment", "wall", "repost", "mention")) nav.navigate("post/${n.postId}") else if (n.type == "gift") nav.navigate("me") else nav.openProfile(n.from) },
+                    modifier = Modifier.clickable { if (n.postId.isNotEmpty() && n.type in setOf("like", "comment", "wall", "repost", "mention")) nav.navigate("post/${n.postId}") else if (n.postId.isNotEmpty() && n.type in setOf("answer", "best")) nav.navigate("q/${n.postId}") else if (n.type == "gift") nav.navigate("me") else nav.openProfile(n.from) },
                 )
             }
         }

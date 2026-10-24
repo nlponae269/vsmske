@@ -159,6 +159,91 @@ object Api {
     }
     suspend fun deleteNote(id: String) { db.collection("notes").document(id).delete().await() }
 
+    /* ---------- Гости страницы (как recordGuest() на сайте: не чаще раза в 30 минут на страницу) ---------- */
+    fun recordGuest(ctx: android.content.Context, pid: String) {
+        if (pid.isEmpty() || pid == me || Store.me.value?.isBanned != false) return
+        val p = ctx.getSharedPreferences("vs", android.content.Context.MODE_PRIVATE)
+        val k = "guest_$pid"
+        if (System.currentTimeMillis() - p.getLong(k, 0) < 30 * 60_000L) return
+        p.edit().putLong(k, System.currentTimeMillis()).apply()
+        db.collection("users").document(pid).collection("guests").document(me).set(mapOf("at" to now))
+    }
+    suspend fun guests(): List<Pair<String, Long>> =
+        db.collection("users").document(me).collection("guests").orderBy("at", Query.Direction.DESCENDING).limit(50).get().await()
+            .documents.map { it.id to ((it.get("at") as? com.google.firebase.Timestamp)?.toDate()?.time ?: 0L) }
+
+    /* ---------- ВС Ответы ---------- */
+    val Q_CATS = linkedMapOf("life" to "Жизнь", "study" to "Учёба", "tech" to "Техника", "games" to "Игры", "sport" to "Спорт",
+        "love" to "Отношения", "food" to "Еда", "other" to "Другое")
+    /** Как на сайте: «Все» — по дате, раздел и «Мои» — без orderBy (сортировка на телефоне, индекс не нужен) */
+    fun questionsQuery(cat: String): Query = when (cat) {
+        "mine" -> db.collection("questions").whereEqualTo("authorId", me).limit(100)
+        "all" -> db.collection("questions").orderBy("createdAt", Query.Direction.DESCENDING).limit(60)
+        else -> db.collection("questions").whereEqualTo("category", cat).limit(100)
+    }
+    fun answersQuery(qid: String): Query = db.collection("questions").document(qid).collection("answers").orderBy("createdAt", Query.Direction.ASCENDING).limit(300)
+    suspend fun ask(title: String, text: String, cat: String): String {
+        val t = title.trim()
+        if (t.length < 5) error("Вопрос слишком короткий")
+        val ref = db.collection("questions").document()
+        ref.set(mapOf("authorId" to me, "title" to t.take(150), "text" to text.trim().take(2000), "category" to (cat.takeIf { it in Q_CATS } ?: "other"),
+            "answersCount" to 0, "bestId" to "", "createdAt" to now)).await()
+        return ref.id
+    }
+    suspend fun answer(q: Question, text: String) {
+        val t = text.trim().take(3000); if (t.isEmpty()) return
+        val b = db.batch()
+        b.set(db.collection("questions").document(q.id).collection("answers").document(), mapOf("authorId" to me, "text" to t, "likes" to emptyList<String>(), "createdAt" to now))
+        b.update(db.collection("questions").document(q.id), "answersCount", FieldValue.increment(1))
+        b.commit().await()
+        notify(q.authorId, "answer", q.id, t)
+    }
+    suspend fun likeAnswer(qid: String, a: Answer) {
+        db.collection("questions").document(qid).collection("answers").document(a.id)
+            .update("likes", if (me in a.likes) FieldValue.arrayRemove(me) else FieldValue.arrayUnion(me)).await()
+    }
+    suspend fun bestAnswer(q: Question, a: Answer) {
+        db.collection("questions").document(q.id).update("bestId", a.id).await()
+        notify(a.authorId, "best", q.id, q.title)
+    }
+    suspend fun deleteAnswer(q: Question, a: Answer) {
+        val qref = db.collection("questions").document(q.id)
+        // правила разрешают менять bestId и answersCount только по отдельности — поэтому снятие «лучшего» идёт своей записью
+        if (q.bestId == a.id && q.authorId == me) qref.update("bestId", "").await()
+        val b = db.batch()
+        b.delete(qref.collection("answers").document(a.id))
+        b.update(qref, "answersCount", FieldValue.increment(-1))
+        b.commit().await()
+    }
+    suspend fun deleteQuestion(q: Question) {
+        val refs = db.collection("questions").document(q.id).collection("answers").get().await().documents.map { it.reference }
+        refs.chunked(400).forEach { part -> val b = db.batch(); part.forEach(b::delete); b.commit().await() }
+        db.collection("questions").document(q.id).delete().await()
+    }
+
+    /* ---------- ВС Почта (адрес — ник@vsmske) ---------- */
+    fun mailOutQuery(): Query = db.collection("mail").whereEqualTo("from", me).limit(300)
+    /** Отправить письмо; адрес — ник, «@ник» или «ник@vsmske» */
+    suspend fun sendMail(address: String, subject: String, text: String) {
+        val nick = address.trim().lowercase().removePrefix("@").removeSuffix("@vsmske")
+        val t = text.trim()
+        if (nick.isEmpty()) error("Укажите адрес")
+        if (t.isEmpty()) error("Письмо пустое")
+        val to = db.collection("usernames").document(nick).get().await().getString("uid") ?: error("Нет пользователя с адресом $nick@vsmske")
+        db.collection("mail").add(mapOf("from" to me, "to" to to, "subject" to subject.trim().take(200), "text" to t.take(10000),
+            "read" to (to == me), "delFrom" to false, "delTo" to false, "createdAt" to now)).await()
+    }
+    suspend fun markMailRead(m: Mail) { if (m.to == me && !m.read) db.collection("mail").document(m.id).update("read", true).await() }
+    /** Удалить у себя; документ стирается, когда удалили оба (как на сайте) */
+    suspend fun deleteMail(m: Mail) {
+        val ref = db.collection("mail").document(m.id)
+        when {
+            m.from == me && m.to == me -> { ref.update("delTo", true).await(); ref.delete().await() }
+            m.to == me -> if (m.delFrom) ref.delete().await() else ref.update("delTo", true).await()
+            else -> if (m.delTo) ref.delete().await() else ref.update("delFrom", true).await()
+        }
+    }
+
     suspend fun deletePost(p: Post) { db.collection("posts").document(p.id).delete().await() }
 
     suspend fun addComment(p: Post, text: String) {
