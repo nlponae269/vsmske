@@ -192,7 +192,7 @@ fun PostCard(p: Post, onOpen: (() -> Unit)? = null, nested: Boolean = false) {
 @Composable
 private fun Pill(icon: androidx.compose.ui.graphics.vector.ImageVector, n: Int, color: Color, on: Boolean = false, onClick: () -> Unit) {
     Row(
-        Modifier.clip(RoundedCornerShape(50)).background(if (on) Vs.pink.copy(alpha = 0.16f) else Color(0x14FFFFFF))
+        Modifier.clip(RoundedCornerShape(50)).background(if (on) MaterialTheme.colorScheme.tertiaryContainer else MaterialTheme.colorScheme.surfaceContainerHigh)
             .clickable(onClick = onClick).padding(horizontal = 12.dp, vertical = 7.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -235,16 +235,16 @@ private fun PollView(p: Post) {
     val me = Fb.uid
     val mine = poll.votes[me]
     val total = poll.votes.size
-    Column(Modifier.padding(top = 10.dp).fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(Color(0x0FFFFFFF)).padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+    Column(Modifier.padding(top = 10.dp).fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(MaterialTheme.colorScheme.surfaceContainer).padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
         Text(poll.q, style = MaterialTheme.typography.titleSmall)
         poll.options.forEachIndexed { i, o ->
             val n = poll.votes.values.count { it == i }
             val pct = if (total > 0) n.toFloat() / total else 0f
             Box(
-                Modifier.fillMaxWidth().height(40.dp).clip(RoundedCornerShape(12.dp)).background(Color(0x14FFFFFF))
+                Modifier.fillMaxWidth().height(40.dp).clip(RoundedCornerShape(12.dp)).background(MaterialTheme.colorScheme.surfaceContainerHighest)
                     .clickable { scope.safe(toast) { Repo.vote(p, i) } },
             ) {
-                if (mine != null) Box(Modifier.fillMaxWidth(pct).height(40.dp).background(if (mine == i) Vs.p1.copy(alpha = 0.55f) else Color(0x22FFFFFF)))
+                if (mine != null) Box(Modifier.fillMaxWidth(pct).height(40.dp).background(if (mine == i) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.6f)))
                 Row(Modifier.fillMaxSize().padding(horizontal = 12.dp), verticalAlignment = Alignment.CenterVertically) {
                     Text(o, modifier = Modifier.weight(1f), fontWeight = if (mine == i) FontWeight.SemiBold else FontWeight.Normal)
                     if (mine != null) Text("${(pct * 100).toInt()}%", style = MaterialTheme.typography.labelMedium)
