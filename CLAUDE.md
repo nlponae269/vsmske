@@ -149,7 +149,10 @@
 **3.4:** сообщества — `ClubsScreens.kt` (`ClubsScreen` `clubs`, `ClubScreen` `club/{id}`, `GroupAvatar`, кэш `Groups` и подпись `GroupLabel` у записей), данные `Group` в Models,
 `Media.groupsQuery/groupsByIds/setSubscribed/createGroup` (подписка — пачка `users.groups` + `membersCount` ±1, как на сайте), запись от админа — `Composer(wall, group = true)` → `groupId`;
 защита от вылетов: битые ID3-теги, повторяющиеся треки в плейлисте (ключи строк с номером).
-**3.5:** беседы — `Api.createRoom(name, ids)` (id `g_…`, «Беседа создана», как на сайте), `Api.leaveRoom`, шторка `NewRoomSheet` (кнопка в «Чатах»), выход из беседы в шапке чата (не владельцу). 2.0 написано с нуля (код 1.x не используется). Без прямой просьбы приложение не трогаем.
+**3.5:** беседы — `Api.createRoom(name, ids)` (id `g_…`, «Беседа создана», как на сайте), `Api.leaveRoom`, шторка `NewRoomSheet` (кнопка в «Чатах»), выход из беседы в шапке чата (не владельцу).
+**3.6:** правка своей записи (`Api.editPost` — text, tags, editedAt); `ServicesScreens.kt` — ВС Заметки (`notes`, `Api.notesQuery/saveNote/deleteNote`, цвета как на сайте), Погода (`weather`, Open-Meteo,
+город в prefs `weather_city`), Курсы (`rates`, cbr-xml-daily.ru, конвертер); вход через Google — `Api.signInGoogle` (Credential Manager → idToken web-клиента `GOOGLE_CLIENT` → `signInWithCredential`).
+Чтобы вход через Google работал, в Google Cloud → Credentials нужен OAuth-клиент типа Android: пакет `ru.vsmske.app`, SHA-1 `94:74:DA:67:A3:F1:1D:47:10:8B:78:3D:5E:D2:F9:BB:81:B3:35:93` (ключ `vsmske.jks`). 2.0 написано с нуля (код 1.x не используется). Без прямой просьбы приложение не трогаем.
 Нативное приложение (Kotlin + Jetpack Compose, Material 3), не обёртка над сайтом. Та же база Firebase; документы пишутся **ровно в том виде, что у сайта**
 (правила Firestore для приложения не менялись). Если меняешь формат записи на сайте — поправь и `data/Api.kt` / `data/Media.kt`.
 - `data/Fire.kt` — подключение настройками веб-приложения (без google-services.json), `-Pemu=true` — эмуляторы 10.0.2.2:8080/9099 (только для проверки).

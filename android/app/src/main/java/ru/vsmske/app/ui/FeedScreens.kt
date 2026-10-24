@@ -206,6 +206,7 @@ fun PostCard(p: Post, open: Boolean = false) {
     val liked = me in p.likes
     var menu by remember { mutableStateOf(false) }
     var ask by remember { mutableStateOf(false) }
+    var editing by remember { mutableStateOf(false) }
     val canDel = p.authorId == me || p.wallId == me || Store.me.value?.admin == true
     Card(Modifier.fillMaxWidth().padding(horizontal = 12.dp).animateContentSize(), shape = RoundedCornerShape(28.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)) {
@@ -230,6 +231,7 @@ fun PostCard(p: Post, open: Boolean = false) {
                             onClick = { menu = false; scope.safe(toast) { toast(if (Api.toggleBookmark(p)) "Добавлено в закладки" else "Убрано из закладок") } })
                         DropdownMenuItem({ Text("Поделиться ссылкой") }, leadingIcon = { Icon(Icons.Rounded.Share, null) },
                             onClick = { menu = false; share(ctx, SITE + "post/" + p.id) })
+                        if (p.authorId == me && p.repostOf.isEmpty()) DropdownMenuItem({ Text("Изменить") }, leadingIcon = { Icon(Icons.Rounded.Edit, null) }, onClick = { menu = false; editing = true })
                         if (canDel) DropdownMenuItem({ Text("Удалить") }, leadingIcon = { Icon(Icons.Rounded.Delete, null) }, onClick = { menu = false; ask = true })
                     }
                 }
@@ -247,6 +249,18 @@ fun PostCard(p: Post, open: Boolean = false) {
                 if (p.authorId != me && p.groupId.isEmpty()) FilterChip(false, { scope.safe(toast) { ru.vsmske.app.data.Media.repost(p); toast("Репост на вашей стене") } },
                     { Text(if (p.reposts > 0) "${p.reposts}" else "") }, leadingIcon = { Icon(Icons.Rounded.Repeat, "Поделиться", Modifier.size(18.dp)) }, shape = CircleShape)
             }
+        }
+    }
+    if (editing) {
+        var field by remember { mutableStateOf(androidx.compose.ui.text.input.TextFieldValue(p.text)) }
+        var busy by remember { mutableStateOf(false) }
+        VsSheet({ if (!busy) editing = false }) {
+            Text("Изменить запись", style = MaterialTheme.typography.headlineSmall)
+            OutlinedTextField(field, { if (it.text.length <= 4000) field = it }, Modifier.fillMaxWidth().heightIn(min = 140.dp).padding(top = 12.dp))
+            Spacer(Modifier.height(8.dp))
+            FormatBar { mark -> field = wrapMark(field, mark) }
+            Button({ busy = true; scope.safe({ busy = false; toast(it) }) { Api.editPost(p, field.text); toast("Изменено"); editing = false } },
+                Modifier.fillMaxWidth().padding(top = 12.dp).height(52.dp), enabled = !busy && field.text != p.text) { Text("Сохранить") }
         }
     }
     if (ask) AlertDialog({ ask = false }, title = { Text("Удалить запись?") },

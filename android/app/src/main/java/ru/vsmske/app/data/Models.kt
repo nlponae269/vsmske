@@ -263,3 +263,7 @@ data class Group(val id: String, val name: String, val about: String, val photo:
             d.str("ownerId"), d.strs("admins"), (d.getLong("membersCount") ?: 0).toInt().coerceAtLeast(0), d.ms("createdAt"))
     }
 }
+
+data class Note(val id: String, val title: String, val text: String, val color: String, val pinned: Boolean, val updatedAt: Long) {
+    companion object { fun from(d: DocumentSnapshot) = Note(d.id, d.str("title"), d.str("text"), d.str("color"), d.getBoolean("pinned") == true, d.ms("updatedAt")) }
+}

@@ -21,6 +21,35 @@ object Api {
     suspend fun reset(email: String) { Fire.auth.sendPasswordResetEmail(email.trim()).await() }
     fun signOut() = Fire.auth.signOut()
 
+    /** Web client проекта — тот же, что GOOGLE_CLIENT на сайте (Firebase принимает его токены) */
+    private const val GOOGLE_CLIENT = "195735209722-8tjsd33moqquhreivj07f48l5cga0r3d.apps.googleusercontent.com"
+
+    /**
+     * Вход через Google: системное окно выбора аккаунта (Credential Manager) → idToken → Firebase.
+     * Тот же аккаунт, что на сайте. Для работы владелец один раз добавляет в Google Cloud Android-клиент
+     * (пакет ru.vsmske.app и SHA-1 ключа подписи) — иначе Google отвечает ошибкой настройки.
+     * ctx — экран (Activity). Возвращает false, если человек сам закрыл окно.
+     */
+    suspend fun signInGoogle(ctx: android.content.Context): Boolean {
+        val cm = androidx.credentials.CredentialManager.create(ctx)
+        val req = androidx.credentials.GetCredentialRequest.Builder()
+            .addCredentialOption(com.google.android.libraries.identity.googleid.GetSignInWithGoogleOption.Builder(GOOGLE_CLIENT).build()).build()
+        val res = try { cm.getCredential(ctx, req) }
+        catch (e: androidx.credentials.exceptions.GetCredentialCancellationException) { return false }
+        catch (e: androidx.credentials.exceptions.NoCredentialException) { error("На телефоне нет аккаунта Google — добавьте его в настройках телефона") }
+        catch (e: androidx.credentials.exceptions.GetCredentialException) {
+            val m = (e.message ?: "") + " " + e.type
+            error(if ("10" in m || "developer" in m.lowercase() || "configuration" in m.lowercase()) "Вход через Google в приложении ещё не настроен — войдите по почте или на сайте"
+                  else "Google не дал войти: ${e.message ?: "попробуйте ещё раз"}")
+        }
+        val c = res.credential
+        if (c !is androidx.credentials.CustomCredential || c.type != com.google.android.libraries.identity.googleid.GoogleIdTokenCredential.TYPE_GOOGLE_ID_TOKEN_CREDENTIAL)
+            error("Google не вернул данные входа")
+        val token = com.google.android.libraries.identity.googleid.GoogleIdTokenCredential.createFrom(c.data).idToken
+        Fire.auth.signInWithCredential(com.google.firebase.auth.GoogleAuthProvider.getCredential(token, null)).await()
+        return true
+    }
+
     /** Новый профиль: ник и профиль — одной пачкой (так требуют правила) */
     suspend fun createProfile(name: String, nick: String, city: String) {
         val n = nick.trim().lowercase()
@@ -112,6 +141,23 @@ object Api {
     }
 
     suspend fun vote(p: Post, i: Int) { db.collection("posts").document(p.id).update(FieldPath.of("poll", "votes", me), i).await() }
+
+    /** Правка своей записи: текст, теги, отметка «изменено» (как на сайте) */
+    suspend fun editPost(p: Post, text: String) {
+        val t = text.trim().take(4000)
+        if (t.isEmpty() && p.images.isEmpty() && p.poll == null && p.repostOf.isEmpty()) error("Запись не может быть пустой")
+        db.collection("posts").document(p.id).update(mapOf("text" to t, "tags" to extractTags(t), "editedAt" to now)).await()
+    }
+
+    /* ---------- ВС Заметки (видит только хозяин) ---------- */
+    fun notesQuery(): Query = db.collection("notes").whereEqualTo("ownerId", me).limit(300)
+    suspend fun saveNote(id: String?, title: String, text: String, color: String, pinned: Boolean): String {
+        val ref = if (id == null) db.collection("notes").document() else db.collection("notes").document(id)
+        ref.set(mapOf("ownerId" to me, "title" to title.trim().take(120), "text" to text.take(20000),
+            "color" to (color.takeIf { it in listOf("yellow", "green", "blue", "pink", "violet") } ?: ""), "pinned" to pinned, "updatedAt" to now)).await()
+        return ref.id
+    }
+    suspend fun deleteNote(id: String) { db.collection("notes").document(id).delete().await() }
 
     suspend fun deletePost(p: Post) { db.collection("posts").document(p.id).delete().await() }
 

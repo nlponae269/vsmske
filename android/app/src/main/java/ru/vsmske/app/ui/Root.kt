@@ -161,6 +161,9 @@ private fun Main(openPlayer: MutableState<Boolean>) {
                             composable("search") { SearchScreen(onOpenPlayer = open) }
                             composable("saved") { SavedScreen() }
                             composable("clubs") { ClubsScreen() }
+                            composable("notes") { NotesScreen() }
+                            composable("weather") { WeatherScreen() }
+                            composable("rates") { RatesScreen() }
                             composable("club/{id}") { ClubScreen(it.arguments?.getString("id") ?: "") }
                             composable("edit") { EditProfileScreen() }
                             composable("profile/{id}", listOf(navArgument("id") { type = NavType.StringType })) { ProfileScreen(it.arguments?.getString("id") ?: Store.uid) }
