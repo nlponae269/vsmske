@@ -1,5 +1,6 @@
 package ru.vsmske.app.ui
 
+import androidx.compose.runtime.collectAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -28,6 +29,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.PushPin
@@ -339,6 +341,51 @@ fun RatesScreen() {
                         }
                     }
                 }
+            }
+        }
+    }
+}
+
+/* ---------- ВС Радио (те же станции, что на сайте; играет в общем плеере) ---------- */
+
+private val RADIO = listOf(
+    listOf("record", "Радио Record", "Танцевальная музыка", "https://radiorecord.hostingradio.ru/rr_main96.aacp", "#F2994A"),
+    listOf("europa", "Европа Плюс", "Поп-хиты", "https://ep256.hostingradio.ru:8052/europaplus256.mp3", "#2F80ED"),
+    listOf("rusradio", "Русское Радио", "Русская поп-музыка", "https://rusradio.hostingradio.ru/rusradio96.aacp", "#D0462F"),
+    listOf("dfm", "DFM", "Dance FM", "https://dfm.hostingradio.ru/dfm96.aacp", "#B4398F"),
+    listOf("maximum", "Maximum", "Рок и альтернатива", "https://maximum.hostingradio.ru/maximum96.aacp", "#4E5B76"),
+    listOf("chill", "Record Chill-Out", "Спокойная музыка", "https://radiorecord.hostingradio.ru/chil96.aacp", "#1F8A5B"),
+    listOf("rock", "Record Rock", "Рок", "https://radiorecord.hostingradio.ru/rock96.aacp", "#141A33"),
+    listOf("lofi", "Record Lo-Fi", "Лоу-фай для учёбы", "https://radiorecord.hostingradio.ru/lofi96.aacp", "#6A47C9"),
+).map { (id, t, a, url, _) -> ru.vsmske.app.data.Track("radio:$id", "", t, a, url, "radio", 0.0, "", "", 0) }
+private val RADIO_COLORS = listOf("#F2994A", "#2F80ED", "#D0462F", "#B4398F", "#4E5B76", "#1F8A5B", "#141A33", "#6A47C9")
+
+@Composable
+fun RadioScreen() {
+    val ctx = LocalContext.current
+    val ms by ru.vsmske.app.music.Music.state.collectAsState()
+    BackScaffold("Радио") { pad ->
+        androidx.compose.foundation.lazy.grid.LazyVerticalGrid(androidx.compose.foundation.lazy.grid.GridCells.Adaptive(160.dp), Modifier.fillMaxSize(),
+            contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = pad.calculateTopPadding(), bottom = 24.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            items(RADIO.size) { i ->
+                val st = RADIO[i]
+                val c = parseColor(RADIO_COLORS[i])
+                val on = ms.track?.id == st.id
+                Column(Modifier.fillMaxWidth().height(140.dp).clip(RoundedCornerShape(28.dp))
+                    .background(Brush.linearGradient(listOf(c, c.copy(alpha = 0.7f))))
+                    .clickable { if (on) ru.vsmske.app.music.Music.toggle() else ru.vsmske.app.music.Music.play(ctx, RADIO, i) }.padding(16.dp)) {
+                    Box(Modifier.size(40.dp).clip(CircleShape).background(Color.White.copy(alpha = 0.25f)), contentAlignment = Alignment.Center) {
+                        if (on && ms.playing) Bars(true, Color.White) else Icon(Icons.Rounded.PlayArrow, "Слушать", tint = Color.White)
+                    }
+                    Spacer(Modifier.weight(1f))
+                    Text(st.title, color = Color.White, style = MaterialTheme.typography.titleMedium, maxLines = 1)
+                    Text(st.artist, color = Color.White.copy(alpha = 0.85f), style = MaterialTheme.typography.bodySmall, maxLines = 1)
+                }
+            }
+            item(span = { androidx.compose.foundation.lazy.grid.GridItemSpan(maxLineSpan) }) {
+                Text("Если станция не включается, её эфир сейчас недоступен — попробуйте другую.", style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(8.dp))
             }
         }
     }

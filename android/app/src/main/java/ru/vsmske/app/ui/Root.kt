@@ -164,6 +164,11 @@ private fun Main(openPlayer: MutableState<Boolean>) {
                             composable("notes") { NotesScreen() }
                             composable("weather") { WeatherScreen() }
                             composable("rates") { RatesScreen() }
+                            composable("radio") { RadioScreen() }
+                            composable("market") { MarketScreen() }
+                            composable("events") { EventsScreen() }
+                            composable("event/{id}") { EventScreen(it.arguments?.getString("id") ?: "") }
+                            composable("lot/{id}") { LotScreen(it.arguments?.getString("id") ?: "") }
                             composable("club/{id}") { ClubScreen(it.arguments?.getString("id") ?: "") }
                             composable("edit") { EditProfileScreen() }
                             composable("profile/{id}", listOf(navArgument("id") { type = NavType.StringType })) { ProfileScreen(it.arguments?.getString("id") ?: Store.uid) }

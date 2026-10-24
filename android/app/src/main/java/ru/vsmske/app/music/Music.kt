@@ -125,7 +125,8 @@ object Music {
     private fun item(t: Track): MediaItem {
         val meta = MediaMetadata.Builder().setTitle(t.title).setArtist(t.artist.ifEmpty { "Неизвестный исполнитель" }).setAlbumTitle("ВС Музыка")
         if (t.cover.startsWith("data:image/")) runCatching { meta.setArtworkData(Base64.decode(t.cover.substringAfter(','), Base64.DEFAULT), MediaMetadata.PICTURE_TYPE_FRONT_COVER) }
-        return MediaItem.Builder().setMediaId(t.id).setUri("vsmske://file/${t.fileId}".toUri()).setMediaMetadata(meta.build()).build()
+        val uri = if (t.type == "radio") t.fileId else "vsmske://file/${t.fileId}"   // радио — прямой поток с сервера станции
+        return MediaItem.Builder().setMediaId(t.id).setUri(uri.toUri()).setMediaMetadata(meta.build()).build()
     }
 
     private fun with(ctx: Context, a: (MediaController) -> Unit) { val c = ctl; if (c != null) a(c) else { pending = a; connect(ctx) } }
@@ -146,6 +147,7 @@ object Music {
         if (t.id != statId) { statId = t.id; statMs = 0; statDone = false; statLast = now; return }
         val d = now - statLast; statLast = now
         if (d in 1..1000) statMs += (d * s.speed).toLong()   // большой разрыв — была пауза, её не считаем
+        if (t.type == "radio") return   // радио в статистику не считаем
         if (!statDone && (statMs >= 30_000 || (s.duration > 0 && statMs >= s.duration / 2))) { statDone = true; countPlay(t.id) }
     }
     private fun countPlay(id: String) {

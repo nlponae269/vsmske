@@ -267,3 +267,20 @@ data class Group(val id: String, val name: String, val about: String, val photo:
 data class Note(val id: String, val title: String, val text: String, val color: String, val pinned: Boolean, val updatedAt: Long) {
     companion object { fun from(d: DocumentSnapshot) = Note(d.id, d.str("title"), d.str("text"), d.str("color"), d.getBoolean("pinned") == true, d.ms("updatedAt")) }
 }
+
+/** ВС Маркет: объявление */
+data class Lot(val id: String, val ownerId: String, val title: String, val price: Long, val category: String, val city: String, val text: String,
+               val image: String, val sold: Boolean, val createdAt: Long) {
+    companion object {
+        fun from(d: DocumentSnapshot) = Lot(d.id, d.str("ownerId"), d.str("title"), d.getLong("price") ?: 0, d.str("category").ifEmpty { "other" }, d.str("city"),
+            d.str("text"), d.str("image"), d.getBoolean("sold") == true, d.ms("createdAt"))
+    }
+}
+
+/** ВС События */
+data class Event(val id: String, val ownerId: String, val title: String, val text: String, val place: String, val at: Long, val cover: String,
+                 val going: List<String>, val createdAt: Long) {
+    companion object {
+        fun from(d: DocumentSnapshot) = Event(d.id, d.str("ownerId"), d.str("title"), d.str("text"), d.str("place"), d.ms("at"), d.str("cover"), d.strs("going"), d.ms("createdAt"))
+    }
+}

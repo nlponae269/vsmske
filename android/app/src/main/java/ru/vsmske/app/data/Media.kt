@@ -246,6 +246,35 @@ object Media {
         return ref.id
     }
 
+    /* ---------- ВС Маркет (как на сайте) ---------- */
+    val MKT_CATS = linkedMapOf("electronics" to "Электроника", "clothes" to "Одежда", "home" to "Для дома", "auto" to "Авто",
+        "hobby" to "Хобби и спорт", "kids" to "Детям", "services" to "Услуги", "other" to "Другое")
+    fun marketQuery(cat: String): Query = when (cat) {
+        "mine" -> db.collection("market").whereEqualTo("ownerId", me).limit(100)
+        "all" -> db.collection("market").orderBy("createdAt", Query.Direction.DESCENDING).limit(60)
+        else -> db.collection("market").whereEqualTo("category", cat).limit(100)
+    }
+    suspend fun createLot(ctx: Context, title: String, price: Long, cat: String, city: String, text: String, photo: Uri?): String {
+        val image = if (photo != null) Images.compress(ctx, photo, 1080, 440_000) else ""
+        return db.collection("market").add(mapOf("ownerId" to me, "title" to title.trim().take(100), "price" to price.coerceIn(0, 1_000_000_000),
+            "category" to (cat.takeIf { it in MKT_CATS } ?: "other"), "city" to city.trim().take(40), "text" to text.trim().take(3000),
+            "image" to image, "sold" to false, "createdAt" to now)).await().id
+    }
+    suspend fun setSold(l: Lot, sold: Boolean) { db.collection("market").document(l.id).update("sold", sold).await() }
+    suspend fun deleteLot(l: Lot) { db.collection("market").document(l.id).delete().await() }
+
+    /* ---------- ВС События ---------- */
+    fun eventsQuery(): Query = db.collection("events").limit(200)
+    suspend fun createEvent(ctx: Context, title: String, text: String, place: String, at: Long, cover: Uri?): String {
+        val img = if (cover != null) Images.compress(ctx, cover, 1280, 440_000) else ""
+        return db.collection("events").add(mapOf("ownerId" to me, "title" to title.trim().take(100), "text" to text.trim().take(2000), "place" to place.trim().take(120),
+            "at" to com.google.firebase.Timestamp(java.util.Date(at)), "cover" to img, "going" to listOf(me), "createdAt" to now)).await().id
+    }
+    suspend fun toggleGoing(e: Event) {
+        db.collection("events").document(e.id).update("going", if (me in e.going) FieldValue.arrayRemove(me) else FieldValue.arrayUnion(me)).await()
+    }
+    suspend fun deleteEvent(e: Event) { db.collection("events").document(e.id).delete().await() }
+
     /* ---------- Эфиры ---------- */
     fun liveQuery(): Query = db.collection("streams").whereEqualTo("live", true).limit(30)
 }

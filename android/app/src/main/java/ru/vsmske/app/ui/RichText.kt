@@ -90,9 +90,9 @@ fun siteRoute(url: String): String? {
     if (r.startsWith("u/")) r = "@" + r.removePrefix("u/")
     return when {
         r.isEmpty() || r == "feed" -> "feed"
-        Regex("^(post|video|videos|clips|live|album|albums|club)/[\\w-]+$").matches(r) -> r
+        Regex("^(post|video|videos|clips|live|album|albums|club|lot|event)/[\\w-]+$").matches(r) -> r
         r == "clips" -> "clips/-"
-        r == "live" || r == "video" || r == "music" || r == "disk" || r == "clubs" -> r
+        r == "live" || r == "video" || r == "music" || r == "disk" || r == "clubs" || r == "market" || r == "events" || r == "radio" || r == "notes" || r == "weather" || r == "rates" -> r
         r.startsWith("id/") -> "profile:" + r.removePrefix("id/")
         r.startsWith("@") && r.length > 1 -> "nick:" + r.removePrefix("@").lowercase()
         r.startsWith("tag/") -> r

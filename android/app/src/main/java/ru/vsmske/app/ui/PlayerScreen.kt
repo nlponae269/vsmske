@@ -167,6 +167,7 @@ fun PlayerScreen(onClose: () -> Unit) {
     val accent by animateColorAsState(pal.accent, tween(800), label = "accent")
     val onAccent by animateColorAsState(pal.onAccent, tween(800), label = "onAccent")
     val saved = t.id in (me?.tracks ?: emptyList())
+    val radio = t.type == "radio"   // радиостанция: без перемотки, ♡, плейлистов и правки
     var dragY by remember { mutableStateOf(0f) }
     DarkSystemBars()
 
@@ -187,11 +188,12 @@ fun PlayerScreen(onClose: () -> Unit) {
                 Spacer(Modifier.weight(1f))
                 ViewSwitch(view, t.lyrics.isNotBlank(), accent, onAccent) { view = it }
                 Spacer(Modifier.weight(1f))
-                if (t.ownerId == Store.uid) IconButton({ sheet = "edit" }) { Icon(Icons.Rounded.Edit, "Изменить трек и текст", tint = Color.White) }
-                IconButton({ sheet = "playlist" }) { Icon(Icons.AutoMirrored.Rounded.PlaylistAdd, "В плейлист", tint = Color.White) }
+                if (!radio && t.ownerId == Store.uid) IconButton({ sheet = "edit" }) { Icon(Icons.Rounded.Edit, "Изменить трек и текст", tint = Color.White) }
+                if (!radio) IconButton({ sheet = "playlist" }) { Icon(Icons.AutoMirrored.Rounded.PlaylistAdd, "В плейлист", tint = Color.White) }
+                else Spacer(Modifier.size(48.dp))
             }
 
-            if (view != "art") MiniHeader(t, saved, accent) { scope.safe(toast) { Api.toggleSaved(t) } }
+            if (view != "art") MiniHeader(t, saved, accent, showHeart = !radio) { scope.safe(toast) { Api.toggleSaved(t) } }
 
             Box(Modifier.weight(1f).fillMaxWidth().padding(vertical = 12.dp), contentAlignment = Alignment.Center) {
                 AnimatedContent(view, transitionSpec = { (fadeIn(tween(320)) + scaleIn(initialScale = 0.96f)) togetherWith fadeOut(tween(200)) }, label = "view") { v ->
@@ -209,12 +211,15 @@ fun PlayerScreen(onClose: () -> Unit) {
                         modifier = Modifier.clickable { if (t.lyrics.isNotBlank()) view = "lyrics" })
                     Text(t.artist.ifEmpty { "Неизвестный исполнитель" }, style = MaterialTheme.typography.bodyLarge, color = Color.White.copy(alpha = 0.7f), maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
-                HeartButton(saved, accent) { scope.safe(toast) { Api.toggleSaved(t); toast(if (saved) "Убрано из ваших треков" else "Добавлено в ваши треки") } }
+                if (!radio) HeartButton(saved, accent) { scope.safe(toast) { Api.toggleSaved(t); toast(if (saved) "Убрано из ваших треков" else "Добавлено в ваши треки") } }
             }
 
             val dur = s.duration.coerceAtLeast(1)
             var drag by remember { mutableStateOf<Float?>(null) }
             val pos = rememberFramePos()
+            if (radio) Row(Modifier.fillMaxWidth().padding(top = 20.dp, bottom = 8.dp), horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
+                LiveBadge(); Text("  Прямой эфир", style = MaterialTheme.typography.titleSmall, color = Color.White)
+            } else {
             WavySeek({ drag ?: (pos.value * 1000 / dur).toFloat().coerceIn(0f, 1f) }, s.playing, accent, Modifier.fillMaxWidth().padding(top = 12.dp),
                 onDrag = { drag = it }, onDone = { drag?.let { Music.seek((it * dur).toLong()) }; drag = null })
             Row(Modifier.fillMaxWidth()) {
@@ -223,6 +228,7 @@ fun PlayerScreen(onClose: () -> Unit) {
                 if (s.speed != 1f) Text("${fmtSpeed(s.speed)}×", style = MaterialTheme.typography.labelMedium, color = accent)
                 Spacer(Modifier.weight(1f))
                 Text("−" + fmtDur((dur - s.position).coerceAtLeast(0) / 1000.0), style = MaterialTheme.typography.labelMedium, color = Color.White.copy(alpha = 0.7f))
+            }
             }
 
             Row(Modifier.fillMaxWidth().padding(vertical = 14.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
@@ -277,14 +283,14 @@ private fun ViewSwitch(view: String, hasLyrics: Boolean, accent: Color, onAccent
 }
 
 @Composable
-private fun MiniHeader(t: Track, saved: Boolean, accent: Color, onHeart: () -> Unit) {
+private fun MiniHeader(t: Track, saved: Boolean, accent: Color, showHeart: Boolean = true, onHeart: () -> Unit) {
     Row(Modifier.fillMaxWidth().padding(top = 10.dp), verticalAlignment = Alignment.CenterVertically) {
         TrackCover(t, 52.dp, 12.dp)
         Column(Modifier.weight(1f).padding(horizontal = 12.dp)) {
             Text(t.title, style = MaterialTheme.typography.titleMedium, color = Color.White, maxLines = 1, overflow = TextOverflow.Ellipsis)
             Text(t.artist.ifEmpty { "Неизвестный исполнитель" }, style = MaterialTheme.typography.bodyMedium, color = Color.White.copy(alpha = 0.65f), maxLines = 1)
         }
-        HeartButton(saved, accent, onHeart)
+        if (showHeart) HeartButton(saved, accent, onHeart)
     }
 }
 
