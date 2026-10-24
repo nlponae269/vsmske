@@ -6,29 +6,28 @@ import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
-import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.runtime.mutableStateOf
 import androidx.core.content.ContextCompat
-import ru.vsmske.app.data.Repo
-import ru.vsmske.app.data.Session
-import ru.vsmske.app.music.MusicPlayer
-import ru.vsmske.app.ui.VsRoot
+import ru.vsmske.app.data.Store
+import ru.vsmske.app.music.Music
+import ru.vsmske.app.ui.Root
 
 class MainActivity : ComponentActivity() {
     private val openPlayer = mutableStateOf(false)
 
     override fun onCreate(savedInstanceState: Bundle?) {
-        enableEdgeToEdge()   // значки строки состояния — светлые или тёмные по теме (Material You)
+        enableEdgeToEdge()
         super.onCreate(savedInstanceState)
-        Session.init()
-        MusicPlayer.connect(applicationContext)
+        Store.start()
+        Music.connect(applicationContext)
+        ru.vsmske.app.rtc.Call.watch(applicationContext)
         openPlayer.value = intent?.getBooleanExtra("openPlayer", false) == true
-        // уведомление с плеером в шторке на Android 13+ требует разрешения
+        // плеер в шторке на Android 13+ требует разрешения на уведомления
         if (Build.VERSION.SDK_INT >= 33 && ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED)
             requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 1)
-        setContent { VsRoot(openPlayer) }
+        setContent { Root(openPlayer) }
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -38,6 +37,6 @@ class MainActivity : ComponentActivity() {
 
     override fun onResume() {
         super.onResume()
-        Repo.touchSeen()
+        Store.touchSeen()
     }
 }

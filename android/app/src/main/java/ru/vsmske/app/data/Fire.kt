@@ -5,12 +5,13 @@ import com.google.firebase.FirebaseApp
 import com.google.firebase.FirebaseOptions
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FirebaseFirestore
+import ru.vsmske.app.BuildConfig
 
 /**
- * Тот же проект Firebase, что и у сайта. Подключаемся с настройками веб-приложения —
- * так не нужен google-services.json и ничего не надо регистрировать в консоли.
+ * Тот же проект Firebase, что у сайта. Подключаемся настройками веб-приложения —
+ * google-services.json и регистрация в консоли не нужны.
  */
-object Fb {
+object Fire {
     lateinit var db: FirebaseFirestore; private set
     lateinit var auth: FirebaseAuth; private set
 
@@ -21,10 +22,10 @@ object Fb {
             .setProjectId("vsmske")
             .setGcmSenderId("195735209722")
             .build()
-        val app = if (FirebaseApp.getApps(ctx).isEmpty()) FirebaseApp.initializeApp(ctx, opts) else FirebaseApp.getInstance()
+        val app = FirebaseApp.getApps(ctx).firstOrNull() ?: FirebaseApp.initializeApp(ctx, opts)
         db = FirebaseFirestore.getInstance(app)
         auth = FirebaseAuth.getInstance(app)
-        if (ru.vsmske.app.BuildConfig.EMU) {
+        if (BuildConfig.EMU) {   // только для проверки: ./gradlew assembleDebug -Pemu=true
             db.useEmulator("10.0.2.2", 8080)
             auth.useEmulator("10.0.2.2", 9099)
         }

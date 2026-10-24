@@ -1,0 +1,190 @@
+package ru.vsmske.app.data
+
+import android.content.Context
+import android.graphics.Bitmap
+import android.media.MediaMetadataRetriever
+import android.net.Uri
+import com.google.firebase.firestore.FieldPath
+import com.google.firebase.firestore.FieldValue
+import com.google.firebase.firestore.Query
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.tasks.await
+import kotlinx.coroutines.withContext
+import java.io.File
+
+/**
+ * Видео, клипы, альбомы, Диск, истории, плейлисты, подарки, эфиры — те же документы, что пишет сайт.
+ */
+object Media {
+    private val db get() = Fire.db
+    private val me get() = Fire.uid
+    private val now get() = FieldValue.serverTimestamp()
+
+    /* ---------- Видео и клипы ---------- */
+    fun videosQuery(limit: Long): Query = db.collection("videos").orderBy("createdAt", Query.Direction.DESCENDING).limit(limit)
+    suspend fun videosOf(uid: String): List<Video> =
+        db.collection("videos").whereEqualTo("ownerId", uid).limit(200).get().await().documents.map(Video::from).sortedByDescending { it.createdAt }
+
+    suspend fun toggleVideoLike(v: Video) {
+        db.collection("videos").document(v.id).update("likes", if (me in v.likes) FieldValue.arrayRemove(me) else FieldValue.arrayUnion(me)).await()
+    }
+    private val viewed = mutableSetOf<String>()
+    /** Просмотр: +1 один раз за заход */
+    fun countView(v: Video) {
+        if (!viewed.add(v.id)) return
+        db.collection("videos").document(v.id).update("views", FieldValue.increment(1))
+    }
+    fun videoComments(id: String): Query = db.collection("videos").document(id).collection("comments").orderBy("createdAt").limit(300)
+    suspend fun addVideoComment(v: Video, text: String) {
+        val t = text.trim().take(1000); if (t.isEmpty()) return
+        db.collection("videos").document(v.id).collection("comments").add(mapOf("authorId" to me, "text" to t, "createdAt" to now)).await()
+    }
+    suspend fun deleteVideoComment(v: Video, c: Comment) { db.collection("videos").document(v.id).collection("comments").document(c.id).delete().await() }
+    suspend fun deleteVideo(v: Video) { db.collection("videos").document(v.id).delete().await(); runCatching { Files.delete(v.fileId) } }
+
+    /** Ссылка YouTube / Rutube / VK / .mp4 → (provider, vid) — как parseLink() на сайте */
+    fun parseLink(u: String): Pair<String, String>? {
+        Regex("(?:youtu\\.be/|youtube\\.com/(?:watch\\?(?:.*&)?v=|shorts/|embed/|live/))([\\w-]{11})").find(u)?.let { return "youtube" to it.groupValues[1] }
+        Regex("rutube\\.ru/(?:video|play/embed|shorts)/([a-f0-9]{32})").find(u)?.let { return "rutube" to it.groupValues[1] }
+        Regex("(?:vk\\.com|vkvideo\\.ru)/(?:.*[?&]z=)?video(-?\\d+_\\d+)").find(u)?.let { return "vk" to it.groupValues[1] }
+        if (Regex("^https://\\S+\\.(mp4|webm|mov|m4v)(\\?\\S*)?$", RegexOption.IGNORE_CASE).matches(u.trim())) return "direct" to u.trim()
+        return null
+    }
+
+    suspend fun addVideoLink(url: String, title: String, description: String): String {
+        val (prov, vid) = parseLink(url) ?: error("Не узнали ссылку — нужна ссылка на YouTube, Rutube, VK Видео или файл .mp4")
+        return db.collection("videos").add(mapOf("ownerId" to me, "title" to title.trim().take(120), "description" to description.trim().take(2000),
+            "source" to "link", "provider" to prov, "vid" to vid, "thumb" to "", "likes" to emptyList<String>(), "createdAt" to now)).await().id
+    }
+
+    /** Свой ролик: кадр-обложка и длительность считаются на телефоне, файл — кусками */
+    suspend fun addVideoFile(ctx: Context, uri: Uri, title: String, description: String, progress: (Float) -> Unit): String {
+        val p = Files.read(ctx, uri, Files.VIDEO_MAX)
+        val (thumb, dur) = withContext(Dispatchers.IO) {
+            runCatching {
+                val r = MediaMetadataRetriever(); r.setDataSource(ctx, uri)
+                val d = (r.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLong() ?: 0L) / 1000.0
+                val frame: Bitmap? = r.getFrameAtTime(minOf(1_000_000L, (d * 333_000).toLong()))
+                r.release()
+                (frame?.let { Images.fromBitmap(it, 640, 290_000) } ?: "") to d
+            }.getOrDefault("" to 0.0)
+        }
+        val fileId = Files.put(p, "video", progress)
+        return db.collection("videos").add(mapOf("ownerId" to me, "title" to title.trim().take(120), "description" to description.trim().take(2000),
+            "source" to "file", "fileId" to fileId, "type" to p.type.take(60), "thumb" to thumb, "duration" to Math.round(dur).toDouble(), "size" to p.size,
+            "likes" to emptyList<String>(), "createdAt" to now)).await().id
+    }
+
+    /* ---------- Альбомы ---------- */
+    suspend fun albumsOf(uid: String): List<Album> =
+        db.collection("albums").whereEqualTo("ownerId", uid).limit(200).get().await().documents.map(Album::from).sortedByDescending { it.updatedAt }
+    fun photosQuery(albumId: String): Query = db.collection("photos").whereEqualTo("albumId", albumId).limit(500)
+    suspend fun createAlbum(title: String): String =
+        db.collection("albums").add(mapOf("ownerId" to me, "title" to title.trim().take(80), "count" to 0, "cover" to "", "coverId" to "", "createdAt" to now, "updatedAt" to now)).await().id
+    suspend fun renameAlbum(a: Album, title: String) { db.collection("albums").document(a.id).update(mapOf("title" to title.trim().take(80), "updatedAt" to now)).await() }
+
+    /** Фото в альбом: миниатюра (photos) и полное (photoFull) одной пачкой, счётчик +1, первая — обложка */
+    suspend fun addPhoto(ctx: Context, a: Album, uri: Uri, setCover: Boolean) {
+        val thumb = Images.compress(ctx, uri, 400, 60_000, square = true)
+        val full = Images.compress(ctx, uri, 1600, 700_000)
+        val ref = db.collection("photos").document()
+        db.runBatch { b ->
+            b.set(ref, mapOf("ownerId" to me, "albumId" to a.id, "thumb" to thumb, "createdAt" to now))
+            b.set(db.collection("photoFull").document(ref.id), mapOf("ownerId" to me, "image" to full))
+            val patch = mutableMapOf<String, Any>("count" to FieldValue.increment(1), "updatedAt" to now)
+            if (setCover) { patch["cover"] = thumb; patch["coverId"] = ref.id }
+            b.update(db.collection("albums").document(a.id), patch)
+        }.await()
+    }
+    suspend fun fullPhoto(id: String): String = db.collection("photoFull").document(id).get().await().getString("image") ?: ""
+    suspend fun deletePhoto(a: Album, p: Photo, next: Photo?) {
+        db.runBatch { b ->
+            b.delete(db.collection("photos").document(p.id)); b.delete(db.collection("photoFull").document(p.id))
+            val patch = mutableMapOf<String, Any>("count" to FieldValue.increment(-1), "updatedAt" to now)
+            if (a.coverId == p.id) { patch["cover"] = next?.thumb ?: ""; patch["coverId"] = next?.id ?: "" }
+            b.update(db.collection("albums").document(a.id), patch)
+        }.await()
+    }
+    suspend fun deleteAlbum(a: Album) {
+        val ps = db.collection("photos").whereEqualTo("albumId", a.id).get().await()
+        val refs = ps.documents.flatMap { listOf(it.reference, db.collection("photoFull").document(it.id)) }
+        refs.chunked(400).forEach { part -> db.runBatch { b -> part.forEach { b.delete(it) } }.await() }
+        db.collection("albums").document(a.id).delete().await()
+    }
+
+    /* ---------- Диск (видит только хозяин) ---------- */
+    fun diskQuery(): Query = db.collection("files").whereEqualTo("ownerId", me).whereEqualTo("kind", "disk").limit(500)
+    suspend fun uploadDisk(ctx: Context, uri: Uri, progress: (Float) -> Unit) { Files.put(Files.read(ctx, uri, Files.DISK_MAX), "disk", progress) }
+    /** Скачать файл Диска в кэш под его именем — чтобы открыть в другом приложении */
+    suspend fun diskLocal(ctx: Context, f: DiskFile): File = withContext(Dispatchers.IO) {
+        val raw = ru.vsmske.app.music.FileSource.local(ctx, f.id)
+        val dir = File(ctx.cacheDir, "disk").apply { mkdirs() }
+        val out = File(dir, f.name.replace(Regex("[/\\\\:*?\"<>|]"), "_").ifEmpty { f.id })
+        if (!out.exists() || out.length() != raw.length()) raw.copyTo(out, overwrite = true)
+        out
+    }
+
+    /* ---------- Истории на 24 часа ---------- */
+    suspend fun stories(ids: List<String>): List<Story> {
+        val since = System.currentTimeMillis() - 24 * 3600_000L
+        return ids.distinct().take(150).chunked(10).flatMap { part ->
+            runCatching { db.collection("stories").whereIn("ownerId", part).get().await().documents.map(Story::from) }.getOrDefault(emptyList())
+        }.filter { it.createdAt == 0L || it.createdAt > since }.sortedBy { it.createdAt }
+    }
+    suspend fun postStory(ctx: Context, uri: Uri, text: String) {
+        val image = Images.compress(ctx, uri, 1080, 420_000)
+        db.collection("stories").add(mapOf("ownerId" to me, "image" to image, "text" to text.trim().take(200), "views" to emptyMap<String, Any>(), "createdAt" to now)).await()
+    }
+    fun viewStory(s: Story) { if (s.ownerId != me && me !in s.views) db.collection("stories").document(s.id).update(FieldPath.of("views", me), now) }
+    suspend fun deleteStory(s: Story) { db.collection("stories").document(s.id).delete().await() }
+
+    /* ---------- Плейлисты ---------- */
+    suspend fun playlistsMine(): List<Playlist> =
+        db.collection("playlists").whereEqualTo("ownerId", me).limit(100).get().await().documents.map(Playlist::from).sortedByDescending { it.updatedAt }
+    suspend fun playlist(id: String): Playlist? = db.collection("playlists").document(id).get().await().takeIf { it.exists() }?.let(Playlist::from)
+    suspend fun savePlaylist(id: String?, title: String, tracks: List<String>, color: String = ""): String {
+        val ref = if (id == null) db.collection("playlists").document() else db.collection("playlists").document(id)
+        ref.set(mapOf("ownerId" to me, "title" to title.trim().take(60).ifEmpty { "Плейлист" }, "tracks" to tracks.take(500), "color" to color, "updatedAt" to now)).await()
+        return ref.id
+    }
+    suspend fun deletePlaylist(id: String) { db.collection("playlists").document(id).delete().await() }
+    suspend fun tracksByIds(ids: List<String>): List<Track> {
+        val got = ids.distinct().chunked(10).flatMap { part -> db.collection("tracks").whereIn(FieldPath.documentId(), part).get().await().documents.map(Track::from) }
+        return ids.mapNotNull { id -> got.firstOrNull { it.id == id } }
+    }
+    /** Поток: все треки платформы по очереди, страницами по 50 */
+    suspend fun streamPage(after: Long?, limit: Long = 50): List<Track> {
+        var q = db.collection("tracks").orderBy("createdAt", Query.Direction.DESCENDING)
+        if (after != null) q = q.startAfter(com.google.firebase.Timestamp(java.util.Date(after)))
+        return q.limit(limit).get().await().documents.map(Track::from)
+    }
+    suspend fun tracksOf(uid: String): List<Track> =
+        db.collection("tracks").whereEqualTo("ownerId", uid).limit(300).get().await().documents.map(Track::from).sortedByDescending { it.createdAt }
+    suspend fun saveLyrics(t: Track, lyrics: String) { db.collection("tracks").document(t.id).update("lyrics", lyrics.take(20000)).await() }
+
+    /* ---------- Подарки ---------- */
+    val GIFTS = linkedMapOf("gift" to ("🎁" to "Подарок"), "rose" to ("🌹" to "Роза"), "bear" to ("🧸" to "Мишка"), "cake" to ("🎂" to "Торт"),
+        "heart" to ("❤️" to "Сердце"), "clover" to ("🍀" to "На удачу"), "cup" to ("🏆" to "Кубок"), "star" to ("🌟" to "Звезда"), "coffee" to ("☕" to "Кофе"),
+        "cat" to ("🐱" to "Котик"), "pizza" to ("🍕" to "Пицца"), "car" to ("🏎️" to "Машина"), "crown" to ("👑" to "Корона"), "balloon" to ("🎈" to "Шарик"),
+        "diamond" to ("💎" to "Бриллиант"), "rocket" to ("🚀" to "Ракета"))
+    suspend fun giftsOf(uid: String): List<Gift> =
+        db.collection("gifts").whereEqualTo("to", uid).limit(100).get().await().documents.map(Gift::from).sortedByDescending { it.createdAt }
+    suspend fun sendGift(to: String, gift: String, text: String) {
+        db.collection("gifts").add(mapOf("from" to me, "to" to to, "gift" to gift, "text" to text.trim().take(200), "createdAt" to now)).await()
+        val g = GIFTS[gift]; Api.notify(to, "gift", "", "${g?.first ?: "🎁"} ${g?.second ?: ""}" + if (text.isNotBlank()) ": ${text.trim()}" else "")
+    }
+
+    /* ---------- Репост ---------- */
+    suspend fun repost(p: Post) {
+        val orig = if (p.repostOf.isNotEmpty()) p.repostOf else p.id
+        db.runBatch { b ->
+            b.set(db.collection("posts").document(), mapOf("authorId" to me, "wallId" to me, "text" to "", "image" to "", "repostOf" to orig,
+                "likes" to emptyList<String>(), "commentCount" to 0, "createdAt" to now))
+            b.update(db.collection("posts").document(orig), "reposts", FieldValue.increment(1))
+        }.await()
+        Api.notify(p.authorId, "repost", orig, p.text)
+    }
+
+    /* ---------- Эфиры ---------- */
+    fun liveQuery(): Query = db.collection("streams").whereEqualTo("live", true).limit(30)
+}

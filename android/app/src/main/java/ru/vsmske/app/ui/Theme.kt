@@ -2,48 +2,52 @@ package ru.vsmske.app.ui
 
 import android.os.Build
 import androidx.compose.foundation.isSystemInDarkTheme
-import androidx.compose.material3.ColorScheme
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Shapes
 import androidx.compose.material3.Typography
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.dynamicDarkColorScheme
 import androidx.compose.material3.dynamicLightColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.ReadOnlyComposable
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.Font
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import ru.vsmske.app.R
 
 /*
- * Material You (1.1): цвета берутся из обоев телефона (динамический цвет, Android 12+),
- * на старых Android — фиолетовая палитра Material 3 (как у сайта в дизайне Material You).
- * Светлая или тёмная — как в системе. Экраны берут цвета через Vs.* — это просто имена ролей темы.
+ * Дизайн 3.0 — Material You «на максимум»: цвета из обоев телефона (Android 12+), крупные скругления,
+ * шрифт Onest (русский, современный), логотип — Unbounded. Светлая/тёмная — как в системе.
  */
-object Vs {
-    val bg: Color @Composable @ReadOnlyComposable get() = MaterialTheme.colorScheme.surface
-    val bg2: Color @Composable @ReadOnlyComposable get() = MaterialTheme.colorScheme.surfaceContainer
-    val fg: Color @Composable @ReadOnlyComposable get() = MaterialTheme.colorScheme.onSurface
-    val muted: Color @Composable @ReadOnlyComposable get() = MaterialTheme.colorScheme.onSurfaceVariant
-    val accent: Color @Composable @ReadOnlyComposable get() = MaterialTheme.colorScheme.primary
-    val p1: Color @Composable @ReadOnlyComposable get() = MaterialTheme.colorScheme.primary
-    val p3: Color @Composable @ReadOnlyComposable get() = MaterialTheme.colorScheme.tertiary
-    val p4: Color @Composable @ReadOnlyComposable get() = MaterialTheme.colorScheme.secondary
-    val pink: Color @Composable @ReadOnlyComposable get() = MaterialTheme.colorScheme.error
-    val danger: Color @Composable @ReadOnlyComposable get() = MaterialTheme.colorScheme.error
-    val ok = Color(0xFF34A853)
-    val line: Color @Composable @ReadOnlyComposable get() = MaterialTheme.colorScheme.outlineVariant
-    /** «Градиент» в Material You — тональный контейнер (обложки без картинки, свои сообщения и т. п.) */
-    val grad: Brush @Composable @ReadOnlyComposable get() = SolidColor(MaterialTheme.colorScheme.primaryContainer)
-    val onGrad: Color @Composable @ReadOnlyComposable get() = MaterialTheme.colorScheme.onPrimaryContainer
-    val gradText: Brush @Composable @ReadOnlyComposable get() = SolidColor(MaterialTheme.colorScheme.onSurface)
-}
+val Onest = FontFamily(
+    Font(R.font.onest_400, FontWeight.Normal), Font(R.font.onest_500, FontWeight.Medium),
+    Font(R.font.onest_600, FontWeight.SemiBold), Font(R.font.onest_700, FontWeight.Bold),
+)
+val Unbounded = FontFamily(Font(R.font.unbounded_700, FontWeight.Bold))
 
-// Палитра Material 3 по умолчанию (фиолетовая) — для Android 11 и ниже
-private val LightM3 = lightColorScheme(
+private fun t(size: Int, line: Int, w: FontWeight, ls: Double = 0.0) =
+    TextStyle(fontFamily = Onest, fontSize = size.sp, lineHeight = line.sp, fontWeight = w, letterSpacing = ls.sp)
+
+val VsType = Typography(
+    displayLarge = t(54, 60, FontWeight.Bold, -1.2), displayMedium = t(44, 50, FontWeight.Bold, -1.0), displaySmall = t(36, 42, FontWeight.Bold, -0.8),
+    headlineLarge = t(32, 38, FontWeight.Bold, -0.6), headlineMedium = t(28, 34, FontWeight.Bold, -0.5), headlineSmall = t(24, 30, FontWeight.SemiBold, -0.3),
+    titleLarge = t(21, 27, FontWeight.SemiBold, -0.2), titleMedium = t(17, 23, FontWeight.SemiBold), titleSmall = t(15, 20, FontWeight.SemiBold),
+    bodyLarge = t(16, 23, FontWeight.Normal), bodyMedium = t(15, 21, FontWeight.Normal), bodySmall = t(13, 18, FontWeight.Normal),
+    labelLarge = t(15, 20, FontWeight.Medium), labelMedium = t(13, 17, FontWeight.Medium), labelSmall = t(11, 15, FontWeight.Medium, 0.2),
+)
+
+val VsShapes = Shapes(
+    extraSmall = RoundedCornerShape(8.dp), small = RoundedCornerShape(12.dp), medium = RoundedCornerShape(20.dp),
+    large = RoundedCornerShape(28.dp), extraLarge = RoundedCornerShape(36.dp),
+)
+
+private val Light = lightColorScheme(
     primary = Color(0xFF65558F), onPrimary = Color.White, primaryContainer = Color(0xFFE9DDFF), onPrimaryContainer = Color(0xFF22005D),
     secondary = Color(0xFF625B71), secondaryContainer = Color(0xFFE8DEF8), onSecondaryContainer = Color(0xFF1D192B),
     tertiary = Color(0xFF7D5260), tertiaryContainer = Color(0xFFFFD8E4), onTertiaryContainer = Color(0xFF31111D),
@@ -52,7 +56,7 @@ private val LightM3 = lightColorScheme(
     surfaceContainerHigh = Color(0xFFECE6F0), surfaceContainerHighest = Color(0xFFE6E0E9),
     outline = Color(0xFF79747E), outlineVariant = Color(0xFFCAC4D0),
 )
-private val DarkM3 = darkColorScheme(
+private val Dark = darkColorScheme(
     primary = Color(0xFFD0BCFF), onPrimary = Color(0xFF381E72), primaryContainer = Color(0xFF4F378B), onPrimaryContainer = Color(0xFFEADDFF),
     secondary = Color(0xFFCCC2DC), secondaryContainer = Color(0xFF4A4458), onSecondaryContainer = Color(0xFFE8DEF8),
     tertiary = Color(0xFFEFB8C8), tertiaryContainer = Color(0xFF633B48), onTertiaryContainer = Color(0xFFFFD8E4),
@@ -62,29 +66,14 @@ private val DarkM3 = darkColorScheme(
     outline = Color(0xFF938F99), outlineVariant = Color(0xFF49454F),
 )
 
-/** Шрифт системный (как в приложениях Google), заголовки чуть плотнее */
-private val typo = Typography().let { t ->
-    t.copy(
-        headlineMedium = t.headlineMedium.copy(fontWeight = FontWeight.Normal),
-        headlineSmall = t.headlineSmall.copy(fontWeight = FontWeight.Normal),
-        titleLarge = t.titleLarge.copy(fontWeight = FontWeight.Normal, fontSize = 22.sp),
-        titleMedium = t.titleMedium.copy(fontWeight = FontWeight.Medium),
-        titleSmall = t.titleSmall.copy(fontWeight = FontWeight.Medium, fontSize = 15.sp),
-        bodySmall = t.bodySmall.copy(fontSize = 13.sp),
-    )
-}
-
-@Composable
-fun vsColors(dark: Boolean = isSystemInDarkTheme()): ColorScheme {
-    val ctx = LocalContext.current
-    return when {
-        Build.VERSION.SDK_INT >= 31 -> if (dark) dynamicDarkColorScheme(ctx) else dynamicLightColorScheme(ctx)
-        dark -> DarkM3
-        else -> LightM3
-    }
-}
-
 @Composable
 fun VsTheme(content: @Composable () -> Unit) {
-    MaterialTheme(colorScheme = vsColors(), typography = typo, content = content)
+    val dark = isSystemInDarkTheme()
+    val ctx = LocalContext.current
+    val colors = when {
+        Build.VERSION.SDK_INT >= 31 -> if (dark) dynamicDarkColorScheme(ctx) else dynamicLightColorScheme(ctx)
+        dark -> Dark
+        else -> Light
+    }
+    MaterialTheme(colorScheme = colors, typography = VsType, shapes = VsShapes, content = content)
 }
