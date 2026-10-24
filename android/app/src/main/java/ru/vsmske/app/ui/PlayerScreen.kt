@@ -168,6 +168,7 @@ fun PlayerScreen(onClose: () -> Unit) {
     val onAccent by animateColorAsState(pal.onAccent, tween(800), label = "onAccent")
     val saved = t.id in (me?.tracks ?: emptyList())
     var dragY by remember { mutableStateOf(0f) }
+    DarkSystemBars()
 
     Box(
         Modifier.fillMaxSize().background(bg).clickable(enabled = false) {}

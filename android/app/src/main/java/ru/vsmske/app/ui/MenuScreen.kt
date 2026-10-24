@@ -136,6 +136,13 @@ fun SettingsSheet(onClose: () -> Unit) {
             }
             Switch(listen, { listen = it; p.edit().putBoolean("listen", it).apply(); if (!it) ru.vsmske.app.data.Api.setListening(null) })
         }
+        Text("Тема", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = 18.dp, bottom = 6.dp))
+        val theme by ThemePref.mode.collectAsState()
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            listOf("system" to "Как в системе", "light" to "Светлая", "dark" to "Тёмная").forEach { (k, l) ->
+                FilterChip(theme == k, { ThemePref.set(ctx, k) }, { Text(l) }, shape = CircleShape)
+            }
+        }
         Text("Текст песни", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = 18.dp, bottom = 6.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             FilterChip(lyr == "apple", { lyr = "apple"; p.edit().putString("lyr_style", "apple").apply() }, { Text("Apple Music") }, shape = CircleShape)

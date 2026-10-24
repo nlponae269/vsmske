@@ -1,5 +1,17 @@
 package ru.vsmske.app.ui
 
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material.icons.rounded.Bookmark
+import androidx.compose.material.icons.rounded.Search
+import androidx.compose.material.icons.rounded.PushPin
+import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.material3.LargeTopAppBar
 import androidx.compose.material.icons.rounded.Call
 import androidx.compose.material.icons.rounded.Videocam
 import android.content.Context
@@ -103,43 +115,84 @@ import ru.vsmske.app.data.fmtDur
 import ru.vsmske.app.data.isRoom
 import java.io.File
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 fun ChatsScreen() {
     val nav = LocalNav.current
+    val ctx = LocalContext.current
     val chats by Store.chats.collectAsState()
     val users by Store.users.collectAsState()
     val me = Store.uid
-    Scaffold(contentWindowInsets = WindowInsets(0), topBar = { TopAppBar(title = { Text("Чаты") }) }) { pad ->
+    val prefs = remember { ctx.getSharedPreferences("vs", android.content.Context.MODE_PRIVATE) }
+    // закреплённые диалоги — на этом телефоне (как vs_chatpins на сайте)
+    var pins by remember { mutableStateOf(prefs.getString("chatpins", "")!!.split(',').filter { it.isNotEmpty() }.toSet()) }
+    fun togglePin(id: String) { pins = if (id in pins) pins - id else pins + id; prefs.edit().putString("chatpins", pins.joinToString(",")).apply() }
+    var q by rememberSaveable { mutableStateOf("") }
+    var menuFor by remember { mutableStateOf<String?>(null) }
+    fun title(c: ru.vsmske.app.data.Chat): String { val k = c.key(me); return if (c.group) c.name else if (k == me) "Избранное" else users[k]?.name ?: "" }
+    val shown = chats.filter { c -> q.isBlank() || title(c).contains(q.trim(), true) || c.lastText.contains(q.trim(), true) }
+        .sortedWith(compareByDescending<ru.vsmske.app.data.Chat> { it.id in pins }.thenByDescending { it.lastAt })
+    val scroll = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
+    Scaffold(Modifier.nestedScroll(scroll.nestedScrollConnection), contentWindowInsets = WindowInsets(0),
+        topBar = { LargeTopAppBar(title = { Text("Чаты") }, scrollBehavior = scroll, actions = {
+            IconButton({ nav.navigate("chat/$me") }) { Icon(Icons.Rounded.Bookmark, "Избранное — заметки для себя") }
+        }) }) { pad ->
         LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(top = pad.calculateTopPadding(), bottom = 24.dp)) {
-            if (chats.isEmpty()) item { EmptyState("Диалогов пока нет", "Откройте страницу друга и нажмите «Написать»") }
-            items(chats, key = { it.id }) { c ->
+            if (chats.size > 4) item {
+                TextField(q, { q = it.take(60) }, Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp), placeholder = { Text("Поиск по чатам") },
+                    leadingIcon = { Icon(Icons.Rounded.Search, null) }, singleLine = true, shape = CircleShape,
+                    trailingIcon = { if (q.isNotEmpty()) IconButton({ q = "" }) { Icon(Icons.Rounded.Close, "Очистить") } },
+                    colors = TextFieldDefaults.colors(focusedIndicatorColor = Color.Transparent, unfocusedIndicatorColor = Color.Transparent))
+            }
+            if (chats.isEmpty()) item { EmptyState("Диалогов пока нет", "Откройте страницу друга и нажмите «Написать»", "💬") }
+            else if (shown.isEmpty()) item { EmptyState("Ничего не нашли", "Попробуйте другое имя или слово", "🔎") }
+            items(shown, key = { it.id }) { c ->
                 val key = c.key(me)
                 val peer = if (c.group) null else users[key]
                 val unread = c.unread(me)
-                ListItem(
-                    headlineContent = {
-                        if (c.group) Text(c.name, fontWeight = if (unread) FontWeight.Bold else null, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        else if (key == me) Text("Избранное") else UserName(peer, if (unread) MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold) else MaterialTheme.typography.titleSmall)
-                    },
-                    supportingContent = {
-                        Text((if (c.lastFrom == me) "Вы: " else "") + ru.vsmske.app.data.Markup.plain(c.lastText), maxLines = 1, overflow = TextOverflow.Ellipsis,
-                            color = if (unread) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant)
-                    },
-                    leadingContent = {
-                        if (c.group) Box(Modifier.size(52.dp).clip(CircleShape).background(MaterialTheme.colorScheme.tertiaryContainer), contentAlignment = Alignment.Center) {
-                            Icon(Icons.Rounded.Groups, null, tint = MaterialTheme.colorScheme.onTertiaryContainer)
-                        } else Avatar(peer, 52.dp)
-                    },
-                    trailingContent = {
-                        Column(horizontalAlignment = Alignment.End) {
-                            Text(if (System.currentTimeMillis() - c.lastAt < 86_400_000) clock(c.lastAt) else dayLabel(c.lastAt), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            if (unread) Box(Modifier.padding(top = 6.dp).size(10.dp).clip(CircleShape).background(MaterialTheme.colorScheme.primary))
-                        }
-                    },
-                    colors = ListItemDefaults.colors(containerColor = Color.Transparent),
-                    modifier = Modifier.clickable { nav.navigate("chat/$key") },
-                )
+                val pinned = c.id in pins
+                Box {
+                    ListItem(
+                        headlineContent = {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Box(Modifier.weight(1f, fill = false)) {
+                                    if (c.group) Text(c.name, fontWeight = if (unread) FontWeight.Bold else null, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                    else if (key == me) Text("Избранное", style = MaterialTheme.typography.titleSmall)
+                                    else UserName(peer, if (unread) MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold) else MaterialTheme.typography.titleSmall)
+                                }
+                                if (pinned) Icon(Icons.Rounded.PushPin, "Закреплён", tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(start = 6.dp).size(14.dp))
+                            }
+                        },
+                        supportingContent = {
+                            Text((if (c.lastFrom == me) "Вы: " else "") + ru.vsmske.app.data.Markup.plain(c.lastText), maxLines = 1, overflow = TextOverflow.Ellipsis,
+                                color = if (unread) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant)
+                        },
+                        leadingContent = {
+                            when {
+                                c.group -> Box(Modifier.size(52.dp).clip(CircleShape).background(MaterialTheme.colorScheme.tertiaryContainer), contentAlignment = Alignment.Center) {
+                                    Icon(Icons.Rounded.Groups, null, tint = MaterialTheme.colorScheme.onTertiaryContainer)
+                                }
+                                key == me -> Box(Modifier.size(52.dp).clip(CircleShape).background(MaterialTheme.colorScheme.primaryContainer), contentAlignment = Alignment.Center) {
+                                    Icon(Icons.Rounded.Bookmark, null, tint = MaterialTheme.colorScheme.onPrimaryContainer)
+                                }
+                                else -> Avatar(peer, 52.dp)
+                            }
+                        },
+                        trailingContent = {
+                            Column(horizontalAlignment = Alignment.End) {
+                                Text(if (System.currentTimeMillis() - c.lastAt < 86_400_000) clock(c.lastAt) else dayLabel(c.lastAt), style = MaterialTheme.typography.labelSmall,
+                                    color = if (unread) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
+                                if (unread) Box(Modifier.padding(top = 6.dp).size(10.dp).clip(CircleShape).background(MaterialTheme.colorScheme.primary))
+                            }
+                        },
+                        colors = ListItemDefaults.colors(containerColor = if (pinned) MaterialTheme.colorScheme.surfaceContainerLow else Color.Transparent),
+                        modifier = Modifier.combinedClickable(onLongClick = { menuFor = c.id }) { nav.navigate("chat/$key") },
+                    )
+                    DropdownMenu(menuFor == c.id, { menuFor = null }) {
+                        DropdownMenuItem({ Text(if (pinned) "Открепить" else "Закрепить наверху") }, { menuFor = null; togglePin(c.id) },
+                            leadingIcon = { Icon(Icons.Rounded.PushPin, null) })
+                    }
+                }
             }
         }
     }
@@ -267,7 +320,8 @@ fun ChatScreen(key: String) {
                         }
                     }
                     Bubble(m, mine = m.from == me, read = m.from == me && readAt >= m.createdAt,
-                        author = if (room && m.from != me && prev?.from != m.from) users[m.from] else null, hidden = users[m.from]?.banned == true) { menu = m }
+                        author = if (room && m.from != me && prev?.from != m.from) users[m.from] else null, hidden = users[m.from]?.banned == true,
+                        onReply = { edit = null; reply = m }) { menu = m }
                 }
             }
         }
@@ -298,12 +352,31 @@ private fun SheetItem(icon: androidx.compose.ui.graphics.vector.ImageVector, lab
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun Bubble(m: Message, mine: Boolean, read: Boolean, author: ru.vsmske.app.data.User?, hidden: Boolean, onMenu: () -> Unit) {
+private fun Bubble(m: Message, mine: Boolean, read: Boolean, author: ru.vsmske.app.data.User?, hidden: Boolean, onReply: () -> Unit, onMenu: () -> Unit) {
     val cs = MaterialTheme.colorScheme
     val bg = if (mine) cs.primary else cs.surfaceContainerHigh
     val fg = if (mine) cs.onPrimary else cs.onSurface
     var viewer by remember { mutableStateOf(false) }
-    Row(Modifier.fillMaxWidth(), horizontalArrangement = if (mine) Arrangement.End else Arrangement.Start) {
+    // свайп вправо — ответить (как на сайте): сообщение едет за пальцем, после порога — лёгкая вибрация
+    val dx = remember { androidx.compose.animation.core.Animatable(0f) }
+    val scope = rememberCoroutineScope()
+    val replyNow by androidx.compose.runtime.rememberUpdatedState(onReply)
+    val haptic = androidx.compose.ui.platform.LocalHapticFeedback.current
+    val trigger = with(androidx.compose.ui.platform.LocalDensity.current) { 64.dp.toPx() }
+    Box(Modifier.fillMaxWidth().pointerInput(m.id) {
+        detectHorizontalDragGestures(
+            onDragEnd = { if (dx.value >= trigger) replyNow(); scope.launch { dx.animateTo(0f, androidx.compose.animation.core.spring(dampingRatio = 0.6f)) } },
+            onDragCancel = { scope.launch { dx.animateTo(0f) } },
+        ) { ch, d ->
+            val nv = (dx.value + d).coerceIn(0f, trigger * 1.4f)
+            if (nv != dx.value) ch.consume()
+            if (dx.value < trigger && nv >= trigger) haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
+            scope.launch { dx.snapTo(nv) }
+        }
+    }) {
+    if (dx.value > 1f) Icon(Icons.AutoMirrored.Rounded.Reply, null, tint = cs.primary,
+        modifier = Modifier.align(Alignment.CenterStart).padding(start = 8.dp).size(24.dp).graphicsLayer { alpha = (dx.value / trigger).coerceIn(0f, 1f); val k = 0.6f + 0.4f * alpha; scaleX = k; scaleY = k })
+    Row(Modifier.fillMaxWidth().graphicsLayer { translationX = dx.value }, horizontalArrangement = if (mine) Arrangement.End else Arrangement.Start) {
         Column(
             Modifier.widthIn(max = 310.dp).clip(RoundedCornerShape(20.dp, 20.dp, if (mine) 6.dp else 20.dp, if (mine) 20.dp else 6.dp))
                 .background(bg).combinedClickable(onClick = {}, onLongClick = onMenu).padding(horizontal = 12.dp, vertical = 8.dp),
@@ -327,6 +400,7 @@ private fun Bubble(m: Message, mine: Boolean, read: Boolean, author: ru.vsmske.a
                     style = MaterialTheme.typography.labelSmall, color = fg.copy(alpha = 0.7f))
             }
         }
+    }
     }
     if (viewer) Dialog({ viewer = false }, androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false)) {
         Box(Modifier.fillMaxSize().background(Color.Black).clickable { viewer = false }, contentAlignment = Alignment.Center) { DbImage(m.image, Modifier.fillMaxWidth(), ContentScale.FillWidth) }

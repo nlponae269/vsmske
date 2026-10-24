@@ -92,6 +92,7 @@ fun ClipsScreen(startId: String) {
     var limit by remember { mutableStateOf(40L) }
     var muted by remember { mutableStateOf(false) }
     var comments by remember { mutableStateOf<Video?>(null) }
+    DarkSystemBars()
     // первый — клип из адреса, дальше — остальные клипы по свежести
     LaunchedEffect(limit) {
         val first = if (clips.isEmpty() && startId.isNotEmpty()) runCatching { Fire.db.collection("videos").document(startId).get().await() }.getOrNull()

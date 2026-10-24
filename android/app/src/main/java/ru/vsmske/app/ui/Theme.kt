@@ -1,5 +1,7 @@
 package ru.vsmske.app.ui
 
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.collectAsState
 import android.os.Build
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -66,10 +68,25 @@ private val Dark = darkColorScheme(
     outline = Color(0xFF938F99), outlineVariant = Color(0xFF49454F),
 )
 
+/** Тема приложения: как в системе | светлая | тёмная (SharedPreferences «vs» → «theme») */
+object ThemePref {
+    val mode = kotlinx.coroutines.flow.MutableStateFlow("system")
+    fun load(ctx: android.content.Context) { mode.value = ctx.getSharedPreferences("vs", android.content.Context.MODE_PRIVATE).getString("theme", "system") ?: "system" }
+    fun set(ctx: android.content.Context, m: String) { mode.value = m; ctx.getSharedPreferences("vs", android.content.Context.MODE_PRIVATE).edit().putString("theme", m).apply() }
+}
+
 @Composable
 fun VsTheme(content: @Composable () -> Unit) {
-    val dark = isSystemInDarkTheme()
     val ctx = LocalContext.current
+    val mode by ThemePref.mode.collectAsState()
+    val sysDark = isSystemInDarkTheme()
+    val dark = when (mode) { "light" -> false; "dark" -> true; else -> sysDark }
+    // значки строки состояния и навигации — под тему (иначе при «светлой» на тёмной системе их не видно)
+    val view = androidx.compose.ui.platform.LocalView.current
+    if (!view.isInEditMode) androidx.compose.runtime.SideEffect {
+        val w = (view.context as? android.app.Activity)?.window ?: return@SideEffect
+        androidx.core.view.WindowCompat.getInsetsController(w, view).apply { isAppearanceLightStatusBars = !dark; isAppearanceLightNavigationBars = !dark }
+    }
     val colors = when {
         Build.VERSION.SDK_INT >= 31 -> if (dark) dynamicDarkColorScheme(ctx) else dynamicLightColorScheme(ctx)
         dark -> Dark

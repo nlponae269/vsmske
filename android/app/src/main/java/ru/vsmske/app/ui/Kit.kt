@@ -1,5 +1,7 @@
 package ru.vsmske.app.ui
 
+import androidx.compose.ui.graphics.luminance
+
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
@@ -218,3 +220,16 @@ fun errText(e: Throwable): String {
 
 fun fmtNum(n: Int): String = when { n >= 1_000_000 -> "%.1f млн".format(n / 1e6).replace(".0", ""); n >= 1000 -> "%.1f тыс".format(n / 1e3).replace(".0", ""); else -> "$n" }
 fun fmtSize(b: Long): String = when { b >= 1_048_576 -> "%.1f МБ".format(b / 1_048_576.0); b >= 1024 -> "${b / 1024} КБ"; else -> "$b Б" }
+
+/** На тёмных экранах (плеер, клипы, эфир, видео, звонок) значки строки состояния — светлые; при уходе — как было */
+@Composable
+fun DarkSystemBars() {
+    val view = androidx.compose.ui.platform.LocalView.current
+    val lightBars = MaterialTheme.colorScheme.surface.luminance() > 0.5f
+    androidx.compose.runtime.DisposableEffect(lightBars) {
+        val w = (view.context as? android.app.Activity)?.window
+        val c = w?.let { androidx.core.view.WindowCompat.getInsetsController(it, view) }
+        c?.isAppearanceLightStatusBars = false; c?.isAppearanceLightNavigationBars = false
+        onDispose { c?.isAppearanceLightStatusBars = lightBars; c?.isAppearanceLightNavigationBars = lightBars }
+    }
+}

@@ -329,6 +329,7 @@ fun WatchScreen(id: String) {
     var descOpen by remember { mutableStateOf(false) }
     var ask by remember { mutableStateOf(false) }
     val more = rememberVideos(30)
+    DarkSystemBars()   // сверху чёрный плеер
     DisposableEffect(id) {
         val a = Fire.db.collection("videos").document(id).addSnapshotListener { s, _ ->
             if (s == null) return@addSnapshotListener
