@@ -53,7 +53,7 @@ const MAX_POST_IMG = 700000;   // символов dataURL (~520 КБ), лими
 const MAX_AVATAR = 120000;
 const CHUNK = 700000;                                   // символов base64 в одном куске (кратно 4)
 const LIMITS = { disk: 10 * 1024 * 1024, video: 20 * 1024 * 1024, music: 12 * 1024 * 1024 };
-const VERSION = '9.3';
+const VERSION = '9.4';
 const MAX_MSG_IMG = 380000;    // фото в сообщении
 const ONLINE_MS = 5 * 60 * 1000; // «в сети», если заходил не раньше 5 минут назад
 
@@ -3434,6 +3434,7 @@ function trackDuration(file) {
   });
 }
 async function uploadTrack(f) {
+  if (!isAdm(S.me)) { toast('Загружать треки могут только администраторы'); return; }
   if (!(f.type || '').startsWith('audio/') && !/\.(mp3|m4a|aac|ogg|wav|flac|opus)$/i.test(f.name)) { toast('Выберите аудиофайл (mp3, m4a, ogg…)'); return; }
   if (f.size > LIMITS.music) { toast(`Трек весит ${fmtSize(f.size)}, а можно до ${fmtSize(LIMITS.music)}`); return; }
   if (S.upload) return;
@@ -3598,7 +3599,7 @@ function viewMusic() {
         ${n && !['offline', 'stream'].includes(key) ? `<button class="btn ghost" data-act="offall" data-list="${key}" ${OFF.busy ? 'disabled' : ''}>${OFF.busy ? `📥 ${OFF.busy.done}/${OFF.busy.n}` : list.every(isOff) ? '✓ Офлайн' : '📥 Скачать офлайн'}</button>` : ''}
         ${key === 'pl' && !own && M.pl ? `<button class="btn ghost" data-act="plcopy" data-id="${esc(M.pl.id)}">＋ Сохранить себе</button>` : ''}
         ${key === 'one' && list[0].artist ? `<a class="btn ghost" href="#music/a_${encodeURIComponent(list[0].artist)}">🎤 ${esc(list[0].artist)}</a>` : ''}
-        ${key === 'uploads' && !banOf(me) ? `<button class="btn ghost" data-act="pickmusic" ${S.upload ? 'disabled' : ''}>${I.upload}<span>Загрузить</span></button>` : ''}
+        ${key === 'uploads' && isAdm(me) ? `<button class="btn ghost" data-act="pickmusic" ${S.upload ? 'disabled' : ''}>${I.upload}<span>Загрузить</span></button>` : ''}
         ${key === 'pl' ? `<button class="icon-btn" data-act="plshare" data-id="${esc(M.pl.id)}" aria-label="Скопировать ссылку" title="Скопировать ссылку">${I.link}</button>` : ''}
         ${own ? `<button class="icon-btn" data-act="pledit" data-id="${esc(M.pl.id)}" aria-label="Переименовать" title="Название и цвет">✏️</button>
           <button class="icon-btn" data-act="pldel" data-id="${esc(M.pl.id)}" aria-label="Удалить плейлист">${S.confirm === 'pl:' + M.pl.id ? 'Удалить?' : '🗑'}</button>` : ''}
@@ -3688,6 +3689,7 @@ function trackEmbed(text) {
 }
 // Несколько треков сразу: без окна правки — название, исполнитель и обложка из тегов или имени файла
 async function uploadTracksBatch(files) {
+  if (!isAdm(S.me)) { toast('Загружать треки могут только администраторы'); return; }
   const ok = files.filter(f => ((f.type || '').startsWith('audio/') || /\.(mp3|m4a|aac|ogg|wav|flac|opus)$/i.test(f.name)) && f.size <= LIMITS.music);
   if (ok.length < files.length) toast(`Пропущено ${files.length - ok.length}: не аудио или больше ${fmtSize(LIMITS.music)}`);
   let done = 0;
@@ -3758,7 +3760,7 @@ function musicHome() {
   const hue = s => [...s].reduce((a, c) => a + c.charCodeAt(0), 0) % 360;
   return `<section class="mh-head">
       <div class="grow"><span class="mus-kicker">ВС Музыка</span><h1 class="mh-hi">${hi}, ${esc((me.name || '').split(' ')[0])}</h1></div>
-      ${banOf(me) ? '' : `<button class="btn sec mh-up" data-act="pickmusic" ${S.upload ? 'disabled' : ''}>${I.upload}<span>Загрузить</span></button>`}
+      ${!isAdm(me) ? '' : `<button class="btn sec mh-up" data-act="pickmusic" ${S.upload ? 'disabled' : ''}>${I.upload}<span>Загрузить</span></button>`}
     </section>
     <div class="card mus-search">${I.search}<input id="musQ" type="search" placeholder="Трек, исполнитель или плейлист" autocomplete="off" value="${esc(q)}"></div>
     ${q.trim().length >= 2 ? `${musicSearchExtra()}<div class="card mus-list"><div class="mus-sec-t">Треки${!M.streamDone ? ' <span class="spin sm"></span>' : ''}</div>
@@ -3790,7 +3792,7 @@ function musicHome() {
     ${shelf('Исполнители', '', artists.map(a => `<a class="mh-artist" href="#music/a_${encodeURIComponent(a.name)}"><span class="mh-av" style="--h:${hue(a.name)}">${a.cover ? `<img src="${esc(a.cover)}" alt="" loading="lazy">` : esc(a.name.slice(0, 1).toUpperCase())}</span><b>${esc(a.name)}</b><span>${nT(a.n)}</span></a>`).join(''))}
     ${shelf('Недавно играло', '', recent.map((t, i) => card(trackCache.get(t.id) || t, 'recent', i)).join(''))}
     ${topTracks(1).length ? `<section class="mh-shelf"><div class="mh-h"><h2>Чаще всего слушаю</h2><a href="#music/stats">Статистика</a></div><div class="card mus-list">${topTracks(5).map((t, i) => trackRow(t, i, 'top', true)).join('')}</div></section>` : ''}
-    ${!fresh.length ? '<div class="card empty"><b>Пока никто ничего не загрузил</b><span>Будьте первым — нажмите «Загрузить»</span></div>' : ''}`}`;
+    ${!fresh.length ? '<div class="card empty"><b>Пока никто ничего не загрузил</b><span>Треки загружают администраторы</span></div>' : ''}`}`;
 }
 function playlistModal() {
   if (S.plPick) {

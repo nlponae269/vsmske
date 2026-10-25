@@ -184,6 +184,8 @@ private fun Main(openPlayer: MutableState<Boolean>) {
                             composable("market") { MarketScreen() }
                             composable("answers") { AnswersScreen() }
                             composable("games/2048") { Game2048Screen() }
+                            composable("games/ttt") { TttScreen() }
+                            composable("games/mines") { MinesScreen() }
                             composable("calc") { CalcScreen() }
                             composable("offline") { OfflineToolsScreen() }
                             composable("guests") { GuestsScreen() }

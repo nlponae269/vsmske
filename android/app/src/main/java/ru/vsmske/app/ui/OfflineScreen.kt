@@ -9,7 +9,9 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Calculate
 import androidx.compose.material.icons.rounded.Casino
+import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.CloudOff
+import androidx.compose.material.icons.rounded.Flag
 import androidx.compose.material.icons.rounded.GridView
 import androidx.compose.material.icons.rounded.Timer
 import androidx.compose.material.icons.rounded.WifiOff
@@ -30,6 +32,8 @@ import kotlinx.coroutines.launch
 private data class Tool(val icon: androidx.compose.ui.graphics.vector.ImageVector, val title: String, val sub: String, val route: String, val tint: Color)
 private val TOOLS = listOf(
     Tool(Icons.Rounded.GridView, "2048", "головоломка", "games/2048", Color(0xFFC98A12)),
+    Tool(Icons.Rounded.Flag, "Сапёр", "три уровня", "games/mines", Color(0xFF2E9D4A)),
+    Tool(Icons.Rounded.Close, "Крестики-нолики", "против телефона", "games/ttt", Color(0xFF1E66F5)),
     Tool(Icons.Rounded.Calculate, "Калькулятор", "с историей", "calc", Color(0xFF4E5B76)),
     Tool(Icons.Rounded.Timer, "Таймер", "и секундомер", "timer", Color(0xFFD0462F)),
     Tool(Icons.Rounded.Casino, "Жребий", "монетка, кубики", "dice", Color(0xFF6A47C9)),
@@ -82,6 +86,8 @@ fun OfflineScreen() {
                     }
                 }
                 composable("games/2048") { Game2048Screen() }
+                composable("games/ttt") { TttScreen() }
+                composable("games/mines") { MinesScreen() }
                 composable("calc") { CalcScreen() }
                 composable("timer") { TimerScreen() }
                 composable("dice") { DiceScreen() }

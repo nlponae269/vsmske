@@ -95,7 +95,7 @@ fun siteRoute(url: String): String? {
         r.startsWith("answers") -> "answers"
         r == "mail" || r in setOf("mail/in", "mail/sent", "mail/new") -> "mail"
         Regex("^mail/[\\w-]+$").matches(r) -> r
-        r == "live" || r == "video" || r == "music" || r == "disk" || r == "clubs" || r == "market" || r == "events" || r == "radio" || r == "notes" || r == "weather" || r == "rates" || r == "calc" || r == "timer" || r == "dice" || r == "games/2048" -> r
+        r == "live" || r == "video" || r == "music" || r == "disk" || r == "clubs" || r == "market" || r == "events" || r == "radio" || r == "notes" || r == "weather" || r == "rates" || r == "calc" || r == "timer" || r == "dice" || r == "games/2048" || r == "games/ttt" || r == "games/mines" -> r
         r.startsWith("id/") -> "profile:" + r.removePrefix("id/")
         r.startsWith("@") && r.length > 1 -> "nick:" + r.removePrefix("@").lowercase()
         r.startsWith("tag/") -> r
