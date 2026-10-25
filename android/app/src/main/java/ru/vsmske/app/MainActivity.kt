@@ -16,12 +16,19 @@ import ru.vsmske.app.ui.Root
 
 class MainActivity : ComponentActivity() {
     private val openPlayer = mutableStateOf(false)
+    private val clip = mutableStateOf<String?>(null)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
         ru.vsmske.app.ui.ThemePref.load(applicationContext)
         Store.start()
+        // «ВС Клипы» — та же сборка, но свой корень: без музыкального плеера и звонков (они в VСмске)
+        if (BuildConfig.CLIPS) {
+            clip.value = intent?.getStringExtra("clip")
+            setContent { ru.vsmske.app.ui.ClipsApp(clip) }
+            return
+        }
         Music.connect(applicationContext)
         ru.vsmske.app.rtc.Call.watch(applicationContext)
         openPlayer.value = intent?.getBooleanExtra("openPlayer", false) == true
@@ -33,6 +40,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
+        intent.getStringExtra("clip")?.let { clip.value = it }
         if (intent.getBooleanExtra("openPlayer", false)) openPlayer.value = true
     }
 

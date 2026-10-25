@@ -206,7 +206,7 @@ fun ChatsScreen() {
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
-fun ChatScreen(key: String) {
+fun ChatScreen(key: String, calls: Boolean = true) {
     val nav = LocalNav.current
     val ctx = LocalContext.current
     val toast = LocalToast.current
@@ -269,7 +269,7 @@ fun ChatScreen(key: String) {
                 },
                 navigationIcon = { IconButton({ nav.popBackStack() }) { Icon(Icons.AutoMirrored.Rounded.ArrowBack, "Назад") } },
                 actions = {
-                    if (!room && key != me && peer?.banned != true) {
+                    if (calls && !room && key != me && peer?.banned != true) {
                         IconButton({ callVideo = false; call(false) }) { Icon(Icons.Rounded.Call, "Позвонить") }
                         IconButton({ callVideo = true; call(true) }) { Icon(Icons.Rounded.Videocam, "Видеозвонок") }
                     }

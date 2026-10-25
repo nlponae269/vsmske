@@ -196,7 +196,7 @@ private fun SideBtn(icon: @Composable () -> Unit, label: String, onClick: () -> 
 
 /** Большое сердце от двойного тапа: прыгает, поворачивается и улетает вверх */
 @Composable
-private fun BigHeart(key: Long, at: Offset) {
+internal fun BigHeart(key: Long, at: Offset) {
     val a = remember(key) { Animatable(0f) }
     LaunchedEffect(key) { a.animateTo(1f, tween(850)) }
     val d = LocalDensity.current

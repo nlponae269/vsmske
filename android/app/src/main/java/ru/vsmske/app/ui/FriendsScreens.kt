@@ -171,5 +171,5 @@ fun NotifsScreen() {
     }
 }
 
-private val NOTIF_ICON = mapOf("like" to "❤️", "comment" to "💬", "wall" to "📝", "friend" to "🤝", "repost" to "🔁", "mention" to "@",
+internal val NOTIF_ICON = mapOf("like" to "❤️", "comment" to "💬", "wall" to "📝", "friend" to "🤝", "repost" to "🔁", "mention" to "@",
     "gift" to "🎁", "nick" to "💎", "call" to "📞", "answer" to "💡", "best" to "🏆")

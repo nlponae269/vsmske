@@ -184,10 +184,10 @@ fun VideoHome() {
                     else {
                         item { HeroVideo(hero) { nav.navigate("video/${hero.id}") } }
                         if (clips.isNotEmpty()) {
-                            item { SectionTitle("Клипы", more = "Смотреть", onMore = { nav.navigate("clips/${clips.first().id}") }) }
+                            item { SectionTitle("Клипы", more = "Смотреть", onMore = { nav.openClips(clips.first().id) }) }
                             item {
                                 LazyRow(contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                                    items(clips.take(20), key = { it.id }) { c -> ClipCard(c) { nav.navigate("clips/${c.id}") } }
+                                    items(clips.take(20), key = { it.id }) { c -> ClipCard(c) { nav.openClips(c.id) } }
                                 }
                             }
                         }
@@ -212,7 +212,7 @@ fun VideoHome() {
                     else clips.chunked(3).forEach { row ->
                         item {
                             Row(Modifier.padding(horizontal = 12.dp, vertical = 4.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                row.forEach { c -> VideoThumb(c, Modifier.weight(1f).aspectRatio(9 / 16f).clickable { nav.navigate("clips/${c.id}") }) }
+                                row.forEach { c -> VideoThumb(c, Modifier.weight(1f).aspectRatio(9 / 16f).clickable { nav.openClips(c.id) }) }
                                 repeat(3 - row.size) { Spacer(Modifier.weight(1f)) }
                             }
                         }
@@ -386,7 +386,7 @@ fun WatchScreen(id: String) {
                     item { FilterChip(liked, { scope.safe(toast) { Media.toggleVideoLike(cur) } }, { Text(if (cur.likes.isEmpty()) "Нравится" else "${cur.likes.size}") },
                         leadingIcon = { Icon(if (liked) Icons.Rounded.Favorite else Icons.Rounded.FavoriteBorder, null, Modifier.size(18.dp)) }, shape = CircleShape) }
                     item { FilterChip(false, { share(ctx, cur.title + "\n" + SITE + "video/" + cur.id) }, { Text("Поделиться") }, leadingIcon = { Icon(Icons.Rounded.Share, null, Modifier.size(18.dp)) }, shape = CircleShape) }
-                    if (cur.isClip()) item { FilterChip(false, { nav.navigate("clips/${cur.id}") }, { Text("В клипах") }, shape = CircleShape) }
+                    if (cur.isClip()) item { FilterChip(false, { nav.openClips(cur.id) }, { Text("В клипах") }, shape = CircleShape) }
                 }
             }
             item { SectionTitle("Комментарии · ${comments?.size ?: 0}") }

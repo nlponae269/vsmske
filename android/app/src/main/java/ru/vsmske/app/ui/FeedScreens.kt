@@ -105,6 +105,7 @@ import com.google.firebase.firestore.ListenerRegistration
 import com.google.firebase.firestore.Query
 import kotlinx.coroutines.tasks.await
 import ru.vsmske.app.data.Api
+import ru.vsmske.app.data.Media
 import ru.vsmske.app.data.Comment
 import ru.vsmske.app.data.Fire
 import ru.vsmske.app.data.Images
@@ -515,7 +516,7 @@ fun SavedScreen() {
     val toast = LocalToast.current
     val me by Store.me.collectAsState()
     var posts by remember { mutableStateOf<List<Post>?>(null) }
-    val ids = me?.saved ?: emptyList()
+    val ids = (me?.saved ?: emptyList()).filter { !it.startsWith(Media.CLIP_SAVE) }   // сохранённые клипы (из ВС Клипов) — не записи
     val asked = remember { mutableSetOf<String>() }   // какие id уже запрашивали (удалённые записи не перечитываем каждый раз)
     LaunchedEffect(ids) {
         val have = posts

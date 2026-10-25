@@ -12,8 +12,6 @@ android {
         applicationId = "ru.vsmske.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 14
-        versionName = "3.10"
         // только для проверки: ./gradlew assembleDebug -Pemu=true — локальные эмуляторы Firebase вместо настоящей базы
         val emu = (project.findProperty("emu") as String?) == "true"
         buildConfigField("boolean", "EMU", emu.toString())
@@ -22,6 +20,27 @@ android {
 
     // Ключ подписи лежит в репозитории: приложение ставится не из Google Play, а новая версия
     // должна быть подписана тем же ключом, иначе Android не даст обновить поверх старой.
+    // Из одного кода собираются два приложения: VСмске (full) и «ВС Клипы» (clips) — у каждого свой пакет, название, иконка и версия
+    flavorDimensions += "app"
+    productFlavors {
+        create("full") {
+            dimension = "app"
+            applicationId = "ru.vsmske.app"
+            versionCode = 15
+            versionName = "3.11"
+            buildConfigField("boolean", "CLIPS", "false")
+            resValue("string", "app_name", "VСмске")
+        }
+        create("clips") {
+            dimension = "app"
+            applicationId = "ru.vsmske.clips"
+            versionCode = 1
+            versionName = "1.0"
+            buildConfigField("boolean", "CLIPS", "true")
+            resValue("string", "app_name", "ВС Клипы")
+        }
+    }
+
     signingConfigs {
         create("vs") {
             storeFile = file("vsmske.jks")
@@ -71,6 +90,15 @@ dependencies {
     implementation("androidx.media3:media3-exoplayer:1.5.1")
     implementation("androidx.media3:media3-session:1.5.1")
     implementation("androidx.media3:media3-ui:1.5.1")
+    // ВС Клипы: наложить звук из библиотеки на снятое видео и вынуть звук из клипа (без своих серверов — всё на телефоне)
+    implementation("androidx.media3:media3-transformer:1.5.1")
+    // ВС Клипы: своя камера (под выбранный звук)
+    val camerax = "1.4.1"
+    implementation("androidx.camera:camera-core:$camerax")
+    implementation("androidx.camera:camera-camera2:$camerax")
+    implementation("androidx.camera:camera-lifecycle:$camerax")
+    implementation("androidx.camera:camera-video:$camerax")
+    implementation("androidx.camera:camera-view:$camerax")
     implementation("androidx.graphics:graphics-shapes:1.0.1")
     // эфиры и звонки — WebRTC (тот же протокол, что у сайта)
     implementation("io.getstream:stream-webrtc-android:1.3.10")
