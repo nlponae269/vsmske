@@ -42,56 +42,11 @@ object Media {
         db.collection("videos").document(v.id).collection("comments").add(mapOf("authorId" to me, "text" to t, "createdAt" to now)).await()
     }
     suspend fun deleteVideoComment(v: Video, c: Comment) { db.collection("videos").document(v.id).collection("comments").document(c.id).delete().await() }
-    /* ---------- ВС Клипы (отдельное приложение) ---------- */
-    /** Сохранённые клипы лежат в тех же закладках users.saved с приставкой clip_ — правила не меняются (id записей приставки не имеют) */
+    /* ---------- ВС Клипы — отдельное приложение (закрытый код); здесь только общее с ним ---------- */
+    /** Сохранённые клипы лежат в тех же закладках users.saved с приставкой clip_ — в «Закладках» VСмске их не показываем */
     const val CLIP_SAVE = "clip_"
+    /** Название обязательно (правила: 1–120) — у ролика без подписи ставим 🎬 */
     const val CLIP_NO_TITLE = "🎬"
-
-    /** Звук клипа для экрана звука */
-    data class Sound(val ref: String, val title: String, val sub: String, val cover: String, val fileId: String, val type: String,
-                     val library: Boolean, val ownerId: String, val sourceId: String, val duration: Double)
-    private val sounds = mutableMapOf<String, Sound?>()
-    fun soundCached(ref: String): Sound? = sounds[ref]
-    suspend fun sound(ref: String): Sound? {
-        if (ref in sounds) return sounds[ref]
-        val id = ref.drop(2)
-        val s = when {
-            id.isEmpty() -> null
-            ref.startsWith("t:") -> db.collection("tracks").document(id).get().await().takeIf { it.exists() }?.let(Track::from)?.let { t ->
-                Sound(ref, t.title.ifEmpty { "Без названия" }, t.artist, t.cover, t.fileId, t.type, true, t.ownerId, t.id, t.duration) }
-            ref.startsWith("v:") -> db.collection("videos").document(id).get().await().takeIf { it.exists() }?.let(Video::from)?.let { v ->
-                Store.need(listOf(v.ownerId))
-                Sound(ref, "Оригинальный звук", "", v.cover, v.fileId, v.type, false, v.ownerId, v.id, v.duration) }
-            else -> null
-        }
-        sounds[ref] = s; return s
-    }
-    /** Клипы под этот звук: снятые под него (vid == ref) и, для оригинального звука, сам клип-источник первым */
-    suspend fun clipsWithSound(ref: String): List<Video> {
-        val l = db.collection("videos").whereEqualTo("vid", ref).limit(150).get().await().documents.map(Video::from).sortedByDescending { it.views }
-        val src = if (ref.startsWith("v:")) videosByIds(listOf(ref.drop(2))) else emptyList()
-        return (src + l).distinctBy { it.id }
-    }
-    suspend fun toggleClipSave(v: Video) {
-        val saved = Store.me.value?.saved ?: emptyList()
-        val key = CLIP_SAVE + v.id
-        if (key !in saved && saved.size >= 500) error("Сохранено уже 500 — уберите старое")
-        db.collection("users").document(me).update("saved", if (key in saved) FieldValue.arrayRemove(key) else FieldValue.arrayUnion(key)).await()
-    }
-    suspend fun videosByIds(ids: List<String>): List<Video> {
-        val got = ids.distinct().chunked(10).flatMap { part -> db.collection("videos").whereIn(FieldPath.documentId(), part).get().await().documents.map(Video::from) }
-        return ids.mapNotNull { id -> got.firstOrNull { it.id == id } }
-    }
-    /** Понравившиеся: array-contains без сортировки — индекс не нужен */
-    suspend fun likedVideos(uid: String): List<Video> =
-        db.collection("videos").whereArrayContains("likes", uid).limit(150).get().await().documents.map(Video::from).sortedByDescending { it.createdAt }
-    /** Клипы друзей (по 10 человек за запрос), новые сверху */
-    suspend fun videosOfMany(uids: List<String>): List<Video> =
-        uids.distinct().take(200).chunked(10).flatMap { part -> db.collection("videos").whereIn("ownerId", part).limit(60).get().await().documents.map(Video::from) }
-            .sortedByDescending { it.createdAt }
-    /** Число комментариев — подсчёт на сервере (как getCountFromServer на сайте) */
-    suspend fun commentCount(id: String): Int =
-        db.collection("videos").document(id).collection("comments").count().get(com.google.firebase.firestore.AggregateSource.SERVER).await().count.toInt()
 
     /**
      * Удалить видео целиком (9.5): сначала комментарии (после удаления видео их уже не стереть — правило смотрит на хозяина видео),
@@ -104,6 +59,7 @@ object Media {
         }
         db.collection("videos").document(v.id).delete().await()
         if (v.source == "file") runCatching { Files.delete(v.fileId) }
+        // файл клипа в хранилище «ВС Клипов» удаляют сами «ВС Клипы» (у VСмске нет ключа); ничейные файлы потом убирает уборка
     }
 
     /** Уборка: свои недокачанные файлы (загрузка оборвалась) старше суток — раз за запуск */
@@ -149,7 +105,7 @@ object Media {
         val doc = mutableMapOf<String, Any>("ownerId" to me, "title" to title.trim().take(120).ifEmpty { CLIP_NO_TITLE }, "description" to description.trim().take(2000),
             "source" to "file", "fileId" to fileId, "type" to p.type.take(60), "thumb" to thumb, "duration" to Math.round(dur).toDouble(), "size" to p.size,
             "likes" to emptyList<String>(), "createdAt" to now)
-        if (sound.isNotEmpty()) doc["vid"] = sound   // звук клипа (см. Video.soundRef)
+        if (sound.isNotEmpty()) doc["vid"] = sound   // звук клипа (так пишут «ВС Клипы»)
         return db.collection("videos").add(doc).await().id
     }
 
