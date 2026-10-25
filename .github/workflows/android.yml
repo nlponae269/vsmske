@@ -40,7 +40,7 @@ jobs:
           make_latest: true
           body: |
             **VСмске для Android ${{ steps.ver.outputs.name }}** — файл **VSmske.apk**
-            **ВС Клипы** (клипы в духе ТикТока, тот же аккаунт) — [скачать VSClips.apk](https://storage.yandexcloud.net/vsclips-video/app/VSClips.apk)
+            **VСмске закрыт.** Короткие видео — в приложении «Миг»: [скачать Mig.apk](https://storage.yandexcloud.net/vsclips-video/app/Mig.apk)
 
             Как установить: скачайте нужный файл ниже и откройте его. Если Android спросит —
             разрешите установку из этого источника. Новая версия ставится поверх старой, вход сохраняется.
