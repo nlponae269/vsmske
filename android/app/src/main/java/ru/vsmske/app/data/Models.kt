@@ -207,6 +207,11 @@ data class Video(
 ) {
     /** Обложка: своя (dataURL) или превью YouTube */
     val cover: String get() = thumb.ifEmpty { if (provider == "youtube" && Regex("^[\\w-]{11}$").matches(vid)) "https://i.ytimg.com/vi/$vid/hqdefault.jpg" else "" }
+    /**
+     * ВС Клипы: звук клипа. У роликов-файлов поле vid не используется — в нём лежит ссылка на звук:
+     * «t:<трек>» — звук из библиотеки (ВС Музыка), «v:<клип>» — оригинальный звук другого клипа. Пусто — свой оригинальный звук.
+     */
+    val soundRef: String get() = if (source == "file" && (vid.startsWith("t:") || vid.startsWith("v:"))) vid else "v:$id"
     /** Адрес встроенного плеера для ссылок YouTube / Rutube / VK */
     val embed: String get() = when {
         provider == "youtube" && Regex("^[\\w-]{11}$").matches(vid) -> "https://www.youtube.com/embed/$vid?playsinline=1&autoplay=1"

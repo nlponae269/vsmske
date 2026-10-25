@@ -72,7 +72,7 @@ fun RichText(
                     hidden -> LinkAnnotation.Clickable("sp${p.spoiler}") { open = open + p.spoiler }
                     p.url != null -> siteRoute(p.url)?.let { r -> LinkAnnotation.Clickable("u", linkStyle) { openSite(nav, scope, toast, r) } }
                         ?: LinkAnnotation.Url(p.url, linkStyle) { runCatching { uri.openUri(p.url) }.onFailure { toast("Не получилось открыть ссылку") } }
-                    p.tag != null -> LinkAnnotation.Clickable("t", linkStyle) { nav.navigate("tag/${p.tag}") }
+                    p.tag != null -> LinkAnnotation.Clickable("t", linkStyle) { openSite(nav, scope, toast, "tag/${p.tag}") }
                     p.nick != null -> LinkAnnotation.Clickable("n", linkStyle) { openNick(nav, scope, toast, p.nick) }
                     else -> null
                 }
@@ -108,7 +108,9 @@ private fun openSite(nav: NavHostController, scope: CoroutineScope, toast: (Stri
         r.startsWith("profile:") -> nav.openProfile(r.removePrefix("profile:"))
         r.startsWith("nick:") -> openNick(nav, scope, toast, r.removePrefix("nick:"))
         r in setOf("feed", "video", "music") -> nav.openTab(r)
-        else -> nav.navigate(r)
+        r.startsWith("clips/") -> nav.openClips(r.removePrefix("clips/"))
+        // в ВС Клипах есть не все разделы — такой адрес открываем на сайте
+        else -> runCatching { nav.navigate(r) }.onFailure { runCatching { nav.context.startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(SITE + r)).addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)) } }
     }
 }
 

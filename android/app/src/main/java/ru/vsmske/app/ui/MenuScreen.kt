@@ -120,7 +120,7 @@ fun MenuScreen() {
             item { MenuTile(Icons.Rounded.Lightbulb, "Ответы", "спросить у людей", Color(0xFFC98A12)) { nav.navigate("answers") } }
             item(span = { GridItemSpan(maxLineSpan) }) { MenuSection("Медиа") }
             item { MenuTile(Icons.Rounded.PhotoLibrary, "Фотоальбомы", "мои фото", Color(0xFF2B8BB5)) { nav.navigate("albums/${Store.uid}") } }
-            item { MenuTile(Icons.Rounded.SmartDisplay, "Клипы", "короткие видео", Color(0xFFB4398F)) { nav.navigate("clips/-") } }
+            item { MenuTile(Icons.Rounded.SmartDisplay, "Клипы", "короткие видео", Color(0xFFB4398F)) { nav.openClips("-") } }
             item { MenuTile(Icons.Rounded.Sensors, "Эфиры", "прямые трансляции", Color(0xFFE53935)) { nav.navigate("live") } }
             item { MenuTile(Icons.AutoMirrored.Rounded.QueueMusic, "Плейлисты", "ВС Музыка", Color(0xFF6A47C9)) { nav.navigate("music/playlists") } }
             item { MenuTile(Icons.Rounded.Favorite, "Мои треки", "сохранённое", Color(0xFFC026D3)) { nav.navigate("music/liked") } }

@@ -111,7 +111,7 @@ fun Root(openPlayer: MutableState<Boolean>) {
 
 private val TABS = setOf("feed", "video", "music", "chats", "menu")
 /** Экраны на весь экран и на планшете (без колонки по центру) */
-private val FULL = setOf("clips/{id}", "live/{id}")
+private val FULL = setOf("live/{id}")
 
 @Composable
 private fun Main(openPlayer: MutableState<Boolean>) {
@@ -122,7 +122,7 @@ private fun Main(openPlayer: MutableState<Boolean>) {
     val entry by nav.currentBackStackEntryAsState()
     val route = entry?.destination?.route
     val isTab = route in TABS
-    val withInput = route == "chat/{key}" || route == "post/{id}" || route == "clips/{id}" || route == "live/{id}" || route == "video/{id}"   // там своё внизу — мини-плеер прячем
+    val withInput = route == "chat/{key}" || route == "post/{id}" || route == "live/{id}" || route == "video/{id}"   // там своё внизу — мини-плеер прячем
     val ms by Music.state.collectAsState()
     val hasPlayer = ms.track != null
     val online by ru.vsmske.app.data.Net.online.collectAsState()
@@ -161,7 +161,6 @@ private fun Main(openPlayer: MutableState<Boolean>) {
                             composable("me") { ProfileScreen(Store.uid) }
                             composable("video/{id}") { WatchScreen(it.arguments?.getString("id") ?: "") }
                             composable("videos/{uid}") { UserVideosScreen(it.arguments?.getString("uid") ?: "") }
-                            composable("clips/{id}") { ClipsScreen((it.arguments?.getString("id") ?: "").takeIf { s -> s != "-" } ?: "") }
                             composable("albums/{uid}") { AlbumsScreen(it.arguments?.getString("uid") ?: Store.uid) }
                             composable("album/{id}") { AlbumScreen(it.arguments?.getString("id") ?: "") }
                             composable("disk") { DiskScreen() }
@@ -214,6 +213,7 @@ private fun Main(openPlayer: MutableState<Boolean>) {
         if (openPlayer.value && hasPlayer) BackHandler { openPlayer.value = false }
         if (!(openPlayer.value && hasPlayer)) WhatsNew()
         CallOverlay()
+        ClipsGateDialog()
     }
 }
 
