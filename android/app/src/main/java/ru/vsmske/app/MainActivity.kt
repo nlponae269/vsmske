@@ -21,6 +21,8 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
         ru.vsmske.app.ui.ThemePref.load(applicationContext)
+        // VСмске закрыт: только экран «Закрыто» (без входа, плеера и звонков)
+        if (ru.vsmske.app.ui.CLOSED) { setContent { ru.vsmske.app.ui.ClosedScreen() }; return }
         Store.start()
         Music.connect(applicationContext)
         ru.vsmske.app.rtc.Call.watch(applicationContext)
