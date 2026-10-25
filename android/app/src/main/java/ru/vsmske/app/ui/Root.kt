@@ -3,6 +3,8 @@ package ru.vsmske.app.ui
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
@@ -58,6 +60,7 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
@@ -88,8 +91,17 @@ fun Root(openPlayer: MutableState<Boolean>) {
         val phase by Store.phase.collectAsState()
         Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surface)) {
             when (phase) {
-                Store.Phase.Loading -> Loading(Modifier.align(Alignment.Center))
-                Store.Phase.SignedOut -> AuthScreen()
+                Store.Phase.Loading, Store.Phase.Offline -> {
+                    // без сети профиль может не прийти никогда: через пару секунд показываем то, что работает без интернета
+                    val online by ru.vsmske.app.data.Net.online.collectAsState()
+                    var waited by remember { androidx.compose.runtime.mutableStateOf(false) }
+                    androidx.compose.runtime.LaunchedEffect(phase, online) { waited = false; kotlinx.coroutines.delay(if (online) 8000 else 1500); waited = true }
+                    if (waited && (!online || phase == Store.Phase.Offline)) OfflineScreen() else Loading(Modifier.align(Alignment.Center))
+                }
+                Store.Phase.SignedOut -> {
+                    val online by ru.vsmske.app.data.Net.online.collectAsState()
+                    if (online) AuthScreen() else OfflineScreen()   // войти без сети нельзя — показываем то, что работает
+                }
                 Store.Phase.NeedProfile -> OnboardScreen()
                 Store.Phase.Ready -> Main(openPlayer)
             }
@@ -113,6 +125,7 @@ private fun Main(openPlayer: MutableState<Boolean>) {
     val withInput = route == "chat/{key}" || route == "post/{id}" || route == "clips/{id}" || route == "live/{id}" || route == "video/{id}"   // там своё внизу — мини-плеер прячем
     val ms by Music.state.collectAsState()
     val hasPlayer = ms.track != null
+    val online by ru.vsmske.app.data.Net.online.collectAsState()
 
     CompositionLocalProvider(LocalNav provides nav, LocalToast provides toast) {
         BoxWithConstraints(Modifier.fillMaxSize()) {
@@ -125,6 +138,9 @@ private fun Main(openPlayer: MutableState<Boolean>) {
                     snackbarHost = { SnackbarHost(snack) },
                     bottomBar = {
                         Column {
+                            AnimatedVisibility(!online && isTab, enter = expandVertically() + fadeIn(), exit = shrinkVertically() + fadeOut()) {
+                                OfflineStrip(Modifier.padding(horizontal = 8.dp, vertical = 4.dp).then(if (!hasPlayer && tablet) Modifier.navigationBarsPadding() else Modifier)) { nav.navigate("offline") }
+                            }
                             AnimatedVisibility(hasPlayer && !withInput, enter = slideInVertically { it } + fadeIn(), exit = slideOutVertically { it } + fadeOut()) {
                                 MiniPlayer(Modifier.padding(horizontal = 8.dp, vertical = 6.dp).then(if (isTab && !tablet) Modifier else Modifier.navigationBarsPadding())) { openPlayer.value = true }
                             }
@@ -169,6 +185,7 @@ private fun Main(openPlayer: MutableState<Boolean>) {
                             composable("answers") { AnswersScreen() }
                             composable("games/2048") { Game2048Screen() }
                             composable("calc") { CalcScreen() }
+                            composable("offline") { OfflineToolsScreen() }
                             composable("guests") { GuestsScreen() }
                             composable("timer") { TimerScreen() }
                             composable("dice") { DiceScreen() }

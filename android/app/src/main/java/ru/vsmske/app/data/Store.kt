@@ -16,7 +16,8 @@ import kotlinx.coroutines.tasks.await
  * Всё через слушатели Firestore — экраны просто собирают StateFlow.
  */
 object Store {
-    enum class Phase { Loading, SignedOut, NeedProfile, Ready }
+    /** Offline — вошли, но профиль не получить: нет интернета и нет копии на телефоне */
+    enum class Phase { Loading, SignedOut, NeedProfile, Ready, Offline }
 
     val phase = MutableStateFlow(Phase.Loading)
     val me = MutableStateFlow<User?>(null)
@@ -51,8 +52,11 @@ object Store {
     private fun listen(id: String) {
         val db = Fire.db
         subs += db.collection("users").document(id).addSnapshotListener { s, e ->
-            if (e != null) return@addSnapshotListener
-            if (s == null || !s.exists()) { me.value = null; phase.value = Phase.NeedProfile; return@addSnapshotListener }
+            if (e != null) { if (phase.value == Phase.Loading) phase.value = Phase.Offline; return@addSnapshotListener }
+            if (s == null) return@addSnapshotListener
+            // «нет документа» из кэша без сети — это не «новый аккаунт», а просто нет связи: ждём сервер
+            if (!s.exists() && s.metadata.isFromCache) { if (phase.value != Phase.Ready) phase.value = Phase.Offline; return@addSnapshotListener }
+            if (!s.exists()) { me.value = null; phase.value = Phase.NeedProfile; return@addSnapshotListener }
             val u = User.from(s)
             me.value = u; put(u)
             if (phase.value != Phase.Ready) { phase.value = Phase.Ready; startLive(id); touchSeen() }
