@@ -1,5 +1,6 @@
-# Сборка Android-приложений: при каждом изменении папки android/ в main GitHub сам собирает два APK
-# и выкладывает их на страницу Releases: «VSmske.apk» (VСмске) и «VSClips.apk» (ВС Клипы) в релизе «Приложение для Android».
+# Сборка Android-приложения: при каждом изменении папки android/ в main GitHub сам собирает APK
+# и выкладывает его на страницу Releases (ссылка «VSmske.apk» в релизе «Приложение для Android»).
+# «ВС Клипы» — отдельный закрытый проект, его APK лежит в хранилище Яндекса.
 name: Android APK
 
 on:
@@ -25,14 +26,12 @@ jobs:
         working-directory: android
         run: |
           chmod +x gradlew
-          ./gradlew assembleFullRelease assembleClipsRelease testFullReleaseUnitTest --no-daemon
-          cp app/build/outputs/apk/full/release/app-full-release.apk ../VSmske.apk
-          cp app/build/outputs/apk/clips/release/app-clips-release.apk ../VSClips.apk
+          ./gradlew assembleRelease testReleaseUnitTest --no-daemon
+          cp app/build/outputs/apk/release/app-release.apk ../VSmske.apk
       - name: Номер версии
         id: ver
         run: |
           echo "name=$(grep -oP 'versionName = "\K[^"]+' android/app/build.gradle.kts | sed -n 1p)" >> "$GITHUB_OUTPUT"
-          echo "clips=$(grep -oP 'versionName = "\K[^"]+' android/app/build.gradle.kts | sed -n 2p)" >> "$GITHUB_OUTPUT"
       - name: Выложить в Releases
         uses: softprops/action-gh-release@v2
         with:
@@ -41,12 +40,10 @@ jobs:
           make_latest: true
           body: |
             **VСмске для Android ${{ steps.ver.outputs.name }}** — файл **VSmske.apk**
-            **ВС Клипы ${{ steps.ver.outputs.clips }}** (клипы в духе ТикТока, тот же аккаунт) — файл **VSClips.apk**
+            **ВС Клипы** (клипы в духе ТикТока, тот же аккаунт) — [скачать VSClips.apk](https://storage.yandexcloud.net/vsclips-video/app/VSClips.apk)
 
             Как установить: скачайте нужный файл ниже и откройте его. Если Android спросит —
             разрешите установку из этого источника. Новая версия ставится поверх старой, вход сохраняется.
 
             Сборка от ${{ github.event.head_commit.timestamp || 'ручного запуска' }}.
-          files: |
-            VSmske.apk
-            VSClips.apk
+          files: VSmske.apk

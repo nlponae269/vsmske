@@ -25,24 +25,22 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavHostController
 import kotlinx.coroutines.flow.MutableStateFlow
-import ru.vsmske.app.BuildConfig
 
 /*
- * Клипы живут в отдельном приложении «ВС Клипы» (тот же код, сборка clips). В VСмске по нажатию на клипы — окно
+ * Клипы живут в отдельном приложении «ВС Клипы» (закрытый код, свой репозиторий). В VСмске по нажатию на клипы — окно
  * «недоступно в этой версии» с кнопкой «Скачать APK» (или «Открыть», если «ВС Клипы» уже стоят).
  */
 object ClipsGate {
     const val PKG = "ru.vsmske.clips"
-    const val APK = "https://github.com/nlponae269/vsmske/releases/download/android/VSClips.apk"
+    /** APK лежит в хранилище Яндекса — его туда кладёт автосборка «ВС Клипов» */
+    const val APK = "https://storage.yandexcloud.net/vsclips-video/app/VSClips.apk"
     /** id клипа, который хотели открыть ("" — просто ленту); null — окна нет */
     val ask = MutableStateFlow<String?>(null)
 }
 
-/** Открыть клип: в «ВС Клипах» — сразу, в VСмске — окно «недоступно» */
-fun NavHostController.openClips(id: String) {
-    val clip = id.takeIf { it != "-" } ?: ""
-    if (BuildConfig.CLIPS) navigate("clip/${clip.ifEmpty { "-" }}") else ClipsGate.ask.value = clip
-}
+/** Открыть клип — в VСмске клипов нет: окно «недоступно» */
+@Suppress("UnusedReceiverParameter")
+fun NavHostController.openClips(id: String) { ClipsGate.ask.value = id.takeIf { it != "-" } ?: "" }
 
 @Composable
 fun ClipsGateDialog() {

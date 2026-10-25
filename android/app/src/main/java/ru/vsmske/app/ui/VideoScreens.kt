@@ -132,7 +132,7 @@ fun rememberVideos(limit: Long): List<Video>? {
     return list
 }
 
-fun Video.isClip() = source == "file" && duration in 0.5..90.0
+fun Video.isClip() = (source == "file" || stored) && duration in 0.5..90.0
 
 /** Обложка ролика с длительностью */
 @Composable
@@ -288,7 +288,7 @@ fun rememberVideoPlayer(): ExoPlayer {
     return p
 }
 
-fun Video.mediaUri(): Uri = if (source == "file") Uri.parse("vsmske://file/$fileId") else Uri.parse(vid)
+fun Video.mediaUri(): Uri = if (source == "file") Uri.parse("vsmske://file/$fileId") else Uri.parse(fileUrl)
 
 @OptIn(UnstableApi::class)
 @Composable

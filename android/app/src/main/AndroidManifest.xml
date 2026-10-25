@@ -12,8 +12,6 @@
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.VIBRATE" />
     <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT" />
-    <!-- скачивание клипов и звуков в «Загрузки/ВС Клипы» на Android 8–9 (с Android 10 разрешение не нужно) -->
-    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="28" />
     <uses-feature android:name="android.hardware.camera" android:required="false" />
     <!-- VСмске и «ВС Клипы» открывают друг друга (кнопки «Открыть ВС Клипы» / «Открыть VСмске») -->
     <queries>
