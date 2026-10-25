@@ -59,7 +59,7 @@ object Store {
             if (!s.exists()) { me.value = null; phase.value = Phase.NeedProfile; return@addSnapshotListener }
             val u = User.from(s)
             me.value = u; put(u)
-            if (phase.value != Phase.Ready) { phase.value = Phase.Ready; startLive(id); touchSeen() }
+            if (phase.value != Phase.Ready) { phase.value = Phase.Ready; startLive(id); touchSeen(); scope.launch { runCatching { Media.cleanupStaleUploads() } } }
         }
     }
 

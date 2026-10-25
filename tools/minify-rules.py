@@ -55,6 +55,9 @@ text = rename_params(text)
 # частые проверки «владелец — я» → функции
 text = text.replace('rd().ownerId==B()', 'ro()').replace('A().ownerId==B()', 'no()')
 text = text.replace('function rd(){return resource.data;}', 'function rd(){return resource.data;}function ro(){return rd().ownerId==B();}function no(){return A().ownerId==B();}', 1)
+# request.time встречается часто → функция rt() (9.5: ради места под удаление файлов админом)
+if 'rt(' not in text and text.count('request.time') > 3:
+    text = text.replace('request.time', 'rt()').replace('function rd(){return resource.data;}', 'function rd(){return resource.data;}function rt(){return request.time;}', 1)
 text = re.sub(r'\b(allow [a-z, ]+):if', r'\1:if', text)
 text = text.replace('match/', 'match /').replace('function', 'function ').replace('function  ', 'function ').replace('return', 'return ').replace('return  ', 'return ')
 text = re.sub(r'\b(is|in)\b', r' \1 ', text); text = re.sub(r' {2,}', ' ', text)
@@ -70,7 +73,7 @@ nb = re.search(r'function (\w+)\(\)\{let b=\w+\(' + me + r'\(\)\)', text)
 if nb: text = text.replace(':if ' + signed + '()&&' + nb.group(1) + '()', ':if ' + nb.group(1) + '()')
 # и перед скобкой «(я владелец/отправитель || …)» и isAdmin(): первое, что там считается, — request.auth.uid
 adm = re.search(r'function (\w+)\(\)\{return \w+\(' + me + r'\(\)\)\.get\(\'admin\'', text)
-first = r'(ro\(\)|rd\(\)\.\w+==' + me + r'\(\)|get\([^()]*\([^()]*\)\)\.data\.\w+==' + me + r'\(\))'
+first = r'(ro\(\)|rd\(\)\.\w+==' + me + r'\(\)|get\([^()]*\([^()]*\)\)\.data\.\w+==' + me + r'\(\)|\w+\(\w+\)\.\w+==' + me + r'\(\))'
 text = re.sub(r':if ' + signed + r'\(\)&&(?=\(' + first + r'\|\||' + first + r'(&&|;))', ':if ', text)
 if adm: text = re.sub(r':if ' + signed + r'\(\)&&(?=' + adm.group(1) + r'\(\)(&&|;))', ':if ', text)
 text = text.rstrip('\n') + '\n'

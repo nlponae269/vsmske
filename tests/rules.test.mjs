@@ -6,7 +6,7 @@ import { readFileSync } from 'node:fs';
 import { initializeTestEnvironment, assertSucceeds, assertFails } from '@firebase/rules-unit-testing';
 import {
   doc, collection, setDoc, getDoc, getDocs, updateDoc, deleteDoc, writeBatch,
-  serverTimestamp, arrayUnion, arrayRemove, increment, Timestamp, deleteField
+  serverTimestamp, arrayUnion, arrayRemove, increment, Timestamp, deleteField, query, where
 } from 'firebase/firestore';
 
 let env;
@@ -619,6 +619,25 @@ test('9.4: загружать треки может только админ', as
   await assertFails(setDoc(doc(collection(f, 'tracks')), tr));
   await env.withSecurityRulesDisabled(ctx => updateDoc(doc(ctx.firestore(), 'users', B), { admin: 'true' }));
   await assertSucceeds(setDoc(doc(collection(f, 'tracks')), tr));
+});
+
+test('9.5: «Очистить мусор» — список файлов видео и треков читается, файлы Диска — нет', async () => {
+  const f = db(A);
+  await setDoc(doc(collection(f, 'files')), { ownerId: A, kind: 'video', name: 'v.mp4', size: 10, type: 'video/mp4', chunks: 1, status: 'uploading', createdAt: serverTimestamp() });
+  await assertSucceeds(getDocs(query(collection(db(B), 'files'), where('kind', 'in', ['video', 'music']))));
+  await assertFails(getDocs(query(collection(db(B), 'files'), where('kind', '==', 'disk'))));
+  await assertSucceeds(getDocs(query(collection(db(A), 'files'), where('ownerId', '==', A), where('status', '==', 'uploading'))));
+});
+
+test('9.5: чужой файл видео удаляет только админ (вместе с кусками)', async () => {
+  const f = db(A), file = doc(collection(f, 'files'));
+  await setDoc(file, { ownerId: A, kind: 'video', name: 'v.mp4', size: 10, type: 'video/mp4', chunks: 1, status: 'uploading', createdAt: serverTimestamp() });
+  await setDoc(doc(f, 'files', file.id, 'chunks', '0000'), { i: 0, data: 'AAAA' });
+  await assertFails(deleteDoc(doc(db(B), 'files', file.id, 'chunks', '0000')));
+  await assertFails(deleteDoc(doc(db(B), 'files', file.id)));
+  await env.withSecurityRulesDisabled(ctx => updateDoc(doc(ctx.firestore(), 'users', B), { admin: true }));
+  await assertSucceeds(deleteDoc(doc(db(B), 'files', file.id, 'chunks', '0000')));
+  await assertSucceeds(deleteDoc(doc(db(B), 'files', file.id)));
 });
 
 /* ---------- 3.1: текст песни и обложка трека ---------- */

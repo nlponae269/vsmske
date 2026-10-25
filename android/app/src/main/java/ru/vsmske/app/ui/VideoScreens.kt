@@ -111,6 +111,9 @@ import ru.vsmske.app.music.Music
 
 const val SITE = "https://nlponae269.github.io/vsmske/"
 
+/** ВС Видео: после сжатия ~5 МБ в минуту, а файл в базе — до 20 МБ (правила), поэтому ролик — до 4 минут */
+const val VIDEO_MAX_SEC = 240
+
 fun share(ctx: Context, text: String) {
     ctx.startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_TEXT, text), "Поделиться"))
 }
@@ -442,6 +445,7 @@ fun AddVideoSheet(onDone: (String?) -> Unit) {
     var title by remember { mutableStateOf("") }
     var desc by remember { mutableStateOf("") }
     var progress by remember { mutableStateOf<Float?>(null) }
+    var stage by remember { mutableStateOf("Загружаем") }
     val pick = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { u -> if (u != null) { uri = u; if (title.isBlank()) title = "Моё видео" } }
     VsSheet({ if (progress == null) onDone(null) }) {
         Text("Новое видео", style = MaterialTheme.typography.headlineSmall)
@@ -452,19 +456,26 @@ fun AddVideoSheet(onDone: (String?) -> Unit) {
         if (mode == "file") {
             Box(Modifier.fillMaxWidth().height(120.dp).clip(RoundedCornerShape(24.dp)).background(MaterialTheme.colorScheme.secondaryContainer).clickable { pick.launch("video/*") },
                 contentAlignment = Alignment.Center) {
-                Text(if (uri == null) "Выбрать видео (до 20 МБ)" else "Видео выбрано ✓ — нажмите, чтобы заменить", color = MaterialTheme.colorScheme.onSecondaryContainer, style = MaterialTheme.typography.titleSmall)
+                Text(if (uri == null) "Выбрать видео (до 4 минут — сожмём сами)" else "Видео выбрано ✓ — нажмите, чтобы заменить", color = MaterialTheme.colorScheme.onSecondaryContainer, style = MaterialTheme.typography.titleSmall)
             }
         } else OutlinedTextField(link, { link = it.trim() }, Modifier.fillMaxWidth(), label = { Text("YouTube, Rutube, VK Видео или .mp4") }, singleLine = true,
             isError = link.isNotEmpty() && Media.parseLink(link) == null)
         OutlinedTextField(title, { title = it.take(120) }, Modifier.fillMaxWidth().padding(top = 8.dp), label = { Text("Название") }, singleLine = true)
         OutlinedTextField(desc, { desc = it.take(2000) }, Modifier.fillMaxWidth().padding(top = 8.dp), label = { Text("Описание") }, minLines = 2, maxLines = 5)
-        progress?.let { LinearProgressIndicator({ it }, Modifier.fillMaxWidth().padding(top = 12.dp)); Text("Загружаем… не закрывайте приложение", style = MaterialTheme.typography.bodySmall) }
+        progress?.let { LinearProgressIndicator({ it }, Modifier.fillMaxWidth().padding(top = 12.dp)); Text("$stage… не закрывайте приложение", style = MaterialTheme.typography.bodySmall) }
         val ready = progress == null && title.isNotBlank() && (if (mode == "file") uri != null else Media.parseLink(link) != null)
         Button({
             progress = 0f
             scope.launch {
                 try {
-                    val id = if (mode == "file") Media.addVideoFile(ctx, uri!!, title, desc) { progress = it } else Media.addVideoLink(link, title, desc)
+                    val id = if (mode == "file") {
+                        // сильное сжатие на телефоне (480p, ~600 кбит/с): минута ≈ 5 МБ; длиннее 4 минут база не примет — обрезаем
+                        stage = "Сжимаем"
+                        val packed = ru.vsmske.app.music.ClipMedia.compressVideo(ctx, uri!!, VIDEO_MAX_SEC) { progress = it }
+                        stage = "Загружаем"; progress = 0f
+                        try { Media.addVideoFile(ctx, androidx.core.content.FileProvider.getUriForFile(ctx, ctx.packageName + ".files", packed), title, desc) { progress = it } }
+                        finally { packed.delete() }
+                    } else Media.addVideoLink(link, title, desc)
                     toast("Видео добавлено"); onDone(id)
                 } catch (e: Exception) { toast(errText(e)); progress = null }
             }

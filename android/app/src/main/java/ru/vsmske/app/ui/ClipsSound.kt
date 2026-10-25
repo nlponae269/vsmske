@@ -75,7 +75,7 @@ fun rememberDownloader(): ((suspend () -> String) -> Unit) {
     val toast = LocalToast.current
     val scope = rememberCoroutineScope()
     var pending by remember { mutableStateOf<(suspend () -> String)?>(null) }
-    fun run(job: suspend () -> String) { toast("Скачиваем…"); scope.safe(toast) { val where = job(); toast("Сохранено: $where") } }
+    fun run(job: suspend () -> String) { toast("Готовим файл… это может занять до минуты"); scope.safe(toast) { val where = job(); toast("Сохранено: $where") } }
     val ask = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { ok ->
         val j = pending; pending = null
         if (ok && j != null) run(j) else if (!ok) toast("Разрешите доступ к памяти, чтобы сохранять файлы")
@@ -87,10 +87,13 @@ fun rememberDownloader(): ((suspend () -> String) -> Unit) {
     }
 }
 
-/** Скачать клип целиком */
+/** Скачать клип: с водяным знаком (значок «ВС Клипы» и @ник автора) и заставкой в конце */
 suspend fun downloadClip(ctx: android.content.Context, v: Video): String {
     val f = withContext(Dispatchers.IO) { FileSource.local(ctx, v.fileId) }
-    return ClipMedia.saveToDownloads(ctx, f, "Клип ${v.id}.${ClipMedia.ext(v.type)}", v.type)
+    val owner = Store.user(v.ownerId) ?: runCatching { Store.fetchUser(v.ownerId) }.getOrNull()
+    val nick = owner?.nick?.takeIf { it.isNotEmpty() && owner.banned != true } ?: ""
+    val marked = ClipMedia.watermark(ctx, f, nick, ClipMedia.appIcon(ctx))
+    return try { ClipMedia.saveToDownloads(ctx, marked, "ВС Клипы ${if (nick.isNotEmpty()) "@$nick " else ""}${v.id}.mp4", "video/mp4") } finally { marked.delete() }
 }
 
 /** Скачать звук: трек из библиотеки — как есть, оригинальный звук — вынимаем из клипа в .m4a */
@@ -111,6 +114,12 @@ fun ClipShareSheet(v: Video, onClose: () -> Unit) {
     val ctx = LocalContext.current
     val nav = LocalNav.current
     val download = rememberDownloader()
+    val toast = LocalToast.current
+    val scope = rememberCoroutineScope()
+    var askDel by remember { mutableStateOf(false) }
+    if (askDel) AlertDialog({ askDel = false }, title = { Text("Удалить клип?") }, text = { Text("Клип, его комментарии и файл удалятся насовсем.") },
+        confirmButton = { TextButton({ askDel = false; onClose(); scope.safe(toast) { Media.deleteVideo(v); ClipsData.remove(v.id); toast("Клип удалён") } }) { Text("Удалить") } },
+        dismissButton = { TextButton({ askDel = false }) { Text("Отмена") } })
     VsSheet(onClose) {
         Text("Поделиться", style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(bottom = 16.dp))
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
@@ -118,6 +127,9 @@ fun ClipShareSheet(v: Video, onClose: () -> Unit) {
             ShareTile(Icons.Rounded.Download, "Скачать видео", Color(0xFF20B26B)) { onClose(); download { downloadClip(ctx, v) } }
             ShareTile(Icons.Rounded.MusicNote, "Скачать звук", ClipPink) { onClose(); download { downloadSound(ctx, v.soundRef) } }
             ShareTile(Icons.Rounded.Videocam, "Снять под звук", Color(0xFF3FA9F5)) { onClose(); nav.navigate("upload?sound=" + Uri.encode(v.soundRef)) }
+        }
+        if (v.ownerId == Store.uid || Store.iAmAdmin) TextButton({ askDel = true }, Modifier.fillMaxWidth().padding(top = 8.dp)) {
+            Text(if (v.ownerId == Store.uid) "Удалить клип" else "Удалить клип (админ)", color = MaterialTheme.colorScheme.error)
         }
         Text("Файлы сохраняются в «Загрузки/${ClipMedia.FOLDER}»", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(top = 18.dp, bottom = 4.dp).align(Alignment.CenterHorizontally))

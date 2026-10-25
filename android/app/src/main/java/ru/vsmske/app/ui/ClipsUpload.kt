@@ -64,8 +64,8 @@ import ru.vsmske.app.music.ClipMedia
 import ru.vsmske.app.music.FileSource
 import java.io.File
 
-/** Клип — до 90 секунд (как isClip() и Клипы на сайте), файл — до 20 МБ (как ВС Видео) */
-private const val CLIP_MAX_SEC = 90
+/** Клип — до минуты; перед загрузкой всегда сильно сжимаем (ClipMedia.compressVideo), поэтому предела по весу нет */
+private const val CLIP_MAX_SEC = 60
 
 private suspend fun durationOf(ctx: Context, uri: Uri): Double = withContext(Dispatchers.IO) {
     runCatching {
@@ -114,9 +114,8 @@ fun ClipsUpload(presetSound: String) {
         val d = durationOf(ctx, u)
         when {
             d <= 0.0 -> toast("Не получилось прочитать видео — попробуйте другое")
-            d > CLIP_MAX_SEC + 0.5 -> toast("Клип — до $CLIP_MAX_SEC секунд, а это видео — ${Math.round(d)} с. Обрежьте его в галерее")
             d < 1.0 -> toast("Слишком коротко — нужна хотя бы секунда")
-            else -> { video = u; dur = d }
+            else -> { if (d > CLIP_MAX_SEC + 0.5) toast("Клип — до минуты: возьмём первые $CLIP_MAX_SEC секунд"); video = u; dur = minOf(d, CLIP_MAX_SEC.toDouble()) }
         }
     }
     val pick = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { u -> if (u != null) scope.safe(toast) { take(u) } }
@@ -131,7 +130,7 @@ fun ClipsUpload(presetSound: String) {
             else -> Column(Modifier.fillMaxSize().padding(32.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
                 ClipsLogo(72.dp)
                 Text("Нужен доступ к камере", color = Color.White, style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(top = 16.dp))
-                Text("Или загрузите готовое видео до $CLIP_MAX_SEC секунд", color = Color.White.copy(alpha = 0.6f), modifier = Modifier.padding(top = 6.dp, bottom = 22.dp))
+                Text("Или загрузите готовое видео — до минуты", color = Color.White.copy(alpha = 0.6f), modifier = Modifier.padding(top = 6.dp, bottom = 22.dp))
                 PurpleButton("Разрешить камеру", Modifier.width(240.dp)) { askPerms.launch(arrayOf(Manifest.permission.CAMERA, Manifest.permission.RECORD_AUDIO)) }
                 Spacer(Modifier.height(10.dp))
                 GrayButton("Из галереи", Modifier.width(240.dp)) { gallery() }
@@ -165,7 +164,7 @@ private fun ClipCamera(sound: Media.Sound?, soundLocal: File?, micOk: Boolean, o
     var recording by remember { mutableStateOf<Recording?>(null) }
     var elapsed by remember { mutableStateOf(0f) }
     val previewView = remember { PreviewView(ctx).apply { scaleType = PreviewView.ScaleType.FILL_CENTER; implementationMode = PreviewView.ImplementationMode.COMPATIBLE } }
-    // SD и ~1,5 Мбит/с: 90 секунд укладываются в 20 МБ
+    // SD и ~1,5 Мбит/с: запись потом всё равно пережимаем перед загрузкой
     val capture = remember {
         VideoCapture.withOutput(Recorder.Builder().setQualitySelector(QualitySelector.from(Quality.SD, FallbackStrategy.higherQualityOrLowerThan(Quality.SD)))
             .setTargetVideoEncodingBitRate(1_500_000).build())
@@ -187,7 +186,7 @@ private fun ClipCamera(sound: Media.Sound?, soundLocal: File?, micOk: Boolean, o
     fun start() {
         if (sound != null && soundLocal == null) { toast("Звук ещё загружается — секунду"); return }
         val f = File(ctx.cacheDir, "clip_rec_${System.currentTimeMillis()}.mp4")
-        val opts = FileOutputOptions.Builder(f).setDurationLimitMillis((maxSec * 1000).toLong()).setFileSizeLimit(Files.VIDEO_MAX - 512 * 1024).build()
+        val opts = FileOutputOptions.Builder(f).setDurationLimitMillis((maxSec * 1000).toLong()).build()
         var pend = capture.output.prepareRecording(ctx, opts)
         // со звуком из библиотеки микрофон не нужен: звук всё равно заменим
         if (sound == null && micOk) pend = pend.withAudioEnabled()
@@ -290,15 +289,11 @@ private fun ClipPublish(video: Uri, dur: Double, sound: Media.Sound?, soundLocal
                 if (sound != null && soundLocal == null) { toast("Звук ещё загружается — секунду"); return@PurpleButton }
                 player.pause(); soundPlayer.pause()
                 scope.safe({ stage = null; toast(it) }) {
-                    var src = video
-                    var mixed: File? = null
-                    if (sound != null && soundLocal != null) {
-                        stage = "Накладываем звук…"; progress = 0f
-                        mixed = ClipMedia.replaceAudio(ctx, video, soundLocal) { progress = it }
-                        src = shareable(ctx, mixed)
-                    }
+                    // сильное сжатие (и звук, если выбран) — одним проходом на телефоне
+                    stage = if (sound != null) "Сжимаем и накладываем звук…" else "Сжимаем…"; progress = 0f
+                    val packed = ClipMedia.compressVideo(ctx, video, CLIP_MAX_SEC, if (sound != null) soundLocal else null) { progress = it }
                     stage = "Загружаем…"; progress = 0f
-                    try { Media.addVideoFile(ctx, src, title, "", sound?.ref ?: "") { progress = it } } finally { mixed?.delete() }
+                    try { Media.addVideoFile(ctx, shareable(ctx, packed), title, "", sound?.ref ?: "") { progress = it } } finally { packed.delete() }
                     toast("Клип опубликован 🎉")
                     runCatching { ClipsData.reset(); ClipsData.more() }
                     nav.navigate("me") { popUpTo("home"); launchSingleTop = true }
