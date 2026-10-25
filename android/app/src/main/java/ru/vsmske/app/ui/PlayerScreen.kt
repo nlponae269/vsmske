@@ -31,6 +31,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -50,6 +51,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.PlaylistAdd
 import androidx.compose.material.icons.rounded.Bedtime
 import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.Equalizer
 import androidx.compose.material.icons.rounded.Favorite
 import androidx.compose.material.icons.rounded.FavoriteBorder
@@ -76,6 +78,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -164,7 +167,9 @@ fun PlayerScreen(onClose: () -> Unit) {
     val accent by animateColorAsState(pal.accent, tween(800), label = "accent")
     val onAccent by animateColorAsState(pal.onAccent, tween(800), label = "onAccent")
     val saved = t.id in (me?.tracks ?: emptyList())
+    val radio = t.type == "radio"   // радиостанция: без перемотки, ♡, плейлистов и правки
     var dragY by remember { mutableStateOf(0f) }
+    DarkSystemBars()
 
     Box(
         Modifier.fillMaxSize().background(bg).clickable(enabled = false) {}
@@ -177,16 +182,18 @@ fun PlayerScreen(onClose: () -> Unit) {
         if (t.cover.isNotEmpty() && Build.VERSION.SDK_INT >= 31) DbImage(t.cover, Modifier.fillMaxSize().graphicsLayer { scaleX = 1.4f; scaleY = 1.4f; alpha = 0.55f }.blur(90.dp))
         Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(glow.copy(alpha = 0.55f), bg.copy(alpha = 0.85f), bg))))
 
-        Column(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding().padding(horizontal = 22.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+        Column(Modifier.align(Alignment.TopCenter).fillMaxHeight().widthIn(max = 640.dp).statusBarsPadding().navigationBarsPadding().padding(horizontal = 22.dp), horizontalAlignment = Alignment.CenterHorizontally) {
             Row(Modifier.fillMaxWidth().padding(top = 6.dp), verticalAlignment = Alignment.CenterVertically) {
                 IconButton(onClose) { Icon(Icons.Rounded.KeyboardArrowDown, "Свернуть", tint = Color.White, modifier = Modifier.size(32.dp)) }
                 Spacer(Modifier.weight(1f))
                 ViewSwitch(view, t.lyrics.isNotBlank(), accent, onAccent) { view = it }
                 Spacer(Modifier.weight(1f))
-                IconButton({ sheet = "playlist" }) { Icon(Icons.AutoMirrored.Rounded.PlaylistAdd, "В плейлист", tint = Color.White) }
+                if (!radio && t.ownerId == Store.uid) IconButton({ sheet = "edit" }) { Icon(Icons.Rounded.Edit, "Изменить трек и текст", tint = Color.White) }
+                if (!radio) IconButton({ sheet = "playlist" }) { Icon(Icons.AutoMirrored.Rounded.PlaylistAdd, "В плейлист", tint = Color.White) }
+                else Spacer(Modifier.size(48.dp))
             }
 
-            if (view != "art") MiniHeader(t, saved, accent) { scope.safe(toast) { Api.toggleSaved(t) } }
+            if (view != "art") MiniHeader(t, saved, accent, showHeart = !radio) { scope.safe(toast) { Api.toggleSaved(t) } }
 
             Box(Modifier.weight(1f).fillMaxWidth().padding(vertical = 12.dp), contentAlignment = Alignment.Center) {
                 AnimatedContent(view, transitionSpec = { (fadeIn(tween(320)) + scaleIn(initialScale = 0.96f)) togetherWith fadeOut(tween(200)) }, label = "view") { v ->
@@ -204,12 +211,15 @@ fun PlayerScreen(onClose: () -> Unit) {
                         modifier = Modifier.clickable { if (t.lyrics.isNotBlank()) view = "lyrics" })
                     Text(t.artist.ifEmpty { "Неизвестный исполнитель" }, style = MaterialTheme.typography.bodyLarge, color = Color.White.copy(alpha = 0.7f), maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
-                HeartButton(saved, accent) { scope.safe(toast) { Api.toggleSaved(t); toast(if (saved) "Убрано из ваших треков" else "Добавлено в ваши треки") } }
+                if (!radio) HeartButton(saved, accent) { scope.safe(toast) { Api.toggleSaved(t); toast(if (saved) "Убрано из ваших треков" else "Добавлено в ваши треки") } }
             }
 
             val dur = s.duration.coerceAtLeast(1)
             var drag by remember { mutableStateOf<Float?>(null) }
             val pos = rememberFramePos()
+            if (radio) Row(Modifier.fillMaxWidth().padding(top = 20.dp, bottom = 8.dp), horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
+                LiveBadge(); Text("  Прямой эфир", style = MaterialTheme.typography.titleSmall, color = Color.White)
+            } else {
             WavySeek({ drag ?: (pos.value * 1000 / dur).toFloat().coerceIn(0f, 1f) }, s.playing, accent, Modifier.fillMaxWidth().padding(top = 12.dp),
                 onDrag = { drag = it }, onDone = { drag?.let { Music.seek((it * dur).toLong()) }; drag = null })
             Row(Modifier.fillMaxWidth()) {
@@ -218,6 +228,7 @@ fun PlayerScreen(onClose: () -> Unit) {
                 if (s.speed != 1f) Text("${fmtSpeed(s.speed)}×", style = MaterialTheme.typography.labelMedium, color = accent)
                 Spacer(Modifier.weight(1f))
                 Text("−" + fmtDur((dur - s.position).coerceAtLeast(0) / 1000.0), style = MaterialTheme.typography.labelMedium, color = Color.White.copy(alpha = 0.7f))
+            }
             }
 
             Row(Modifier.fillMaxWidth().padding(vertical = 14.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
@@ -244,6 +255,7 @@ fun PlayerScreen(onClose: () -> Unit) {
         "speed" -> SpeedSheet { sheet = "" }
         "sleep" -> SleepSheet { sheet = "" }
         "playlist" -> PlaylistPickSheet(t) { sheet = "" }
+        "edit" -> TrackEditSheet(t) { sheet = "" }
     }
 }
 
@@ -271,14 +283,14 @@ private fun ViewSwitch(view: String, hasLyrics: Boolean, accent: Color, onAccent
 }
 
 @Composable
-private fun MiniHeader(t: Track, saved: Boolean, accent: Color, onHeart: () -> Unit) {
+private fun MiniHeader(t: Track, saved: Boolean, accent: Color, showHeart: Boolean = true, onHeart: () -> Unit) {
     Row(Modifier.fillMaxWidth().padding(top = 10.dp), verticalAlignment = Alignment.CenterVertically) {
         TrackCover(t, 52.dp, 12.dp)
         Column(Modifier.weight(1f).padding(horizontal = 12.dp)) {
             Text(t.title, style = MaterialTheme.typography.titleMedium, color = Color.White, maxLines = 1, overflow = TextOverflow.Ellipsis)
             Text(t.artist.ifEmpty { "Неизвестный исполнитель" }, style = MaterialTheme.typography.bodyMedium, color = Color.White.copy(alpha = 0.65f), maxLines = 1)
         }
-        HeartButton(saved, accent, onHeart)
+        if (showHeart) HeartButton(saved, accent, onHeart)
     }
 }
 
@@ -363,12 +375,15 @@ fun WavySeek(value: () -> Float, playing: Boolean, color: Color, modifier: Modif
     val amp by animateFloatAsState(if (playing) 1f else 0f, tween(450), label = "amp")
     val phase by rememberInfiniteTransition(label = "wave").animateFloat(0f, (2 * PI).toFloat(), infiniteRepeatable(tween(1500, easing = LinearEasing)), label = "phase")
     val d = LocalDensity.current
+    // жесты запускаются один раз — берём свежие обработчики (в них длительность текущего трека)
+    val drag by rememberUpdatedState(onDrag)
+    val done by rememberUpdatedState(onDone)
     Canvas(
         modifier.height(40.dp)
-            .pointerInput(Unit) { detectTapGestures { o -> onDrag((o.x / size.width).coerceIn(0f, 1f)); onDone() } }
+            .pointerInput(Unit) { detectTapGestures { o -> drag((o.x / size.width).coerceIn(0f, 1f)); done() } }
             .pointerInput(Unit) {
-                detectHorizontalDragGestures(onDragStart = { o -> onDrag((o.x / size.width).coerceIn(0f, 1f)) }, onDragEnd = onDone, onDragCancel = onDone) { ch, _ ->
-                    onDrag((ch.position.x / size.width).coerceIn(0f, 1f))
+                detectHorizontalDragGestures(onDragStart = { o -> drag((o.x / size.width).coerceIn(0f, 1f)) }, onDragEnd = { done() }, onDragCancel = { done() }) { ch, _ ->
+                    drag((ch.position.x / size.width).coerceIn(0f, 1f))
                 }
             },
     ) {

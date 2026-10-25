@@ -329,6 +329,7 @@ fun WatchScreen(id: String) {
     var descOpen by remember { mutableStateOf(false) }
     var ask by remember { mutableStateOf(false) }
     val more = rememberVideos(30)
+    DarkSystemBars()   // сверху чёрный плеер
     DisposableEffect(id) {
         val a = Fire.db.collection("videos").document(id).addSnapshotListener { s, _ ->
             if (s == null) return@addSnapshotListener
@@ -341,9 +342,10 @@ fun WatchScreen(id: String) {
     val player = rememberVideoPlayer()
     val cur = v
     val owner = cur?.let { users[it.ownerId] }
-    LaunchedEffect(cur?.id, owner?.banned) {
+    val ownerBanned = owner?.banned == true   // null (ещё грузится) и false — одно и то же, чтобы ролик не перезапускался
+    LaunchedEffect(cur?.id, ownerBanned) {
         val x = cur ?: return@LaunchedEffect
-        if (owner?.banned == true) return@LaunchedEffect
+        if (ownerBanned) { player.stop(); return@LaunchedEffect }
         Media.countView(x)
         if (x.embed.isEmpty()) { if (Music.state.value.playing) Music.toggle(); player.setMediaItem(MediaItem.fromUri(x.mediaUri())); player.prepare(); player.playWhenReady = true }
     }
@@ -422,7 +424,7 @@ fun CommentBubble(c: Comment, canDelete: Boolean, onDelete: () -> Unit) {
                 UserName(a, MaterialTheme.typography.labelLarge, Modifier.weight(1f))
                 Text(ago(c.createdAt), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
-            Text(c.text, style = MaterialTheme.typography.bodyMedium)
+            RichText(c.text, style = MaterialTheme.typography.bodyMedium)
             if (canDelete) Text("удалить", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.error, modifier = Modifier.clickable(onClick = onDelete).padding(top = 4.dp))
         }
     }

@@ -72,7 +72,7 @@ object Music {
             pending?.invoke(c); pending = null
             sync()
         }, MoreExecutors.directExecutor())
-        scope.launch { while (true) { if (state.value.playing) { sync(); sleepTick() }; delay(250) } }
+        scope.launch { while (true) { if (state.value.playing) { sync(); sleepTick(); statTick() }; delay(250) } }
     }
 
     /* ---------- Скорость (как vs_rate / vs_pitch на сайте) ---------- */
@@ -125,7 +125,8 @@ object Music {
     private fun item(t: Track): MediaItem {
         val meta = MediaMetadata.Builder().setTitle(t.title).setArtist(t.artist.ifEmpty { "Неизвестный исполнитель" }).setAlbumTitle("ВС Музыка")
         if (t.cover.startsWith("data:image/")) runCatching { meta.setArtworkData(Base64.decode(t.cover.substringAfter(','), Base64.DEFAULT), MediaMetadata.PICTURE_TYPE_FRONT_COVER) }
-        return MediaItem.Builder().setMediaId(t.id).setUri("vsmske://file/${t.fileId}".toUri()).setMediaMetadata(meta.build()).build()
+        val uri = if (t.type == "radio") t.fileId else "vsmske://file/${t.fileId}"   // радио — прямой поток с сервера станции
+        return MediaItem.Builder().setMediaId(t.id).setUri(uri.toUri()).setMediaMetadata(meta.build()).build()
     }
 
     private fun with(ctx: Context, a: (MediaController) -> Unit) { val c = ctl; if (c != null) a(c) else { pending = a; connect(ctx) } }
@@ -138,6 +139,44 @@ object Music {
     }
 
     fun setPlaying(on: Boolean) { ctl?.let { if (on && !it.isPlaying) it.play() else if (!on && it.isPlaying) it.pause() } }
+    /* ---------- Статистика на телефоне (как vs_plays на сайте): трек засчитан после 30 с или половины ---------- */
+    private var statId = ""; private var statMs = 0L; private var statDone = false; private var statLast = 0L
+    private fun statTick() {
+        val s = state.value; val t = s.track ?: return
+        val now = SystemClock.elapsedRealtime()
+        if (t.id != statId) { statId = t.id; statMs = 0; statDone = false; statLast = now; return }
+        val d = now - statLast; statLast = now
+        if (d in 1..1000) statMs += (d * s.speed).toLong()   // большой разрыв — была пауза, её не считаем
+        if (t.type == "radio") return   // радио в статистику не считаем
+        if (!statDone && (statMs >= 30_000 || (s.duration > 0 && statMs >= s.duration / 2))) { statDone = true; countPlay(t.id) }
+    }
+    private fun countPlay(id: String) {
+        val p = prefs ?: return
+        val o = runCatching { org.json.JSONObject(p.getString("plays", "{}")!!) }.getOrDefault(org.json.JSONObject())
+        val e = o.optJSONObject(id) ?: org.json.JSONObject()
+        e.put("n", e.optInt("n") + 1).put("at", System.currentTimeMillis())
+        o.put(id, e)
+        if (o.length() > 500) {   // храним не больше 500 треков: выбрасываем самые давние
+            val old = o.keys().asSequence().toList().sortedBy { o.optJSONObject(it)?.optLong("at") ?: 0 }.take(o.length() - 500)
+            old.forEach { o.remove(it) }
+        }
+        p.edit().putString("plays", o.toString()).putLong("listen_total", p.getLong("listen_total", 0) + 1).apply()
+    }
+    /** Самые слушаемые: (id трека, сколько раз) */
+    fun topPlayed(n: Int = 30): List<Pair<String, Int>> {
+        val o = runCatching { org.json.JSONObject(prefs?.getString("plays", "{}") ?: "{}") }.getOrDefault(org.json.JSONObject())
+        return o.keys().asSequence().map { it to (o.optJSONObject(it)?.optInt("n") ?: 0) }.filter { it.second > 0 }.sortedByDescending { it.second }.take(n).toList()
+    }
+
+    /** Трек изменили (название, обложка, текст) — обновить в очереди, не прерывая игру */
+    fun updateTrack(t: Track) {
+        val s = state.value
+        val i = s.queue.indexOfFirst { it.id == t.id }; if (i < 0) return
+        val old = s.queue[i]
+        state.value = s.copy(queue = s.queue.toMutableList().also { it[i] = t })
+        if (old.title != t.title || old.artist != t.artist || old.cover != t.cover) runCatching { ctl?.replaceMediaItem(i, item(t)) }
+    }
+
     fun toggle() { ctl?.let { if (it.isPlaying) it.pause() else it.play() } }
     fun next() { ctl?.let { if (it.hasNextMediaItem()) it.seekToNextMediaItem() } }
     fun prev() { ctl?.let { if (it.currentPosition > 3000 || !it.hasPreviousMediaItem()) it.seekTo(0) else it.seekToPreviousMediaItem() } }

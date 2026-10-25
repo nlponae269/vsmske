@@ -37,7 +37,7 @@ object Upload {
         if (size > MAX) error("Трек больше 12 МБ")
         val bytes = cr.openInputStream(uri)?.use { it.readBytes() } ?: error("Не удалось открыть файл")
         if (bytes.size > MAX) error("Трек больше 12 МБ")
-        val tags = id3(bytes)
+        val tags = runCatching { id3(bytes) }.getOrDefault(Tags(null, null, null))   // битый тег — не повод не загрузить трек
         val base = name.substringBeforeLast('.').replace('_', ' ').trim()
         val m = Regex("^(.+?)\\s+[-–—]\\s+(.+)$").find(base)
         val duration = runCatching {

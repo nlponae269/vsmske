@@ -23,6 +23,8 @@ data class User(
     val friends: List<String> = emptyList(),
     val tracks: List<String> = emptyList(),
     val blocked: List<String> = emptyList(),
+    val saved: List<String> = emptyList(),
+    val groups: List<String> = emptyList(),
     val lastSeen: Long = 0,
     val notifSeenAt: Long = 0,
     val createdAt: Long = 0,
@@ -46,7 +48,7 @@ data class User(
             return User(
                 id = d.id, name = d.str("name"), nick = d.str("nick"), city = d.str("city"), status = d.str("status"),
                 about = d.str("about"), photo = d.str("photo"), color = d.str("color"), friends = d.strs("friends"),
-                tracks = d.strs("tracks"), blocked = d.strs("blocked"), lastSeen = d.ms("lastSeen"), notifSeenAt = d.ms("notifSeenAt"),
+                tracks = d.strs("tracks"), blocked = d.strs("blocked"), saved = d.strs("saved"), groups = d.strs("groups"), lastSeen = d.ms("lastSeen"), notifSeenAt = d.ms("notifSeenAt"),
                 createdAt = d.ms("createdAt"), emoji = d.str("emoji"), admin = d.get("admin").let { it == true || it == "true" },
                 banUntil = ban?.let { b -> b["until"]?.tsMs() ?: 0L }, banReason = ban?.get("reason") as? String ?: "",
                 cover = d.str("cover").ifEmpty { "blue" },
@@ -251,4 +253,56 @@ data class Playlist(val id: String, val ownerId: String, val title: String, val 
 
 data class Gift(val id: String, val from: String, val gift: String, val text: String, val createdAt: Long) {
     companion object { fun from(d: DocumentSnapshot) = Gift(d.id, d.str("from"), d.str("gift"), d.str("text"), d.ms("createdAt")) }
+}
+
+/** Сообщество (groups): записи — posts с wallId = groupId и полем groupId, пишут только админы */
+data class Group(val id: String, val name: String, val about: String, val photo: String, val cover: String, val ownerId: String,
+                 val admins: List<String>, val membersCount: Int, val createdAt: Long) {
+    companion object {
+        fun from(d: DocumentSnapshot) = Group(d.id, d.str("name").ifEmpty { "Сообщество" }, d.str("about"), d.str("photo"), d.str("cover").ifEmpty { "blue" },
+            d.str("ownerId"), d.strs("admins"), (d.getLong("membersCount") ?: 0).toInt().coerceAtLeast(0), d.ms("createdAt"))
+    }
+}
+
+data class Note(val id: String, val title: String, val text: String, val color: String, val pinned: Boolean, val updatedAt: Long) {
+    companion object { fun from(d: DocumentSnapshot) = Note(d.id, d.str("title"), d.str("text"), d.str("color"), d.getBoolean("pinned") == true, d.ms("updatedAt")) }
+}
+
+/** ВС Маркет: объявление */
+data class Lot(val id: String, val ownerId: String, val title: String, val price: Long, val category: String, val city: String, val text: String,
+               val image: String, val sold: Boolean, val createdAt: Long) {
+    companion object {
+        fun from(d: DocumentSnapshot) = Lot(d.id, d.str("ownerId"), d.str("title"), d.getLong("price") ?: 0, d.str("category").ifEmpty { "other" }, d.str("city"),
+            d.str("text"), d.str("image"), d.getBoolean("sold") == true, d.ms("createdAt"))
+    }
+}
+
+/** ВС События */
+data class Event(val id: String, val ownerId: String, val title: String, val text: String, val place: String, val at: Long, val cover: String,
+                 val going: List<String>, val createdAt: Long) {
+    companion object {
+        fun from(d: DocumentSnapshot) = Event(d.id, d.str("ownerId"), d.str("title"), d.str("text"), d.str("place"), d.ms("at"), d.str("cover"), d.strs("going"), d.ms("createdAt"))
+    }
+}
+
+/** ВС Ответы: вопрос и ответ */
+data class Question(val id: String, val authorId: String, val title: String, val text: String, val category: String, val answersCount: Long,
+                    val bestId: String, val createdAt: Long) {
+    companion object {
+        fun from(d: DocumentSnapshot) = Question(d.id, d.str("authorId"), d.str("title"), d.str("text"), d.str("category").ifEmpty { "other" },
+            d.getLong("answersCount") ?: 0, d.str("bestId"), d.ms("createdAt"))
+    }
+}
+
+data class Answer(val id: String, val authorId: String, val text: String, val likes: List<String>, val createdAt: Long) {
+    companion object { fun from(d: DocumentSnapshot) = Answer(d.id, d.str("authorId"), d.str("text"), d.strs("likes"), d.ms("createdAt")) }
+}
+
+/** ВС Почта: письмо с темой; каждый «удаляет» у себя */
+data class Mail(val id: String, val from: String, val to: String, val subject: String, val text: String, val read: Boolean,
+                val delFrom: Boolean, val delTo: Boolean, val createdAt: Long) {
+    companion object {
+        fun from(d: DocumentSnapshot) = Mail(d.id, d.str("from"), d.str("to"), d.str("subject"), d.str("text"), d.getBoolean("read") == true,
+            d.getBoolean("delFrom") == true, d.getBoolean("delTo") == true, d.ms("createdAt"))
+    }
 }

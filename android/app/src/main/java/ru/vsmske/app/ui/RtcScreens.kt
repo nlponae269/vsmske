@@ -223,6 +223,7 @@ fun LiveRoomScreen(sid: String) {
     val u by Live.ui.collectAsState()
     var stream by remember { mutableStateOf<Stream?>(null) }
     var text by remember { mutableStateOf("") }
+    DarkSystemBars()
     LaunchedEffect(sid) {
         val s = runCatching { Stream.from(ru.vsmske.app.data.Fire.db.collection("streams").document(sid).get().await()) }.getOrNull()
         stream = s
@@ -333,6 +334,7 @@ fun CallOverlay() {
         return
     }
     androidx.activity.compose.BackHandler(c.state != "incoming") { Call.setMin(true) }
+    DarkSystemBars()
     val pulse by rememberInfiniteTransition(label = "ring").animateFloat(1f, 1.18f, infiniteRepeatable(tween(900), RepeatMode.Reverse), label = "p")
     Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color(0xFF1A237E), Color(0xFF4A148C), Color(0xFF000000)))).clickable(enabled = false) {}) {
         if (c.video && c.remote != null && c.state == "live") RtcVideo(c.remote, Modifier.fillMaxSize())

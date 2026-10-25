@@ -1,5 +1,9 @@
 package ru.vsmske.app.ui
 
+import androidx.compose.material.icons.rounded.Share
+import androidx.compose.material.icons.rounded.BookmarkRemove
+import androidx.compose.material.icons.rounded.BookmarkAdd
+import androidx.compose.foundation.horizontalScroll
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
@@ -150,7 +154,7 @@ fun FeedScreen() {
             TopAppBar(
                 title = { Row(verticalAlignment = Alignment.CenterVertically) { Logo(); Spacer(Modifier.width(12.dp)); Text("VСмске") } },
                 actions = {
-                    IconButton({ nav.navigate("friends") }) { Icon(Icons.Rounded.Search, "Найти людей") }
+                    IconButton({ nav.navigate("search") }) { Icon(Icons.Rounded.Search, "Поиск") }
                     IconButton({ nav.navigate("notifs") }) {
                         BadgedBox(badge = { if (unseen > 0) Badge { Text(if (unseen > 99) "99+" else "$unseen") } }) { Icon(Icons.Outlined.Notifications, "Сигналы") }
                     }
@@ -202,6 +206,7 @@ fun PostCard(p: Post, open: Boolean = false) {
     val liked = me in p.likes
     var menu by remember { mutableStateOf(false) }
     var ask by remember { mutableStateOf(false) }
+    var editing by remember { mutableStateOf(false) }
     val canDel = p.authorId == me || p.wallId == me || Store.me.value?.admin == true
     Card(Modifier.fillMaxWidth().padding(horizontal = 12.dp).animateContentSize(), shape = RoundedCornerShape(28.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)) {
@@ -214,15 +219,24 @@ fun PostCard(p: Post, open: Boolean = false) {
                         if (wall != null) { Text("  →  ", color = MaterialTheme.colorScheme.onSurfaceVariant); UserName(wall, modifier = Modifier.clickable { nav.openProfile(wall.id) }) }
                     }
                     Text(ago(p.createdAt) + if (p.editedAt > 0) " · изменено" else "", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    if (p.groupId.isNotEmpty()) GroupLabel(p.groupId)
                 }
-                if (canDel) Box {
+                Box {
+                    val saved = p.id in (Store.me.collectAsState().value?.saved ?: emptyList())
+                    val ctx = androidx.compose.ui.platform.LocalContext.current
                     IconButton({ menu = true }) { Icon(Icons.Rounded.MoreVert, "Ещё") }
                     DropdownMenu(menu, { menu = false }) {
-                        DropdownMenuItem({ Text("Удалить") }, leadingIcon = { Icon(Icons.Rounded.Delete, null) }, onClick = { menu = false; ask = true })
+                        DropdownMenuItem({ Text(if (saved) "Убрать из закладок" else "В закладки") },
+                            leadingIcon = { Icon(if (saved) Icons.Rounded.BookmarkRemove else Icons.Rounded.BookmarkAdd, null) },
+                            onClick = { menu = false; scope.safe(toast) { toast(if (Api.toggleBookmark(p)) "Добавлено в закладки" else "Убрано из закладок") } })
+                        DropdownMenuItem({ Text("Поделиться ссылкой") }, leadingIcon = { Icon(Icons.Rounded.Share, null) },
+                            onClick = { menu = false; share(ctx, SITE + "post/" + p.id) })
+                        if (p.authorId == me && p.repostOf.isEmpty()) DropdownMenuItem({ Text("Изменить") }, leadingIcon = { Icon(Icons.Rounded.Edit, null) }, onClick = { menu = false; editing = true })
+                        if (canDel) DropdownMenuItem({ Text("Удалить") }, leadingIcon = { Icon(Icons.Rounded.Delete, null) }, onClick = { menu = false; ask = true })
                     }
                 }
             }
-            if (p.text.isNotEmpty()) Text(p.text, style = MaterialTheme.typography.bodyLarge)
+            if (p.text.isNotEmpty()) RichText(p.text, style = MaterialTheme.typography.bodyLarge)
             if (p.repostOf.isNotEmpty()) RepostBox(p.repostOf)
             Pics(p, a?.banned == true) { if (!liked) scope.safe(toast) { Api.toggleLike(p) } }
             p.poll?.let { PollBox(p) }
@@ -237,6 +251,18 @@ fun PostCard(p: Post, open: Boolean = false) {
             }
         }
     }
+    if (editing) {
+        var field by remember { mutableStateOf(androidx.compose.ui.text.input.TextFieldValue(p.text)) }
+        var busy by remember { mutableStateOf(false) }
+        VsSheet({ if (!busy) editing = false }) {
+            Text("Изменить запись", style = MaterialTheme.typography.headlineSmall)
+            OutlinedTextField(field, { if (it.text.length <= 4000) field = it }, Modifier.fillMaxWidth().heightIn(min = 140.dp).padding(top = 12.dp))
+            Spacer(Modifier.height(8.dp))
+            FormatBar { mark -> field = wrapMark(field, mark) }
+            Button({ busy = true; scope.safe({ busy = false; toast(it) }) { Api.editPost(p, field.text); toast("Изменено"); editing = false } },
+                Modifier.fillMaxWidth().padding(top = 12.dp).height(52.dp), enabled = !busy && field.text != p.text) { Text("Сохранить") }
+        }
+    }
     if (ask) AlertDialog({ ask = false }, title = { Text("Удалить запись?") },
         confirmButton = { TextButton({ ask = false; scope.safe(toast) { Api.deletePost(p); toast("Запись удалена") } }) { Text("Удалить") } },
         dismissButton = { TextButton({ ask = false }) { Text("Отмена") } })
@@ -248,7 +274,8 @@ private fun Pics(p: Post, banned: Boolean, onDoubleLike: () -> Unit) {
     var heart by remember { mutableStateOf(0) }
     val hk by androidx.compose.animation.core.animateFloatAsState(if (heart % 2 == 1) 1f else 0f, androidx.compose.animation.core.spring(dampingRatio = 0.4f, stiffness = 400f), label = "heart",
         finishedListener = { if (heart % 2 == 1) heart++ })
-    fun tap(src: String) = Modifier.pointerInput(src) { detectTapGestures(onDoubleTap = { onDoubleLike(); if (heart % 2 == 0) heart++ }, onTap = { viewer = src }) }
+    val dbl by androidx.compose.runtime.rememberUpdatedState(onDoubleLike)   // свежее «нравится», а не то, что было при первом показе
+    fun tap(src: String) = Modifier.pointerInput(src) { detectTapGestures(onDoubleTap = { dbl(); if (heart % 2 == 0) heart++ }, onTap = { viewer = src }) }
     val imgs = p.images
     if (imgs.isEmpty()) return
     val shape = RoundedCornerShape(16.dp)
@@ -291,7 +318,7 @@ private fun RepostBox(id: String) {
             o == null -> Text("Загружаем…", color = MaterialTheme.colorScheme.onSurfaceVariant)
             else -> {
                 Row(verticalAlignment = Alignment.CenterVertically) { Avatar(users[o.authorId], 28.dp); Spacer(Modifier.width(8.dp)); UserName(users[o.authorId]) }
-                if (o.text.isNotEmpty()) Text(o.text, maxLines = 6, overflow = TextOverflow.Ellipsis)
+                if (o.text.isNotEmpty()) RichText(o.text, maxLines = 6)
                 if (o.images.isNotEmpty()) { if (users[o.authorId]?.banned == true) Locked("Фото недоступно", Modifier.fillMaxWidth().height(160.dp).clip(RoundedCornerShape(12.dp))) else DbImage(o.images[0], Modifier.fillMaxWidth().heightIn(max = 260.dp).clip(RoundedCornerShape(12.dp)), ContentScale.FillWidth) }
             }
         }
@@ -326,11 +353,12 @@ private fun PollBox(p: Post) {
 /** Новая запись — шторка снизу: текст, до 4 фото, опрос */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun Composer(wall: String, onDone: () -> Unit) {
+fun Composer(wall: String, group: Boolean = false, onDone: () -> Unit) {
     val ctx = LocalContext.current
     val toast = LocalToast.current
     val scope = rememberCoroutineScope()
-    var text by rememberSaveable { mutableStateOf("") }
+    var field by rememberSaveable(stateSaver = androidx.compose.ui.text.input.TextFieldValue.Saver) { mutableStateOf(androidx.compose.ui.text.input.TextFieldValue("")) }
+    val text = field.text
     val pics = remember { mutableStateListOf<Uri>() }
     var poll by rememberSaveable { mutableStateOf(false) }
     var q by rememberSaveable { mutableStateOf("") }
@@ -341,8 +369,9 @@ fun Composer(wall: String, onDone: () -> Unit) {
     val ready = !busy && (text.isNotBlank() || pics.isNotEmpty() || (poll && opts.count { it.isNotBlank() } >= 2))
     ModalBottomSheet(onDismissRequest = onDone, sheetState = sheet) {
         Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp).padding(bottom = 16.dp).imePadding(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            Text(if (wall == Store.uid) "Новая запись" else "Запись на стене", style = MaterialTheme.typography.titleLarge)
-            OutlinedTextField(text, { text = it.take(4000) }, placeholder = { Text("Что у вас нового?") }, modifier = Modifier.fillMaxWidth().heightIn(min = 120.dp))
+            Text(if (group) "Запись в сообществе" else if (wall == Store.uid) "Новая запись" else "Запись на стене", style = MaterialTheme.typography.titleLarge)
+            OutlinedTextField(field, { if (it.text.length <= 4000) field = it }, placeholder = { Text("Что у вас нового?") }, modifier = Modifier.fillMaxWidth().heightIn(min = 120.dp))
+            FormatBar { mark -> field = wrapMark(field, mark) }
             if (pics.isNotEmpty()) LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 items(pics.toList()) { u ->
                     Box(Modifier.size(88.dp).clip(RoundedCornerShape(12.dp))) {
@@ -369,7 +398,7 @@ fun Composer(wall: String, onDone: () -> Unit) {
                         val n = pics.size
                         val imgs = pics.map { Images.compress(ctx, it, if (n > 1) 1080 else 1280, if (n > 1) 880_000 / n else 700_000) }
                         val pl = if (poll) (q.ifBlank { "Опрос" } to opts.map { it.trim() }.filter { it.isNotEmpty() }) else null
-                        Api.createPost(wall, text, imgs, pl)
+                        Api.createPost(wall, text, imgs, pl, group)
                         toast("Опубликовано"); onDone()
                     }
                 }, enabled = ready) { if (busy) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp) else Text("Опубликовать") }
@@ -426,7 +455,7 @@ fun PostScreen(id: String) {
                             Avatar(a, 36.dp) { nav.openProfile(c.authorId) }
                             Column(Modifier.padding(start = 10.dp).weight(1f).clip(RoundedCornerShape(4.dp, 18.dp, 18.dp, 18.dp)).background(MaterialTheme.colorScheme.surfaceContainerHigh).padding(horizontal = 12.dp, vertical = 8.dp)) {
                                 UserName(a, MaterialTheme.typography.labelLarge)
-                                Text(c.text, style = MaterialTheme.typography.bodyMedium)
+                                RichText(c.text, style = MaterialTheme.typography.bodyMedium)
                                 Row(verticalAlignment = Alignment.CenterVertically) {
                                     Text(ago(c.createdAt), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                                     Spacer(Modifier.weight(1f))
@@ -443,5 +472,58 @@ fun PostScreen(id: String) {
                 }
             }
         }
+    }
+}
+
+/** Записи с хэштегом — открывается нажатием на #тег */
+@Composable
+fun TagScreen(tag: String) {
+    val (posts, more) = rememberPosts("tag:$tag") { lim -> Api.tagQuery(tag, lim) }
+    val sorted = remember(posts) { posts?.sortedByDescending { it.createdAt } }
+    BackScaffold("#$tag") { pad ->
+        PostList(sorted, more, PaddingValues(top = pad.calculateTopPadding() + 4.dp, bottom = 24.dp), empty = "С тегом #$tag пока ничего нет")
+    }
+}
+
+/** Кнопки разметки (как «Aa» на сайте): оборачивают выделенное — или ставят пару значков и курсор между ними */
+@Composable
+fun FormatBar(onMark: (String) -> Unit) {
+    Row(Modifier.horizontalScroll(androidx.compose.foundation.rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        listOf("**" to "Ж", "*" to "К", "~~" to "З", "||" to "Спойлер", "`" to "Код").forEach { (m, l) ->
+            FilterChip(false, { onMark(m) }, {
+                Text(l, fontWeight = if (m == "**") androidx.compose.ui.text.font.FontWeight.Bold else null,
+                    fontStyle = if (m == "*") androidx.compose.ui.text.font.FontStyle.Italic else null,
+                    textDecoration = if (m == "~~") androidx.compose.ui.text.style.TextDecoration.LineThrough else null,
+                    fontFamily = if (m == "`") androidx.compose.ui.text.font.FontFamily.Monospace else null)
+            }, shape = CircleShape)
+        }
+    }
+}
+
+fun wrapMark(v: androidx.compose.ui.text.input.TextFieldValue, mark: String): androidx.compose.ui.text.input.TextFieldValue {
+    val a = minOf(v.selection.start, v.selection.end).coerceIn(0, v.text.length)
+    val b = maxOf(v.selection.start, v.selection.end).coerceIn(0, v.text.length)
+    val t = v.text.substring(0, a) + mark + v.text.substring(a, b) + mark + v.text.substring(b)
+    if (t.length > 4000) return v
+    val sel = if (a == b) androidx.compose.ui.text.TextRange(a + mark.length) else androidx.compose.ui.text.TextRange(a + mark.length, b + mark.length)
+    return v.copy(text = t, selection = sel)
+}
+
+/** Закладки — записи, сохранённые в users.saved (новые сверху, как на сайте) */
+@Composable
+fun SavedScreen() {
+    val toast = LocalToast.current
+    val me by Store.me.collectAsState()
+    var posts by remember { mutableStateOf<List<Post>?>(null) }
+    val ids = me?.saved ?: emptyList()
+    val asked = remember { mutableSetOf<String>() }   // какие id уже запрашивали (удалённые записи не перечитываем каждый раз)
+    LaunchedEffect(ids) {
+        val have = posts
+        if (have != null && asked.containsAll(ids)) { posts = ids.reversed().mapNotNull { id -> have.firstOrNull { it.id == id } }; return@LaunchedEffect }
+        asked += ids
+        posts = runCatching { Api.postsByIds(ids.reversed()) }.onSuccess { l -> Store.need(l.flatMap { listOf(it.authorId, it.wallId) }) }.getOrElse { toast(errText(it)); emptyList() }
+    }
+    BackScaffold("Закладки") { pad ->
+        PostList(posts, {}, PaddingValues(top = pad.calculateTopPadding() + 4.dp, bottom = 24.dp), empty = "Закладок пока нет — нажмите «⋯» у записи и «В закладки»")
     }
 }

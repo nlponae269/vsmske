@@ -16,7 +16,8 @@ import kotlinx.coroutines.tasks.await
  * Всё через слушатели Firestore — экраны просто собирают StateFlow.
  */
 object Store {
-    enum class Phase { Loading, SignedOut, NeedProfile, Ready }
+    /** Offline — вошли, но профиль не получить: нет интернета и нет копии на телефоне */
+    enum class Phase { Loading, SignedOut, NeedProfile, Ready, Offline }
 
     val phase = MutableStateFlow(Phase.Loading)
     val me = MutableStateFlow<User?>(null)
@@ -24,6 +25,7 @@ object Store {
     val notifs = MutableStateFlow<List<Notif>>(emptyList())
     val incoming = MutableStateFlow<List<FriendRequest>>(emptyList())
     val outgoing = MutableStateFlow<List<FriendRequest>>(emptyList())
+    val mailIn = MutableStateFlow<List<Mail>>(emptyList())   // входящие письма ВС Почты (как cache.mailIn на сайте)
     private val _users = MutableStateFlow<Map<String, User>>(emptyMap())
     val users: StateFlow<Map<String, User>> = _users
 
@@ -33,7 +35,7 @@ object Store {
     private var started = false
 
     val uid get() = Fire.uid
-    private val iAmAdmin get() = me.value?.admin == true
+    val iAmAdmin get() = me.value?.admin == true
 
     fun start() {
         if (started) return
@@ -50,8 +52,11 @@ object Store {
     private fun listen(id: String) {
         val db = Fire.db
         subs += db.collection("users").document(id).addSnapshotListener { s, e ->
-            if (e != null) return@addSnapshotListener
-            if (s == null || !s.exists()) { me.value = null; phase.value = Phase.NeedProfile; return@addSnapshotListener }
+            if (e != null) { if (phase.value == Phase.Loading) phase.value = Phase.Offline; return@addSnapshotListener }
+            if (s == null) return@addSnapshotListener
+            // «нет документа» из кэша без сети — это не «новый аккаунт», а просто нет связи: ждём сервер
+            if (!s.exists() && s.metadata.isFromCache) { if (phase.value != Phase.Ready) phase.value = Phase.Offline; return@addSnapshotListener }
+            if (!s.exists()) { me.value = null; phase.value = Phase.NeedProfile; return@addSnapshotListener }
             val u = User.from(s)
             me.value = u; put(u)
             if (phase.value != Phase.Ready) { phase.value = Phase.Ready; startLive(id); touchSeen() }
@@ -71,11 +76,14 @@ object Store {
                 val list = s.documents.map(FriendRequest::from); incoming.value = list; need(list.map { it.from }) }
         subs += db.collection("friendRequests").whereEqualTo("from", id)
             .addSnapshotListener { s, _ -> s ?: return@addSnapshotListener; outgoing.value = s.documents.map(FriendRequest::from) }
+        subs += db.collection("mail").whereEqualTo("to", id).limit(300)
+            .addSnapshotListener { s, _ -> s ?: return@addSnapshotListener
+                val list = s.documents.map(Mail::from).filter { !it.delTo }.sortedByDescending { it.createdAt }; mailIn.value = list; need(list.map { it.from }) }
     }
 
     private fun stop() {
         subs.forEach { it.remove() }; subs.clear()
-        chats.value = emptyList(); notifs.value = emptyList(); incoming.value = emptyList(); outgoing.value = emptyList()
+        chats.value = emptyList(); notifs.value = emptyList(); incoming.value = emptyList(); outgoing.value = emptyList(); mailIn.value = emptyList()
         _users.value = emptyMap(); loading.clear()
     }
 

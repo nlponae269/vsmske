@@ -1,5 +1,11 @@
 package ru.vsmske.app.ui
 
+import androidx.compose.material3.Button
+
+import ru.vsmske.app.data.fmtDur
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.Canvas
@@ -253,5 +259,81 @@ fun PlaylistPickSheet(t: Track, onClose: () -> Unit) {
                 if (has) Icon(Icons.Rounded.Check, "Уже здесь", tint = MaterialTheme.colorScheme.primary)
             }
         }
+    }
+}
+
+/** Правка своего трека: название, исполнитель, обложка, текст песни и поиск текста в LRCLIB */
+@Composable
+fun TrackEditSheet(t: Track, onClose: () -> Unit) {
+    val ctx = androidx.compose.ui.platform.LocalContext.current
+    val toast = LocalToast.current
+    val scope = rememberCoroutineScope()
+    var title by remember { mutableStateOf(t.title) }
+    var artist by remember { mutableStateOf(t.artist) }
+    var lyrics by remember { mutableStateOf(t.lyrics) }
+    var cover by remember { mutableStateOf(t.cover) }
+    var busy by remember { mutableStateOf(false) }
+    var finding by remember { mutableStateOf(false) }
+    var hits by remember { mutableStateOf<List<Media.LrcHit>?>(null) }
+    val pick = androidx.activity.compose.rememberLauncherForActivityResult(androidx.activity.result.contract.ActivityResultContracts.PickVisualMedia()) { uri ->
+        if (uri != null) { busy = true; scope.safe({ busy = false; toast(it) }) { cover = Media.setTrackCover(ctx, t, uri); Music.updateTrack(t.copy(cover = cover)); busy = false; toast("Обложка обновлена") } }
+    }
+    VsSheet({ if (!busy) onClose() }) {
+        SheetHeader("Изменить трек", "Видно всем — и на сайте, и в приложении")
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Box(Modifier.size(84.dp).clip(RoundedCornerShape(20.dp)).clickable(enabled = !busy) {
+                pick.launch(androidx.activity.result.PickVisualMediaRequest(androidx.activity.result.contract.ActivityResultContracts.PickVisualMedia.ImageOnly))
+            }) {
+                TrackCover(t.copy(cover = cover), 84.dp, 20.dp)
+                Box(Modifier.align(Alignment.BottomEnd).padding(4.dp).size(26.dp).clip(CircleShape).background(MaterialTheme.colorScheme.primary), contentAlignment = Alignment.Center) {
+                    Icon(Icons.Rounded.Add, "Сменить обложку", tint = MaterialTheme.colorScheme.onPrimary, modifier = Modifier.size(18.dp))
+                }
+            }
+            Column(Modifier.weight(1f).padding(start = 12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                OutlinedTextField(title, { title = it.take(120) }, Modifier.fillMaxWidth(), label = { Text("Название") }, singleLine = true)
+                OutlinedTextField(artist, { artist = it.take(120) }, Modifier.fillMaxWidth(), label = { Text("Исполнитель") }, singleLine = true)
+            }
+        }
+        Row(Modifier.fillMaxWidth().padding(top = 14.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text("Текст песни", style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
+            TextButton({
+                finding = true; hits = null
+                scope.safe({ finding = false; toast(it) }) {
+                    val found = Media.searchLyrics(title.ifBlank { t.title }, artist)
+                    finding = false
+                    // версия с тайм-кодами той же длины (±3 с) подставляется сама, остальные — списком
+                    val best = found.firstOrNull { it.synced.isNotBlank() && t.duration > 0 && kotlin.math.abs(it.duration - t.duration) <= 3 }
+                    when {
+                        best != null -> { lyrics = best.synced; toast("Нашли текст с тайм-кодами ✨") }
+                        found.isEmpty() -> toast("Текст не нашёлся — можно вставить вручную")
+                        else -> hits = found
+                    }
+                }
+            }, enabled = !finding) { if (finding) ExpressiveLoader(20.dp) else Text("Найти текст") }
+        }
+        hits?.let { list ->
+            Column(Modifier.fillMaxWidth().heightIn(max = 220.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                list.forEach { h ->
+                    Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(MaterialTheme.colorScheme.surfaceContainerHigh).clickable { lyrics = h.text; hits = null }.padding(12.dp),
+                        verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f)) {
+                            Text(h.title, style = MaterialTheme.typography.titleSmall, maxLines = 1)
+                            Text("${h.artist} · ${fmtDur(h.duration)}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
+                        }
+                        if (h.synced.isNotBlank()) Chip("с тайм-кодами", MaterialTheme.colorScheme.primaryContainer, MaterialTheme.colorScheme.onPrimaryContainer)
+                    }
+                }
+            }
+        }
+        OutlinedTextField(lyrics, { lyrics = it.take(20000) }, Modifier.fillMaxWidth().heightIn(min = 140.dp, max = 260.dp).padding(top = 6.dp),
+            placeholder = { Text("Строки [мм:сс.сс] дают синхронизацию с музыкой") }, textStyle = MaterialTheme.typography.bodyMedium)
+        Button({
+            busy = true
+            scope.safe({ busy = false; toast(it) }) {
+                Media.updateTrack(t, title, artist, lyrics)
+                Music.updateTrack(t.copy(title = title.trim().ifEmpty { t.title }, artist = artist.trim(), lyrics = lyrics, cover = cover))
+                toast("Сохранено"); onClose()
+            }
+        }, Modifier.fillMaxWidth().padding(top = 12.dp).height(52.dp), enabled = !busy && title.isNotBlank()) { if (busy) ExpressiveLoader(24.dp, MaterialTheme.colorScheme.onPrimary) else Text("Сохранить") }
     }
 }

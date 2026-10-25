@@ -122,15 +122,20 @@ private fun AppleLyrics(lyr: Lyrics, pos: State<Double>, modifier: Modifier, con
     var dragging by remember { mutableStateOf(false) }
     var userAt by remember { mutableStateOf(0L) }
     var first by remember(lyr) { mutableStateOf(true) }
+    val waveFor = remember(lyr) { intArrayOf(Int.MIN_VALUE) }   // для какой строки уже пущена «волна»
 
     LaunchedEffect(cur, topsVer) {
+        if (topsVer == 0) return@LaunchedEffect   // строки ещё не измерены
         val c = cur.coerceAtLeast(0)
         val target = tops[c]
-        if (first) { scrolls.forEach { it.snapTo(target) }; first = false; return@LaunchedEffect }
+        if (first) { scrolls.forEach { it.snapTo(target) }; first = false; waveFor[0] = cur; return@LaunchedEffect }
+        // новая строка — волна с задержкой по расстоянию; просто поменялись высоты (раскрылись точки) — догоняем сразу, без задержки
+        val wave = waveFor[0] != cur
+        waveFor[0] = cur
         scrolls.forEachIndexed { i, a ->
             val d = i - c
-            val lag = if (d < -2) 0L else (d + 2).coerceIn(0, 9) * 45L
-            launch { delay(lag); a.animateTo(target, spring(dampingRatio = 0.86f, stiffness = 95f)) }
+            val lag = if (!wave || d < -2) 0L else (d + 2).coerceIn(0, 9) * 45L
+            launch { if (lag > 0) delay(lag); a.animateTo(target, spring(dampingRatio = 0.86f, stiffness = 95f)) }
         }
     }
     LaunchedEffect(userAt) {
@@ -199,6 +204,7 @@ private fun AppleLine(l: LLine, on: Boolean, dist: Int, free: Boolean, pos: Stat
                 for (row in 0 until lay.lineCount) {
                     val a = lay.getLineStart(row); val b = lay.getLineEnd(row, visibleEnd = true)
                     if (lit <= a) break
+                    if (b <= a) continue
                     val left = lay.getLineLeft(row); val right = lay.getLineRight(row)
                     val x = if (lit >= b) right + edge else {
                         val k = floor(lit).toInt().coerceIn(a, b - 1)

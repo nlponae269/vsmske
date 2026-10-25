@@ -1,5 +1,12 @@
 package ru.vsmske.app.ui
 
+import androidx.compose.ui.unit.sp
+import androidx.compose.ui.graphics.Color
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.Row
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -94,7 +101,14 @@ fun AuthScreen() {
             if (busy) CircularProgressIndicator(Modifier.size(22.dp), strokeWidth = 2.dp) else Text(if (tab == 0) "Войти" else "Создать аккаунт")
         }
         if (tab == 0) TextButton({ if (email.isBlank()) err = "Напишите почту — пришлём ссылку для нового пароля" else run { Api.reset(email); info = "Письмо для смены пароля отправлено" } }) { Text("Забыли пароль?") }
-        Text("Вход через Google есть на сайте; в приложении — по почте и паролю.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            HorizontalDivider(Modifier.weight(1f)); Text("  или  ", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant); HorizontalDivider(Modifier.weight(1f))
+        }
+        val ctx = androidx.compose.ui.platform.LocalContext.current
+        OutlinedButton({ run { Api.signInGoogle(ctx) } }, Modifier.fillMaxWidth().height(52.dp), enabled = !busy) {
+            Text("G", fontWeight = FontWeight.Bold, color = Color(0xFF4285F4), fontSize = 20.sp)
+            Spacer(Modifier.width(10.dp)); Text("Войти через Google")
+        }
     }
 }
 

@@ -1,5 +1,11 @@
 package ru.vsmske.app.ui
 
+import androidx.compose.ui.unit.sp
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.background
+import androidx.compose.ui.draw.clip
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -147,12 +153,23 @@ fun NotifsScreen() {
                 val u = users[n.from]
                 ListItem(
                     headlineContent = { Text("${u?.name ?: "…"} ${NOTIF_TEXT[n.type] ?: ""}") },
-                    supportingContent = { Text((if (n.text.isNotEmpty()) "«${n.text}» · " else "") + ago(n.createdAt), maxLines = 2, color = MaterialTheme.colorScheme.onSurfaceVariant) },
-                    leadingContent = { Avatar(u, 44.dp) },
+                    supportingContent = { Text((if (n.text.isNotEmpty()) "«${ru.vsmske.app.data.Markup.plain(n.text)}» · " else "") + ago(n.createdAt), maxLines = 2, color = MaterialTheme.colorScheme.onSurfaceVariant) },
+                    leadingContent = {
+                        Box {
+                            Avatar(u, 44.dp, showOnline = false)
+                            val ic = NOTIF_ICON[n.type]
+                            if (ic != null) Box(Modifier.align(Alignment.BottomEnd).size(20.dp).clip(CircleShape).background(MaterialTheme.colorScheme.surface), contentAlignment = Alignment.Center) {
+                                Text(ic, fontSize = 12.sp)
+                            }
+                        }
+                    },
                     colors = ListItemDefaults.colors(containerColor = if (n.createdAt > seen) MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.45f) else Color.Transparent),
-                    modifier = Modifier.clickable { if (n.postId.isNotEmpty() && n.type in setOf("like", "comment", "wall", "repost", "mention")) nav.navigate("post/${n.postId}") else nav.openProfile(n.from) },
+                    modifier = Modifier.clickable { if (n.postId.isNotEmpty() && n.type in setOf("like", "comment", "wall", "repost", "mention")) nav.navigate("post/${n.postId}") else if (n.postId.isNotEmpty() && n.type in setOf("answer", "best")) nav.navigate("q/${n.postId}") else if (n.type == "gift") nav.navigate("me") else nav.openProfile(n.from) },
                 )
             }
         }
     }
 }
+
+private val NOTIF_ICON = mapOf("like" to "❤️", "comment" to "💬", "wall" to "📝", "friend" to "🤝", "repost" to "🔁", "mention" to "@",
+    "gift" to "🎁", "nick" to "💎", "call" to "📞", "answer" to "💡", "best" to "🏆")
