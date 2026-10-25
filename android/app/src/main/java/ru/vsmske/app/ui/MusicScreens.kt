@@ -483,7 +483,7 @@ fun rememberUploader(onDone: () -> Unit): Uploader {
                     TextButton(enabled = title.isNotBlank(), onClick = {
                         draft = null; upTitle = title.trim(); progress = 0f
                         scope.launch {
-                            try { Upload.upload(d, title.trim(), artist.trim()) { progress = it }; toast("Трек загружен"); onDone() }
+                            try { Upload.upload(ctx, d, title.trim(), artist.trim()) { progress = it }; toast("Трек загружен"); onDone() }
                             catch (e: Exception) { toast(errText(e)) } finally { progress = null }
                         }
                     }) { Text("Загрузить") }

@@ -490,7 +490,8 @@ service cloud.firestore {
         && d().chunks is int && d().chunks >= 1 && d().chunks <= 40
         && d().status == 'uploading' && nowC();
       allow update: if signed() && resource.data.ownerId == me() && onlyChanged(['status']) && d().status == 'ready';
-      allow delete: if signed() && resource.data.ownerId == me();
+      // 9.5: админ удаляет файл чужого видео или трека вместе с ним (иначе файл остаётся мусором)
+      allow delete: if signed() && (resource.data.ownerId == me() || isAdmin());
 
       match /chunks/{n} {
         allow read: if signed() && (file(fid).ownerId == me()
@@ -498,7 +499,7 @@ service cloud.firestore {
         allow create: if signed() && file(fid).ownerId == me()
           && fields(['i', 'data']) && d().i is int && d().i >= 0 && d().i < file(fid).chunks
           && str(d().data, 0, 700000);
-        allow delete: if signed() && file(fid).ownerId == me();
+        allow delete: if signed() && (file(fid).ownerId == me() || isAdmin());
       }
     }
 

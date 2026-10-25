@@ -26,16 +26,16 @@ android {
         create("full") {
             dimension = "app"
             applicationId = "ru.vsmske.app"
-            versionCode = 15
-            versionName = "3.11"
+            versionCode = 16
+            versionName = "3.12"
             buildConfigField("boolean", "CLIPS", "false")
             resValue("string", "app_name", "VСмске")
         }
         create("clips") {
             dimension = "app"
             applicationId = "ru.vsmske.clips"
-            versionCode = 1
-            versionName = "1.0"
+            versionCode = 2
+            versionName = "1.1"
             buildConfigField("boolean", "CLIPS", "true")
             resValue("string", "app_name", "ВС Клипы")
         }

@@ -93,7 +93,29 @@ object Media {
     suspend fun commentCount(id: String): Int =
         db.collection("videos").document(id).collection("comments").count().get(com.google.firebase.firestore.AggregateSource.SERVER).await().count.toInt()
 
-    suspend fun deleteVideo(v: Video) { db.collection("videos").document(v.id).delete().await(); runCatching { Files.delete(v.fileId) } }
+    /**
+     * Удалить видео целиком (9.5): сначала комментарии (после удаления видео их уже не стереть — правило смотрит на хозяина видео),
+     * потом само видео, потом файл с кусками (хозяин или админ). На сервере ничего само не чистится — бесплатный тариф без Cloud Functions.
+     */
+    suspend fun deleteVideo(v: Video) {
+        runCatching {
+            val cs = db.collection("videos").document(v.id).collection("comments").get().await()
+            cs.documents.chunked(400).forEach { part -> db.runBatch { b -> part.forEach { b.delete(it.reference) } }.await() }
+        }
+        db.collection("videos").document(v.id).delete().await()
+        if (v.source == "file") runCatching { Files.delete(v.fileId) }
+    }
+
+    /** Уборка: свои недокачанные файлы (загрузка оборвалась) старше суток — раз за запуск */
+    private var cleaned = false
+    suspend fun cleanupStaleUploads() {
+        if (cleaned || me.isEmpty()) return
+        cleaned = true
+        val day = System.currentTimeMillis() - 24 * 3600_000L
+        val stale = db.collection("files").whereEqualTo("ownerId", me).whereEqualTo("status", "uploading").limit(30).get().await()
+            .documents.filter { (it.getTimestamp("createdAt")?.toDate()?.time ?: Long.MAX_VALUE) < day }
+        stale.forEach { runCatching { Files.delete(it.id) } }
+    }
 
     /** Ссылка YouTube / Rutube / VK / .mp4 → (provider, vid) — как parseLink() на сайте */
     fun parseLink(u: String): Pair<String, String>? {

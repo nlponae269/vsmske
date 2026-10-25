@@ -14,8 +14,10 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.ByteArrayOutputStream
 
-/** Фото в базе — dataURL JPEG прямо в документах (Storage на бесплатном тарифе нет). */
+/** Фото в базе — dataURL прямо в документах (Storage на бесплатном тарифе нет). С 9.5 — WebP: на четверть меньше JPEG при том же виде. */
 object Images {
+    @Suppress("DEPRECATION")
+    private val WEBP = if (android.os.Build.VERSION.SDK_INT >= 30) Bitmap.CompressFormat.WEBP_LOSSY else Bitmap.CompressFormat.WEBP
     private val IMG_RE = Regex("^data:image/(jpeg|png|webp|gif);base64,")
     private val cache = object : LruCache<String, ImageBitmap>(48 * 1024 * 1024) {
         override fun sizeOf(key: String, value: ImageBitmap) = value.width * value.height * 4
@@ -44,7 +46,7 @@ object Images {
         BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
     }.getOrNull()
 
-    /** Сжать картинку в dataURL JPEG: сторона не больше maxSide, длина строки не больше maxChars */
+    /** Сжать картинку в dataURL WebP: сторона не больше maxSide, длина строки не больше maxChars */
     suspend fun compress(ctx: Context, uri: Uri, maxSide: Int, maxChars: Int, square: Boolean = false): String = withContext(Dispatchers.IO) {
         val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
         ctx.contentResolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, bounds) }
@@ -64,10 +66,10 @@ object Images {
         while (true) {
             val k = minOf(1f, side.toFloat() / maxOf(bmp.width, bmp.height))
             val scaled = if (k < 1f) Bitmap.createScaledBitmap(bmp, (bmp.width * k).toInt().coerceAtLeast(1), (bmp.height * k).toInt().coerceAtLeast(1), true) else bmp
-            for (q in intArrayOf(85, 75, 65, 55, 45)) {
+            for (q in intArrayOf(80, 70, 60, 50, 40)) {
                 val out = ByteArrayOutputStream()
-                scaled.compress(Bitmap.CompressFormat.JPEG, q, out)
-                val s = "data:image/jpeg;base64," + Base64.encodeToString(out.toByteArray(), Base64.NO_WRAP)
+                scaled.compress(WEBP, q, out)
+                val s = "data:image/webp;base64," + Base64.encodeToString(out.toByteArray(), Base64.NO_WRAP)
                 if (s.length <= maxChars) return s
             }
             side = (side * 0.75f).toInt()

@@ -53,7 +53,7 @@ const MAX_POST_IMG = 700000;   // символов dataURL (~520 КБ), лими
 const MAX_AVATAR = 120000;
 const CHUNK = 700000;                                   // символов base64 в одном куске (кратно 4)
 const LIMITS = { disk: 10 * 1024 * 1024, video: 20 * 1024 * 1024, music: 12 * 1024 * 1024 };
-const VERSION = '9.4';
+const VERSION = '9.5';
 const MAX_MSG_IMG = 380000;    // фото в сообщении
 const ONLINE_MS = 5 * 60 * 1000; // «в сети», если заходил не раньше 5 минут назад
 
@@ -250,6 +250,23 @@ async function getFileUrl(fid, type) {
 async function deleteFile(fid) {
   const s = await getDocs(collection(db, 'files', fid, 'chunks'));
   const bt = writeBatch(db); s.docs.forEach(d => bt.delete(d.ref)); bt.delete(doc(db, 'files', fid)); await bt.commit();
+}
+// 9.5: видео удаляется целиком — сначала комментарии (после удаления видео правило их уже не пустит), потом видео, потом файл
+// (хозяин или админ). Сервер сам ничего не чистит: на бесплатном тарифе нет Cloud Functions.
+async function deleteVideoFull(v) {
+  try {
+    const cs = await getDocs(collection(db, 'videos', v.id, 'comments'));
+    for (let i = 0; i < cs.docs.length; i += 400) { const b = writeBatch(db); cs.docs.slice(i, i + 400).forEach(d => b.delete(d.ref)); await b.commit(); }
+  } catch (e) { console.error(e); }
+  await deleteDoc(doc(db, 'videos', v.id));
+  if (v.source === 'file' && v.fileId) await deleteFile(v.fileId).catch(console.error);
+}
+// 9.5: свои недокачанные файлы (загрузка оборвалась) старше суток — убираем раз за вход
+async function cleanupStaleUploads() {
+  try {
+    const s = await getDocs(query(collection(db, 'files'), where('ownerId', '==', uid()), where('status', '==', 'uploading'), limit(30)));
+    for (const d of s.docs) if (ms(d.data().createdAt) < Date.now() - 864e5) await deleteFile(d.id).catch(console.error);
+  } catch (e) { console.error(e); }
 }
 function videoMeta(file) {
   return new Promise(res => {
@@ -637,6 +654,7 @@ let sessionAt = 0;
 function startSession() {
   const id = uid();
   sessionAt = Date.now(); seenAt = 0;
+  setTimeout(cleanupStaleUploads, 15000);
   let firstChats = true;
   globalUnsubs.push(onSnapshot(doc(db, 'users', id), s => {
     if (!s.exists()) return;
@@ -2447,6 +2465,9 @@ function viewAdmin() {
       <p class="muted small" style="margin:4px 0 10px">Выпустите имя любой длины (от 1 символа) себе или в подарок. Обычные люди могут занять имя только от 4 символов.</p>
       <form class="row" data-form="nickmint" style="flex-wrap:wrap;gap:8px"><input id="mintNick" class="inp" maxlength="31" placeholder="@имя, например vld" style="flex:1;min-width:140px">
         <input id="mintTo" class="inp" maxlength="31" placeholder="@кому (пусто — себе)" style="flex:1;min-width:140px"><button class="btn">Выпустить</button></form></div>
+    <div class="card pad"><h2 class="h" style="font-size:16px">🧹 Очистить мусор</h2>
+      <p class="muted small" style="margin:4px 0 10px">Файлы видео и треков, которые уже никому не нужны (видео или трек удалили, загрузка оборвалась). Освобождает место в базе — в бесплатном тарифе его 1 ГБ.</p>
+      <button class="btn sec" data-act="admclean" ${S.cleanBusy ? 'disabled' : ''}>${S.cleanBusy ? esc(S.cleanBusy) : 'Найти и удалить'}</button></div>
     <p class="hint" style="text-align:center">Забанить человека можно и с его страницы: «⋯» → «Модерация».</p>`;
 }
 
@@ -6075,8 +6096,7 @@ document.addEventListener('click', async e => {
       }
       case 'delvideo': {
         if (!twoStep('video:' + id)) return;
-        const v = cache.video, bt = writeBatch(db); bt.delete(doc(db, 'videos', id)); await bt.commit();
-        if (v?.source === 'file' && v.fileId) await deleteFile(v.fileId).catch(console.error);
+        await deleteVideoFull(cache.video?.id === id ? cache.video : { id });
         toast('Видео удалено'); go('videos/' + uid()); break;
       }
       case 'newalbum': S.newAlbum = !S.newAlbum; render(); if (S.newAlbum) document.getElementById('alTitle')?.focus(); break;
@@ -6413,11 +6433,25 @@ document.addEventListener('click', async e => {
         if (cache.mus) { const t = trackCache.get(id); cache.mus.liked = has ? (cache.mus.liked || []).filter(x => x.id !== id) : t ? [t, ...(cache.mus.liked || []).filter(x => x.id !== id)] : cache.mus.liked; }
         break;
       }
+      case 'admclean': {
+        if (!isSiteAdmin() || S.cleanBusy) return;
+        S.cleanBusy = 'Ищем…'; render();
+        try {
+          const [fs, vs, ts] = await Promise.all([getDocs(query(collection(db, 'files'), where('kind', 'in', ['video', 'music']))), getDocs(collection(db, 'videos')), getDocs(collection(db, 'tracks'))]);
+          const used = new Set([...vs.docs, ...ts.docs].map(d => d.data().fileId).filter(Boolean));
+          // свежие (младше суток) не трогаем — вдруг файл прямо сейчас загружается
+          const junk = fs.docs.filter(d => !used.has(d.id) && ms(d.data().createdAt) < Date.now() - 864e5);
+          let n = 0, size = 0;
+          for (const d of junk) { S.cleanBusy = `Удаляем ${n + 1} из ${junk.length}…`; render(); try { await deleteFile(d.id); n++; size += d.data().size || 0; } catch (e) { console.error(e); } }
+          toast(n ? `Удалено файлов: ${n}, освобождено ${fmtSize(size)}` : 'Мусора нет 🎉');
+        } catch (e) { toast(errText(e)); }
+        S.cleanBusy = null; render(); break;
+      }
       case 'tdel': {
         if (!twoStep('track:' + id)) return;
         const t = trackCache.get(id) || (cache.tracks || []).find(x => x.id === id);
         await deleteDoc(doc(db, 'tracks', id));
-        if (t?.ownerId === uid()) await deleteFile(t.fileId).catch(console.error);
+        if (t?.fileId && (t.ownerId === uid() || isSiteAdmin())) await deleteFile(t.fileId).catch(console.error);
         trackCache.delete(id); S.tmenu = null;
         if (cache.mus) for (const k of ['stream', 'liked', 'uploads', 'other']) cache.mus[k] = (cache.mus[k] || []).filter(x => x.id !== id);
         if (cache.mus?.pl?.list) cache.mus.pl.list = cache.mus.pl.list.filter(x => x.id !== id);

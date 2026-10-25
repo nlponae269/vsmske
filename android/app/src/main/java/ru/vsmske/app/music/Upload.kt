@@ -19,7 +19,8 @@ import java.nio.charset.Charset
  * или из имени файла «Исполнитель - Песня»; файл — кусками base64 по 700 000 символов в files/{id}/chunks.
  */
 object Upload {
-    const val MAX = 12 * 1024 * 1024
+    /** Исходный файл — до 60 МБ: перед загрузкой он всё равно сжимается (AAC 128 кбит/с ≈ 1 МБ в минуту) */
+    const val MAX = 60 * 1024 * 1024
     private const val CHUNK = 700_000
 
     class Draft(val uri: Uri, val name: String, val size: Long, val type: String, val bytes: ByteArray,
@@ -34,9 +35,9 @@ object Upload {
                 c.getColumnIndex(OpenableColumns.SIZE).takeIf { it >= 0 }?.let { size = c.getLong(it) }
             }
         }
-        if (size > MAX) error("Трек больше 12 МБ")
+        if (size > MAX) error("Файл больше 60 МБ")
         val bytes = cr.openInputStream(uri)?.use { it.readBytes() } ?: error("Не удалось открыть файл")
-        if (bytes.size > MAX) error("Трек больше 12 МБ")
+        if (bytes.size > MAX) error("Файл больше 60 МБ")
         val tags = runCatching { id3(bytes) }.getOrDefault(Tags(null, null, null))   // битый тег — не повод не загрузить трек
         val base = name.substringBeforeLast('.').replace('_', ' ').trim()
         val m = Regex("^(.+?)\\s+[-–—]\\s+(.+)$").find(base)
@@ -49,8 +50,18 @@ object Upload {
             (tags.artist ?: m?.groupValues?.get(1) ?: "").take(120), cover, duration)
     }
 
-    suspend fun upload(d: Draft, title: String, artist: String, progress: (Float) -> Unit) {
+    suspend fun upload(ctx: Context, src: Draft, title: String, artist: String, progress: (Float) -> Unit) {
         val db = Fire.db; val me = Fire.uid
+        // сильное сжатие: AAC 128 кбит/с; если телефон не справился — грузим как есть (но в базу больше 20 МБ не влезет)
+        val d = runCatching {
+            val f = ClipMedia.compressAudio(ctx, src.uri) { progress(it * 0.3f) }
+            try {
+                val b = f.readBytes()
+                if (b.isEmpty() || b.size >= src.bytes.size) src
+                else Draft(src.uri, src.name.substringBeforeLast('.') + ".m4a", b.size.toLong(), "audio/mp4", b, src.title, src.artist, src.cover, src.duration)
+            } finally { f.delete() }
+        }.getOrDefault(src)
+        if (d.size > 20L * 1024 * 1024) error("Даже после сжатия трек больше 20 МБ")
         val b64 = withContext(Dispatchers.Default) { Base64.encodeToString(d.bytes, Base64.NO_WRAP) }
         val n = maxOf(1, (b64.length + CHUNK - 1) / CHUNK)
         val ref = db.collection("files").document()
@@ -59,7 +70,7 @@ object Upload {
         for (i in 0 until n) {
             ref.collection("chunks").document(i.toString().padStart(4, '0'))
                 .set(mapOf("i" to i, "data" to b64.substring(i * CHUNK, minOf(b64.length, (i + 1) * CHUNK)))).await()
-            progress((i + 1f) / n)
+            progress(0.3f + 0.7f * (i + 1f) / n)
         }
         ref.update("status", "ready").await()
         val t = db.collection("tracks").add(mapOf("ownerId" to me, "title" to title.take(120), "artist" to artist.take(120), "fileId" to ref.id,
