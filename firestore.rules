@@ -372,7 +372,8 @@ service cloud.firestore {
     // ---------- ВС Музыка: трек = описание + файл в files (kind = 'music') ----------
     match /tracks/{tid} {
       allow read: if signed();
-      allow create: if signed() && notBanned() && fields(['ownerId', 'title', 'artist', 'fileId', 'type', 'duration', 'size', 'createdAt'])
+      // загружают треки только админы (9.4); notBanned() не нужен — админа забанить нельзя
+      allow create: if signed() && isAdmin() && fields(['ownerId', 'title', 'artist', 'fileId', 'type', 'duration', 'size', 'createdAt'])
         && d().ownerId == me() && trackOk() && str(d().type, 0, 60)
         && d().duration is number && d().size is int && nowC()
         && file(d().fileId).ownerId == me() && file(d().fileId).kind == 'music';

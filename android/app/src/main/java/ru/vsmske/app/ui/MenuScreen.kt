@@ -3,6 +3,8 @@ package ru.vsmske.app.ui
 import androidx.compose.material.icons.rounded.Mail
 import androidx.compose.material.icons.rounded.Visibility
 import androidx.compose.material.icons.rounded.GridView
+import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.Flag
 import androidx.compose.material.icons.rounded.Calculate
 import androidx.compose.material.icons.rounded.Timer
 import androidx.compose.material.icons.rounded.Casino
@@ -132,6 +134,8 @@ fun MenuScreen() {
             item { MenuTile(Icons.Rounded.CurrencyExchange, "Курсы валют", "ЦБ РФ, конвертер", Color(0xFF1F8A5B)) { nav.navigate("rates") } }
             item(span = { GridItemSpan(maxLineSpan) }) { MenuSection("Игры и инструменты") }
             item { MenuTile(Icons.Rounded.GridView, "2048", "головоломка", Color(0xFFC98A12)) { nav.navigate("games/2048") } }
+            item { MenuTile(Icons.Rounded.Close, "Крестики-нолики", "против телефона", Color(0xFF1E66F5)) { nav.navigate("games/ttt") } }
+            item { MenuTile(Icons.Rounded.Flag, "Сапёр", "три уровня", Color(0xFF2E9D4A)) { nav.navigate("games/mines") } }
             item { MenuTile(Icons.Rounded.Calculate, "Калькулятор", "с историей", Color(0xFF4E5B76)) { nav.navigate("calc") } }
             item { MenuTile(Icons.Rounded.Timer, "Таймер", "и секундомер", Color(0xFFD0462F)) { nav.navigate("timer") } }
             item { MenuTile(Icons.Rounded.Casino, "Жребий", "монетка, кубики", Color(0xFF6A47C9)) { nav.navigate("dice") } }

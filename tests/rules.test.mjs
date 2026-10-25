@@ -523,6 +523,7 @@ test('ВС Заметки: только свои', async () => {
 /* ---------- 2.0: музыка, подарки, маркет ---------- */
 test('ВС Музыка: трек только со своим музыкальным файлом, файл слушают все', async () => {
   const f = db(A), file = doc(collection(f, 'files'));
+  await env.withSecurityRulesDisabled(ctx => updateDoc(doc(ctx.firestore(), 'users', A), { admin: true }));
   await setDoc(file, { ownerId: A, kind: 'music', name: 'song.mp3', size: 1000, type: 'audio/mpeg', chunks: 1, status: 'uploading', createdAt: serverTimestamp() });
   await setDoc(doc(f, 'files', file.id, 'chunks', '0000'), { i: 0, data: 'AAAA' });
   const t = doc(collection(f, 'tracks'));
@@ -611,9 +612,19 @@ test('эмодзи-статус и «сейчас слушает»', async () =>
   await assertFails(updateDoc(doc(db(A), 'users', A), { listening: { title: 'x', evil: 1 } }));
 });
 
+test('9.4: загружать треки может только админ', async () => {
+  const f = db(B), file = doc(collection(f, 'files'));
+  await setDoc(file, { ownerId: B, kind: 'music', name: 's.mp3', size: 10, type: 'audio/mpeg', chunks: 1, status: 'uploading', createdAt: serverTimestamp() });
+  const tr = { ownerId: B, title: 'Песня', artist: '', fileId: file.id, type: 'audio/mpeg', duration: 10, size: 10, createdAt: serverTimestamp() };
+  await assertFails(setDoc(doc(collection(f, 'tracks')), tr));
+  await env.withSecurityRulesDisabled(ctx => updateDoc(doc(ctx.firestore(), 'users', B), { admin: 'true' }));
+  await assertSucceeds(setDoc(doc(collection(f, 'tracks')), tr));
+});
+
 /* ---------- 3.1: текст песни и обложка трека ---------- */
 test('текст песни и обложку меняет только автор трека', async () => {
   const f = db(A), file = doc(collection(f, 'files'));
+  await env.withSecurityRulesDisabled(ctx => updateDoc(doc(ctx.firestore(), 'users', A), { admin: true }));
   await setDoc(file, { ownerId: A, kind: 'music', name: 's.mp3', size: 10, type: 'audio/mpeg', chunks: 1, status: 'uploading', createdAt: serverTimestamp() });
   const t = doc(collection(f, 'tracks'));
   await setDoc(t, { ownerId: A, title: 'Элло', artist: 'Группа', fileId: file.id, type: 'audio/mpeg', duration: 186, size: 10, createdAt: serverTimestamp() });

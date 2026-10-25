@@ -154,7 +154,8 @@ fun MusicScreen(onOpenPlayer: () -> Unit) {
         topBar = { LargeTopAppBar(title = { Column { Text(hello + ", " + (me?.name?.substringBefore(' ') ?: ""), maxLines = 1, overflow = TextOverflow.Ellipsis) } }, scrollBehavior = scroll,
             actions = {
                 IconButton({ searching = !searching }) { Icon(Icons.Rounded.Search, "Поиск") }
-                IconButton(upload.launch, enabled = !upload.busy) { Icon(Icons.Rounded.Upload, "Загрузить трек") }
+                // загружают треки только админы (как на сайте 9.4 и в правилах)
+                if (me?.admin == true) IconButton(upload.launch, enabled = !upload.busy) { Icon(Icons.Rounded.Upload, "Загрузить трек") }
             }) },
     ) { pad ->
         LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(top = pad.calculateTopPadding(), bottom = 24.dp)) {
@@ -250,7 +251,7 @@ fun MusicScreen(onOpenPlayer: () -> Unit) {
             item { SectionTitle("Новое в Потоке", more = "Весь Поток", onMore = { nav.navigate("music/stream") }) }
             when {
                 s == null -> items(5) { SkeletonRow() }
-                s.isEmpty() -> item { EmptyState("Пока никто ничего не загрузил", "Загрузите первый трек кнопкой вверху", "🎧") }
+                s.isEmpty() -> item { EmptyState("Пока никто ничего не загрузил", "Треки загружают администраторы", "🎧") }
                 else -> itemsIndexed(s.take(15), key = { _, t -> "n" + t.id }) { _, t -> TrackRow(t, s, ms, onOpenPlayer) }
             }
         }
@@ -448,7 +449,7 @@ fun rememberUploader(onDone: () -> Unit): Uploader {
     var progress by remember { mutableStateOf<Float?>(null) }
     var upTitle by remember { mutableStateOf("") }
     val pick = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri -> if (uri != null) scope.safe(toast) { draft = Upload.read(ctx, uri) } }
-    return Uploader({ pick.launch("audio/*") }, progress != null, { scope2 ->
+    return Uploader({ if (Store.me.value?.admin == true) pick.launch("audio/*") else toast("Загружать треки могут только администраторы") }, progress != null, { scope2 ->
         progress?.let { p ->
             scope2.item {
                 Column(Modifier.fillMaxWidth().padding(16.dp, 8.dp).clip(RoundedCornerShape(24.dp)).background(MaterialTheme.colorScheme.secondaryContainer).padding(16.dp)) {
