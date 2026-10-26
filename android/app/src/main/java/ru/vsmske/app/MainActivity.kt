@@ -25,7 +25,7 @@ class MainActivity : ComponentActivity() {
         if (ru.vsmske.app.ui.CLOSED) { setContent { ru.vsmske.app.ui.ClosedScreen() }; return }
         Store.start()
         Music.connect(applicationContext)
-        ru.vsmske.app.rtc.Call.watch(applicationContext)
+        if (!ru.vsmske.app.ui.MUSIC_ONLY) ru.vsmske.app.rtc.Call.watch(applicationContext)   // в «только Музыке» звонков нет
         openPlayer.value = intent?.getBooleanExtra("openPlayer", false) == true
         // плеер в шторке на Android 13+ требует разрешения на уведомления
         if (Build.VERSION.SDK_INT >= 33 && ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED)

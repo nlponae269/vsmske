@@ -12,8 +12,8 @@ android {
         applicationId = "ru.vsmske.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 18
-        versionName = "3.14"
+        versionCode = 19
+        versionName = "3.15"
         resValue("string", "app_name", "VСмске")
         // только для проверки: ./gradlew assembleDebug -Pemu=true — локальные эмуляторы Firebase вместо настоящей базы
         val emu = (project.findProperty("emu") as String?) == "true"

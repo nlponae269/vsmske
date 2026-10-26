@@ -121,7 +121,8 @@ private fun Main(openPlayer: MutableState<Boolean>) {
     val toast: (String) -> Unit = { m -> scope.launch { snack.currentSnackbarData?.dismiss(); snack.showSnackbar(m) } }
     val entry by nav.currentBackStackEntryAsState()
     val route = entry?.destination?.route
-    val isTab = route in TABS
+    // 3.15: только Музыка — без нижней панели и колонки разделов
+    val isTab = route in TABS && !MUSIC_ONLY
     val withInput = route == "chat/{key}" || route == "post/{id}" || route == "live/{id}" || route == "video/{id}"   // там своё внизу — мини-плеер прячем
     val ms by Music.state.collectAsState()
     val hasPlayer = ms.track != null
@@ -141,6 +142,7 @@ private fun Main(openPlayer: MutableState<Boolean>) {
                             AnimatedVisibility(!online && isTab, enter = expandVertically() + fadeIn(), exit = shrinkVertically() + fadeOut()) {
                                 OfflineStrip(Modifier.padding(horizontal = 8.dp, vertical = 4.dp).then(if (!hasPlayer && tablet) Modifier.navigationBarsPadding() else Modifier)) { nav.navigate("offline") }
                             }
+                            if (MUSIC_ONLY && route == "music") MusicOnlyStrip(Modifier.padding(horizontal = 8.dp, vertical = 4.dp).then(if (!hasPlayer) Modifier.navigationBarsPadding() else Modifier))
                             AnimatedVisibility(hasPlayer && !withInput, enter = slideInVertically { it } + fadeIn(), exit = slideOutVertically { it } + fadeOut()) {
                                 MiniPlayer(Modifier.padding(horizontal = 8.dp, vertical = 6.dp).then(if (isTab && !tablet) Modifier else Modifier.navigationBarsPadding())) { openPlayer.value = true }
                             }
@@ -149,7 +151,7 @@ private fun Main(openPlayer: MutableState<Boolean>) {
                     },
                 ) { pad ->
                     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
-                        NavHost(nav, startDestination = "feed",
+                        NavHost(nav, startDestination = if (MUSIC_ONLY) "music" else "feed",
                             modifier = Modifier.fillMaxSize().padding(bottom = pad.calculateBottomPadding()).widthIn(max = if (tablet && route !in FULL) CONTENT_MAX else Dp.Unspecified)) {
                             val open = { openPlayer.value = true }
                             composable("feed") { FeedScreen() }
