@@ -1,6 +1,6 @@
 /* VСмске: service worker. Нужен, чтобы сайт ставился как приложение и открывался без интернета.
    Свежие файлы всегда берутся из сети, копия из кэша — только если сети нет. Firebase не трогаем. */
-const CACHE = 'vsmske-v5';
+const CACHE = 'vsmske-v6';
 self.addEventListener('install', e => { self.skipWaiting(); });
 self.addEventListener('activate', e => {
   e.waitUntil(caches.keys().then(keys => Promise.all(keys.filter(k => k !== CACHE).map(k => caches.delete(k)))).then(() => self.clients.claim()));

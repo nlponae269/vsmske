@@ -12,6 +12,10 @@
     var d = l.search.slice(1).split('&').map(function (x) { return x.replace(/~and~/g, '&'); }).join('?');
     history.replaceState(null, '', b.slice(0, -1) + d + l.hash);
   }
+  /* 9.7: на этом адресе теперь веб-версия «Мига». От VСмске осталась только Музыка — по адресу /vsmske/music
+     (и радио). Владелец по-прежнему открывает весь VСмске по ?open. */
+  var r = l.pathname.slice(b.length);
+  window.SITE_MODE = /[?&]open\b/.test(l.search) ? 'vs' : (/^(music|radio)(\/|$)/.test(r) ? 'music' : 'mig');
 })(window.location);
 </script>
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
@@ -28,37 +32,60 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Google+Sans:wght@400;500;600;700&family=Manrope:wght@400;500;600;700;800&family=PT+Serif:ital,wght@0,400;0,700;1,400&family=PT+Sans:wght@400;700&family=Unbounded:wght@500;600;700&display=swap">
-<link rel="stylesheet" href="style.css?v=9.6">
-<link rel="stylesheet" href="material.css?v=9.6" id="skinMd">
-<link rel="stylesheet" href="warm.css?v=9.6" id="skinWarm">
-<link rel="stylesheet" href="paper.css?v=9.6" id="skinPaper">
-<link rel="stylesheet" href="player.css?v=9.6">
+<link rel="stylesheet" href="style.css?v=9.7">
+<link rel="stylesheet" href="material.css?v=9.7" id="skinMd">
+<link rel="stylesheet" href="warm.css?v=9.7" id="skinWarm">
+<link rel="stylesheet" href="paper.css?v=9.7" id="skinPaper">
+<link rel="stylesheet" href="player.css?v=9.7">
 <script>(function(){var k='warm';try{if(!localStorage.getItem('vs_skin91')){localStorage.setItem('vs_skin','warm');localStorage.setItem('vs_skin91','1')}var s=localStorage.getItem('vs_skin');k=s==='paper'||s==='lite'||s==='material'||s==='warm'?s:(localStorage.getItem('vs_lite')==='on'?'lite':'warm')}catch(e){}
 document.documentElement.dataset.skin=k;document.getElementById('skinPaper').disabled=k!=='paper';document.getElementById('skinMd').disabled=k!=='material'&&k!=='warm';document.getElementById('skinWarm').disabled=k!=='warm'})()</script>
 <style>:root{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)} body{margin:0} img{max-width:100%} [hidden]{display:none!important}</style>
+<link rel="stylesheet" href="mig/mig.css?v=1.0" id="migCss" disabled>
+<script>
+/* «Миг»: свои стили, значок и заголовок; стили VСмске выключаем. В режиме «только Музыка» — дизайн «Тёплый» и плашка сверху. */
+(function () {
+  var m = window.SITE_MODE, h = document.documentElement;
+  if (m === 'mig') {
+    ['skinMd', 'skinWarm', 'skinPaper'].forEach(function (id) { document.getElementById(id).disabled = true; });
+    [].forEach.call(document.querySelectorAll('link[rel=stylesheet]'), function (l) { if (l.id !== 'migCss' && !/fonts\.googleapis/.test(l.href)) l.disabled = true; });
+    document.getElementById('migCss').disabled = false;
+    document.title = 'Миг — короткие видео';
+    document.querySelector('meta[name=theme-color]').content = '#0A110C';
+    document.querySelector('meta[name=description]').content = 'Миг — короткие видео: клипы друзей и всех вокруг, звуки, темы под настроение.';
+    document.querySelector('link[rel=icon]').href = 'mig/icon-192.png';
+    document.querySelector('link[rel=apple-touch-icon]').href = 'mig/apple-touch-icon.png';
+    document.querySelector('meta[name=apple-mobile-web-app-title]').content = 'Миг';
+    document.querySelector('link[rel=manifest]').href = 'mig/manifest.webmanifest';
+    h.dataset.skin = 'mig';
+  } else if (m === 'music') {
+    h.classList.add('vs-music');
+    h.dataset.skin = 'warm'; document.getElementById('skinPaper').disabled = true; document.getElementById('skinMd').disabled = false; document.getElementById('skinWarm').disabled = false;
+    document.title = 'VСмске Музыка';
+  }
+})();
+</script>
+<style>
+  /* VСмске «только Музыка»: прячем все разделы, кроме Музыки */
+  html.vs-music .md-dest:not([href$="music"]), html.vs-music .md-fab, html.vs-music .md-fab-float, html.vs-music .md-pal, html.vs-music .md-search,
+  html.vs-music .md-menu, html.vs-music .md-nav > :not([href$="music"]) { display: none !important; }
+  html.vs-music #vsMusicBar { display: flex; }
+  #vsMusicBar { display: none; position: sticky; top: 0; z-index: 30; gap: 10px; align-items: center; justify-content: center; flex-wrap: wrap; padding: 10px 14px;
+    background: #2B2522; color: #fff; font: 600 14px system-ui, sans-serif; text-align: center; }
+  #vsMusicBar a { color: #C8F36B; }
+</style>
 </head>
 <body>
-<!-- 9.6: VСмске закрыт. Сайт целиком остался: открыть его можно по адресу с ?open (для владельца), вернуть для всех — поставить CLOSED = false ниже. -->
-<div id="closed" hidden style="min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px;box-sizing:border-box;background:#FBF7F2;font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;color:#2B2522">
-  <div style="max-width:420px;text-align:center">
-    <div style="width:84px;height:84px;margin:0 auto 18px;border-radius:24px;background:#E8664A;color:#fff;font-weight:800;font-size:34px;display:flex;align-items:center;justify-content:center">вс</div>
-    <h1 style="font-size:26px;margin:0 0 10px">VСмске закрыт</h1>
-    <p style="font-size:16px;line-height:1.5;color:#6B605A;margin:0 0 22px">Спасибо, что были с нами! Проект больше не работает.<br>Короткие видео теперь — в приложении «Миг».</p>
-    <a href="https://storage.yandexcloud.net/vsclips-video/app/Mig.apk" style="display:inline-block;padding:14px 26px;border-radius:14px;background:#9D4EDD;color:#fff;font-weight:700;text-decoration:none;font-size:16px">Скачать «Миг» для Android</a>
-  </div>
-</div>
+<div id="vsMusicBar">VСмске закрыт — осталась только Музыка. Короткие видео теперь в «Миге» · <a href="./">Открыть Миг</a></div>
+<div id="mig"></div>
 <div id="app"><div class="boot"><span class="boot-logo">вс</span></div></div>
 <div id="toast" class="toast" hidden></div>
 <input type="file" id="filePick" accept="image/*" hidden>
 <script>
 (function () {
-  var CLOSED = true;
-  if (CLOSED && !/[?&]open\b/.test(location.search)) {
-    document.getElementById('closed').hidden = false;
-    document.getElementById('app').hidden = true;
-  } else {
-    var sc = document.createElement('script'); sc.type = 'module'; sc.src = 'app.js?v=9.6'; document.body.appendChild(sc);
-  }
+  var m = window.SITE_MODE, sc = document.createElement('script'); sc.type = 'module';
+  if (m === 'mig') { document.getElementById('app').hidden = true; sc.src = 'mig/app.js?v=1.0'; }
+  else { document.getElementById('mig').hidden = true; window.VS_MUSIC_ONLY = m === 'music'; sc.src = 'app.js?v=9.7'; }
+  document.body.appendChild(sc);
 })();
 </script>
 </body>
