@@ -20,7 +20,7 @@ const fb = initializeApp({
 const auth = getAuth(fb); auth.languageCode = 'ru';
 const db = getFirestore(fb);
 
-const VERSION = '1.1';
+const VERSION = '1.2';
 const APK = 'https://storage.yandexcloud.net/vsclips-video/app/Mig.apk';
 const STORAGE = 'https://storage.yandexcloud.net/vsclips-video/';
 const CLIP_SAVE = 'clip_';
@@ -470,7 +470,8 @@ function viewOnboard() {
 
 
 /* ---------- статистика автора: /stats ----------
-   Из приложения (встроенный браузер, без входа) данные приходят в ссылке: #d=<base64url JSON {n, c:[[подпись, просмотры, лайки, мс]…]}>.
+   Из приложения (встроенный браузер, без входа) данные приходят в ссылке: #d=<base64url JSON {n, c:[[подпись, просмотры, лайки, мс]…]}>,
+   рядом — цвета темы приложения (bg, card, ink, mut, line, a — шесть hex-цифр), чтобы страница выглядела как экран приложения.
    Без данных — свои клипы из базы (нужен вход). */
 function statsFromHash() {
   const m = location.hash.match(/[#&]d=([^&]+)/); if (!m) return null;
@@ -480,14 +481,25 @@ function statsFromHash() {
     return { name: String(j.n || ''), clips: (j.c || []).slice(0, 500).map(a => ({ title: String(a[0] || ''), views: +a[1] || 0, likes: +a[2] || 0, at: +a[3] || 0, thumb: '' })) };
   } catch (e) { return { name: '', clips: [], bad: true }; }
 }
+function statsTheme() {      // цвета приложения → переменные страницы
+  const p = new URLSearchParams(location.hash.slice(1)), hex = k => /^[0-9a-f]{6}$/i.test(p.get(k) || '') ? '#' + p.get(k) : null;
+  const map = { bg: '--bg', card: '--surf', ink: '--ink', mut: '--muted', line: '--line', a: '--green' };
+  return Object.entries(map).map(([k, v]) => hex(k) ? `${v}:${hex(k)};` : '').join('') + (hex('a') ? `--leaf:${hex('a')};--lime:${hex('a')};` : '') + (hex('line') ? `--surf2:${hex('line')};` : '');
+}
 const statsTitle = t => t && t !== '​' && t.trim() ? t : 'Без подписи';
+const short = v => v >= 1e6 ? (v / 1e6).toFixed(1).replace('.0', '') + 'м' : v >= 1e3 ? (v / 1e3).toFixed(1).replace('.0', '') + 'к' : String(v);
 function statsBars(vals, labels, cls = '') {
   const max = Math.max(1, ...vals);
-  return `<div class="st-bars ${cls}">${vals.map((v, i) => `<div class="st-bar"><div class="st-track"><i style="height:${Math.max(v ? 4 : 0, v / max * 100)}%"></i></div><b>${v >= 1e6 ? (v / 1e6).toFixed(1).replace('.0', '') + 'м' : v >= 1e3 ? (v / 1e3).toFixed(1).replace('.0', '') + 'к' : v}</b><span>${esc(labels[i])}</span></div>`).join('')}</div>`;
+  return `<div class="st-bars ${cls}">${vals.map((v, i) => `<div class="st-bar"><div class="st-track"><i style="height:${Math.max(v ? 4 : 0, v / max * 100)}%"></i></div><b>${short(v)}</b><span>${esc(labels[i])}</span></div>`).join('')}</div>`;
 }
-function statsHtml(d) {
-  const clips = d.clips;
-  if (!clips.length) return `<div class="empty" style="position:static;padding:72px 24px"><div class="e">📊</div><h2>${d.bad ? 'Ссылка повреждена' : 'Пока нечего считать'}</h2><p>${d.bad ? 'Откройте статистику заново из приложения' : 'Снимите первый клип в приложении — здесь появятся просмотры и лайки'}</p></div>`;
+const ST_PERIODS = [['7', '7 дн.'], ['28', '28 дн.'], ['all', 'Всё время']];
+function statsHtml(d, period) {
+  if (!d.clips.length) return `<div class="st-card st-empty"><div class="e">📊</div><b>${d.bad ? 'Не получилось открыть' : 'Пока нечего считать'}</b><span>${d.bad ? 'Закройте и откройте статистику ещё раз' : 'Снимите первый клип — здесь появятся просмотры и лайки'}</span></div>`;
+  const from = period === 'all' ? 0 : Date.now() - +period * 864e5;
+  const clips = d.clips.filter(v => v.at >= from);
+  const chips = `<div class="st-chips">${ST_PERIODS.map(([k, l]) => `<button data-per="${k}" class="${k === period ? 'on' : ''}">${l}</button>`).join('')}</div>`;
+  const when = period === 'all' ? 'за всё время' : `за ${period} дн.`;
+  if (!clips.length) return chips + `<div class="st-card st-empty"><div class="e">🗓</div><b>За ${period} дн. клипов не было</b><span>Выберите период побольше</span></div>`;
   const views = clips.reduce((a, v) => a + v.views, 0), likes = clips.reduce((a, v) => a + v.likes, 0);
   const rate = views ? (likes * 100 / views).toFixed(1).replace('.', ',') : '0';
   const best = clips.reduce((a, v) => v.views > a.views ? v : a, clips[0]);
@@ -495,33 +507,48 @@ function statsHtml(d) {
   const wd = [0, 0, 0, 0, 0, 0, 0]; clips.forEach(v => { if (v.at) wd[(new Date(v.at).getDay() + 6) % 7]++; });
   const top = [...clips].sort((a, b) => b.views - a.views).slice(0, 5), topMax = Math.max(1, top[0]?.views || 0);
   const date = t => { const x = new Date(t); return t ? x.getDate() + '.' + (x.getMonth() + 1) : '—'; };
-  const thumb = v => `<div class="st-thumb">${v.thumb ? `<img src="${esc(v.thumb)}" alt="" loading="lazy">` : ''}</div>`;
-  return `<div class="st-tiles">
-      <div class="st-tile hero"><em>👁</em><b>${fmtNum(views)}</b><span>${plural(views, 'просмотр', 'просмотра', 'просмотров')}</span></div>
-      <div class="st-tile"><em>❤️</em><b>${fmtNum(likes)}</b><span>${plural(likes, 'лайк', 'лайка', 'лайков')}</span></div>
-      <div class="st-tile"><em>🎬</em><b>${clips.length}</b><span>${plural(clips.length, 'клип', 'клипа', 'клипов')}</span></div>
-      <div class="st-tile"><em>🔥</em><b>${rate}%</b><span>лайков от просмотров</span></div>
+  const thumb = v => `<div class="st-thumb">${v.thumb ? `<img src="${esc(v.thumb)}" alt="" loading="lazy">` : ic('play')}</div>`;
+  return chips + `<div class="st-card"><div class="st-h">Обзор<small>${when}</small></div>
+      <div class="st-grid">
+        <div><span>Просмотры</span><b>${short(views)}</b></div>
+        <div><span>Лайки</span><b>${short(likes)}</b></div>
+        <div><span>${plural(clips.length, 'Клип', 'Клипа', 'Клипов')}</span><b>${clips.length}</b></div>
+      </div>
+      <div class="st-sub"><span>Лайков от просмотров</span><b>${rate}%</b></div>
+      <div class="st-sub"><span>В среднем на клип</span><b>${fmtNum(Math.round(views / clips.length))} 👁</b></div>
     </div>
-    <h3>Лучший клип</h3>
-    <div class="st-best card">${thumb(best)}<div><div class="st-k">🏆 Больше всего просмотров</div><div class="st-t">${esc(statsTitle(best.title))}</div><div>👁 ${fmtNum(best.views)} &nbsp; ❤️ ${fmtNum(best.likes)}</div></div></div>
-    <h3>Просмотры последних клипов</h3>
-    <div class="card st-chart">${statsBars(recent.map(v => v.views), recent.map(v => date(v.at)))}</div>
-    <h3>В какие дни вы снимаете</h3>
-    <div class="card st-chart">${statsBars(wd, ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'], 'lime')}</div>
-    <h3>Топ-5 по просмотрам</h3>
-    ${top.map((v, i) => `<div class="st-top"><b class="st-n">${i + 1}</b>${thumb(v)}<div class="st-tw"><div class="st-t1">${esc(statsTitle(v.title))}</div><div class="st-line"><i style="width:${v.views / topMax * 100}%"></i></div><small>👁 ${fmtNum(v.views)} · ❤️ ${fmtNum(v.likes)}</small></div></div>`).join('')}
-    <p class="st-note">Считается по всем вашим клипам. Графики по дням и сохранения — скоро.</p>`;
+    <div class="st-card"><div class="st-h">Лучший клип</div>
+      <div class="st-best">${thumb(best)}<div><div class="st-t">${esc(statsTitle(best.title))}</div><div class="st-m">${date(best.at)}</div><div class="st-nums"><span>👁 ${fmtNum(best.views)}</span><span>❤️ ${fmtNum(best.likes)}</span></div></div></div>
+    </div>
+    <div class="st-card"><div class="st-h">Просмотры по клипам<small>последние ${recent.length}</small></div>${statsBars(recent.map(v => v.views), recent.map(v => date(v.at)))}</div>
+    <div class="st-card"><div class="st-h">Когда вы публикуете</div>${statsBars(wd, ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'], 'soft')}</div>
+    <div class="st-card"><div class="st-h">Топ клипов</div>
+      ${top.map((v, i) => `<div class="st-top"><b class="st-n">${i + 1}</b>${thumb(v)}<div class="st-tw"><div class="st-t1">${esc(statsTitle(v.title))}</div><div class="st-line"><i style="width:${v.views / topMax * 100}%"></i></div><small>👁 ${fmtNum(v.views)} · ❤️ ${fmtNum(v.likes)}</small></div></div>`).join('')}
+    </div>
+    <p class="st-note">Цифры по клипам, опубликованным ${when}.</p>`;
 }
-function viewStatsApp(d) {      // открыто из приложения: без входа, без нижней панели
-  document.title = 'Статистика · Миг';
-  root.innerHTML = `<div class="stats-page app">${d.name ? `<div class="st-who">${esc(d.name)}</div>` : ''}${statsHtml(d)}</div>`;
+function statsMount(el, d) {      // переключатель периода перерисовывает только содержимое
+  let per = '28';
+  try { per = localStorage.getItem('mig_stats_per') || per; } catch (e) { }
+  if (!ST_PERIODS.some(p => p[0] === per)) per = '28';
+  const draw = () => { el.innerHTML = statsHtml(d, per); };
+  el.onclick = e => { const b = e.target.closest('[data-per]'); if (!b) return; per = b.dataset.per; try { localStorage.setItem('mig_stats_per', per); } catch (x) { } draw(); };
+  draw();
+}
+function viewStatsApp(d) {      // открыто из приложения: выглядит как экран приложения — без шапки, панели, выделения и масштаба
+  document.title = 'Статистика';
+  document.documentElement.classList.add('st-app');
+  root.innerHTML = `<div class="stats-page app" style="${statsTheme()}"><div id="stBody"></div></div>`;
+  document.body.style.background = getComputedStyle(root.firstElementChild).getPropertyValue('--bg');
+  statsMount($('#stBody'), d);
 }
 async function viewStats() {
   const host = shell(loading());
   const clips = await clipsOf(S.uid).catch(() => null);
   if (S.view !== 'stats') return;
-  host.innerHTML = `<div class="stats-page"><h1>Статистика</h1>${clips ? statsHtml({ clips: clips.map(v => ({ title: v.title, views: v.views || 0, likes: (v.likes || []).length, at: ms(v.createdAt), thumb: v.thumb || '' })) })
-    : `<div class="empty" style="position:static;padding:72px 24px"><div class="e">📡</div><h2>Не загрузилось</h2></div>`}</div>`;
+  if (!clips) { host.innerHTML = `<div class="empty"><div class="e">📡</div><h2>Не загрузилось</h2></div>`; return; }
+  host.innerHTML = `<div class="stats-page"><h1>Статистика</h1><div id="stBody"></div></div>`;
+  statsMount($('#stBody', host), { clips: clips.map(v => ({ title: v.title, views: v.views || 0, likes: (v.likes || []).length, at: ms(v.createdAt), thumb: v.thumb || '' })) });
 }
 
 /* ---------- маршруты ---------- */

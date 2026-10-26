@@ -40,7 +40,7 @@
 <script>(function(){var k='warm';try{if(!localStorage.getItem('vs_skin91')){localStorage.setItem('vs_skin','warm');localStorage.setItem('vs_skin91','1')}var s=localStorage.getItem('vs_skin');k=s==='paper'||s==='lite'||s==='material'||s==='warm'?s:(localStorage.getItem('vs_lite')==='on'?'lite':'warm')}catch(e){}
 document.documentElement.dataset.skin=k;document.getElementById('skinPaper').disabled=k!=='paper';document.getElementById('skinMd').disabled=k!=='material'&&k!=='warm';document.getElementById('skinWarm').disabled=k!=='warm'})()</script>
 <style>:root{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)} body{margin:0} img{max-width:100%} [hidden]{display:none!important}</style>
-<link rel="stylesheet" href="mig/mig.css?v=1.1" id="migCss" disabled>
+<link rel="stylesheet" href="mig/mig.css?v=1.2" id="migCss" disabled>
 <script>
 /* «Миг»: свои стили, значок и заголовок; стили VСмске выключаем. В режиме «только Музыка» — дизайн «Тёплый» и плашка сверху. */
 (function () {
@@ -83,7 +83,7 @@ document.documentElement.dataset.skin=k;document.getElementById('skinPaper').dis
 <script>
 (function () {
   var m = window.SITE_MODE, sc = document.createElement('script'); sc.type = 'module';
-  if (m === 'mig') { document.getElementById('app').hidden = true; sc.src = 'mig/app.js?v=1.1'; }
+  if (m === 'mig') { document.getElementById('app').hidden = true; sc.src = 'mig/app.js?v=1.2'; }
   else { document.getElementById('mig').hidden = true; window.VS_MUSIC_ONLY = m === 'music'; sc.src = 'app.js?v=9.7'; }
   document.body.appendChild(sc);
 })();
