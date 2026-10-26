@@ -141,3 +141,34 @@ input { font: inherit; color: inherit; }
 @keyframes fade { from { opacity: 0; } } @keyframes up { from { transform: translateY(40px); opacity: 0; } }
 .toast { position: fixed; left: 50%; bottom: calc(var(--nav-h) + 16px); transform: translateX(-50%); z-index: 60; padding: 12px 18px; border-radius: 14px; background: #222; color: #fff; font-size: 14px; max-width: 90vw; box-shadow: 0 8px 30px rgba(0,0,0,.4); }
 @media (min-width: 900px) { .sound-btn { top: 14px; } .item .stack .progress { bottom: 16px; left: 2px; right: 2px; } }
+
+/* статистика автора (/stats; из приложения — во встроенном браузере, без нижней панели) */
+.stats-page { max-width: 640px; margin: 0 auto; padding: 18px 16px 40px; }
+.stats-page.app { height: 100%; overflow-y: auto; width: 100%; }
+.stats-page h1 { font-size: 26px; margin: 4px 0 14px; }
+.stats-page h3 { font-size: 15px; font-weight: 600; color: var(--muted); margin: 22px 4px 10px; }
+.st-who { color: var(--muted); font-size: 14px; margin: 0 4px 10px; }
+.st-tiles { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.st-tile { background: var(--surf); border: 1px solid var(--line); border-radius: 22px; padding: 16px; display: flex; flex-direction: column; gap: 2px; }
+.st-tile em { font-style: normal; font-size: 24px; margin-bottom: 6px; }
+.st-tile b { font-size: 28px; font-weight: 800; letter-spacing: -0.02em; }
+.st-tile span { color: var(--muted); font-size: 13px; }
+.st-tile.hero { background: var(--brush); border-color: transparent; color: #fff; } .st-tile.hero span { color: rgba(255,255,255,.85); }
+.st-best { display: flex; gap: 14px; align-items: center; padding: 12px; }
+.st-thumb { flex: none; width: 72px; height: 128px; border-radius: 14px; background: var(--brush); overflow: hidden; }
+.st-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.st-k { color: var(--leaf); font-weight: 700; font-size: 14px; } .st-t { font-size: 18px; font-weight: 700; margin: 4px 0 6px; overflow-wrap: anywhere; }
+.st-chart { padding: 14px 10px 10px; }
+.st-bars { display: flex; gap: 6px; align-items: stretch; height: 190px; }
+.st-bar { flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: center; gap: 4px; }
+.st-track { flex: 1; width: 100%; max-width: 40px; border-radius: 10px; background: var(--surf2); position: relative; overflow: hidden; }
+.st-track i { position: absolute; left: 0; right: 0; bottom: 0; border-radius: 10px; background: linear-gradient(var(--leaf), var(--green)); }
+.st-bars.lime .st-track i { background: linear-gradient(var(--lime), var(--green)); }
+.st-bar b { font-size: 11px; font-weight: 700; white-space: nowrap; } .st-bar span { font-size: 10px; color: var(--muted); white-space: nowrap; }
+.st-top { display: flex; align-items: center; gap: 12px; padding: 6px 4px; }
+.st-top .st-thumb { width: 40px; height: 64px; border-radius: 10px; }
+.st-n { width: 18px; color: var(--leaf); font-size: 18px; font-weight: 800; }
+.st-tw { flex: 1; min-width: 0; } .st-t1 { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.st-line { height: 8px; border-radius: 8px; background: var(--surf2); margin: 6px 0 4px; overflow: hidden; } .st-line i { display: block; height: 100%; border-radius: 8px; background: var(--brush); }
+.st-top small { color: var(--muted); font-size: 12px; }
+.st-note { color: var(--muted); font-size: 13px; margin: 22px 4px 0; }
