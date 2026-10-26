@@ -20,7 +20,7 @@ const fb = initializeApp({
 const auth = getAuth(fb); auth.languageCode = 'ru';
 const db = getFirestore(fb);
 
-const VERSION = '1.0';
+const VERSION = '1.1';
 const APK = 'https://storage.yandexcloud.net/vsclips-video/app/Mig.apk';
 const STORAGE = 'https://storage.yandexcloud.net/vsclips-video/';
 const CLIP_SAVE = 'clip_';
@@ -364,7 +364,7 @@ async function viewProfile(idOrNick) {
         <div class="ring">${avatar(u)}</div></div>
       <div class="stats card"><div><b>${fmtNum((u.friends || []).length)}</b><span>Друзья</span></div><div><b>${fmtNum(clips.length)}</b><span>${plural(clips.length, 'Клип', 'Клипа', 'Клипов')}</span></div><div><b>${fmtNum(likes)}</b><span>Лайки</span></div></div>
       ${bio ? `<div class="bio">${esc(bio)}</div>` : ''}
-      <div class="btns">${own ? `<button class="btn gray" data-p="edit">Изменить профиль</button><button class="btn gray" data-p="share">Поделиться</button>`
+      <div class="btns">${own ? `<button class="btn gray" data-p="edit">Изменить профиль</button><button class="btn gray" data-p="share">Поделиться</button><button class="btn gray" data-p="stats">📊</button>`
         : `<button class="btn" data-p="friend">Добавить в друзья</button><button class="btn gray" data-p="share">Поделиться</button>`}</div>
       ${own ? `<div class="btns"><button class="btn gray" data-p="out">Выйти</button></div>` : ''}
     </div>
@@ -375,6 +375,7 @@ async function viewProfile(idOrNick) {
   view.querySelectorAll('[data-p]').forEach(b => b.onclick = () => {
     const p = b.dataset.p;
     if (p === 'share') copyProfile(u);
+    if (p === 'stats') go('stats');
     if (p === 'edit') appSheet('Менять фото, имя и тему — в приложении.');
     if (p === 'friend') appSheet('Заявки в друзья и сообщения — в приложении.');
     if (p === 'out') { forYou.list = []; forYou.last = null; forYou.end = false; signOut(auth); }
@@ -467,8 +468,65 @@ function viewOnboard() {
   };
 }
 
+
+/* ---------- статистика автора: /stats ----------
+   Из приложения (встроенный браузер, без входа) данные приходят в ссылке: #d=<base64url JSON {n, c:[[подпись, просмотры, лайки, мс]…]}>.
+   Без данных — свои клипы из базы (нужен вход). */
+function statsFromHash() {
+  const m = location.hash.match(/[#&]d=([^&]+)/); if (!m) return null;
+  try {
+    const b = atob(m[1].replace(/-/g, '+').replace(/_/g, '/'));
+    const j = JSON.parse(new TextDecoder().decode(Uint8Array.from(b, c => c.charCodeAt(0))));
+    return { name: String(j.n || ''), clips: (j.c || []).slice(0, 500).map(a => ({ title: String(a[0] || ''), views: +a[1] || 0, likes: +a[2] || 0, at: +a[3] || 0, thumb: '' })) };
+  } catch (e) { return { name: '', clips: [], bad: true }; }
+}
+const statsTitle = t => t && t !== '​' && t.trim() ? t : 'Без подписи';
+function statsBars(vals, labels, cls = '') {
+  const max = Math.max(1, ...vals);
+  return `<div class="st-bars ${cls}">${vals.map((v, i) => `<div class="st-bar"><div class="st-track"><i style="height:${Math.max(v ? 4 : 0, v / max * 100)}%"></i></div><b>${v >= 1e6 ? (v / 1e6).toFixed(1).replace('.0', '') + 'м' : v >= 1e3 ? (v / 1e3).toFixed(1).replace('.0', '') + 'к' : v}</b><span>${esc(labels[i])}</span></div>`).join('')}</div>`;
+}
+function statsHtml(d) {
+  const clips = d.clips;
+  if (!clips.length) return `<div class="empty" style="position:static;padding:72px 24px"><div class="e">📊</div><h2>${d.bad ? 'Ссылка повреждена' : 'Пока нечего считать'}</h2><p>${d.bad ? 'Откройте статистику заново из приложения' : 'Снимите первый клип в приложении — здесь появятся просмотры и лайки'}</p></div>`;
+  const views = clips.reduce((a, v) => a + v.views, 0), likes = clips.reduce((a, v) => a + v.likes, 0);
+  const rate = views ? (likes * 100 / views).toFixed(1).replace('.', ',') : '0';
+  const best = clips.reduce((a, v) => v.views > a.views ? v : a, clips[0]);
+  const recent = [...clips].sort((a, b) => a.at - b.at).slice(-12);
+  const wd = [0, 0, 0, 0, 0, 0, 0]; clips.forEach(v => { if (v.at) wd[(new Date(v.at).getDay() + 6) % 7]++; });
+  const top = [...clips].sort((a, b) => b.views - a.views).slice(0, 5), topMax = Math.max(1, top[0]?.views || 0);
+  const date = t => { const x = new Date(t); return t ? x.getDate() + '.' + (x.getMonth() + 1) : '—'; };
+  const thumb = v => `<div class="st-thumb">${v.thumb ? `<img src="${esc(v.thumb)}" alt="" loading="lazy">` : ''}</div>`;
+  return `<div class="st-tiles">
+      <div class="st-tile hero"><em>👁</em><b>${fmtNum(views)}</b><span>${plural(views, 'просмотр', 'просмотра', 'просмотров')}</span></div>
+      <div class="st-tile"><em>❤️</em><b>${fmtNum(likes)}</b><span>${plural(likes, 'лайк', 'лайка', 'лайков')}</span></div>
+      <div class="st-tile"><em>🎬</em><b>${clips.length}</b><span>${plural(clips.length, 'клип', 'клипа', 'клипов')}</span></div>
+      <div class="st-tile"><em>🔥</em><b>${rate}%</b><span>лайков от просмотров</span></div>
+    </div>
+    <h3>Лучший клип</h3>
+    <div class="st-best card">${thumb(best)}<div><div class="st-k">🏆 Больше всего просмотров</div><div class="st-t">${esc(statsTitle(best.title))}</div><div>👁 ${fmtNum(best.views)} &nbsp; ❤️ ${fmtNum(best.likes)}</div></div></div>
+    <h3>Просмотры последних клипов</h3>
+    <div class="card st-chart">${statsBars(recent.map(v => v.views), recent.map(v => date(v.at)))}</div>
+    <h3>В какие дни вы снимаете</h3>
+    <div class="card st-chart">${statsBars(wd, ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'], 'lime')}</div>
+    <h3>Топ-5 по просмотрам</h3>
+    ${top.map((v, i) => `<div class="st-top"><b class="st-n">${i + 1}</b>${thumb(v)}<div class="st-tw"><div class="st-t1">${esc(statsTitle(v.title))}</div><div class="st-line"><i style="width:${v.views / topMax * 100}%"></i></div><small>👁 ${fmtNum(v.views)} · ❤️ ${fmtNum(v.likes)}</small></div></div>`).join('')}
+    <p class="st-note">Считается по всем вашим клипам. Графики по дням и сохранения — скоро.</p>`;
+}
+function viewStatsApp(d) {      // открыто из приложения: без входа, без нижней панели
+  document.title = 'Статистика · Миг';
+  root.innerHTML = `<div class="stats-page app">${d.name ? `<div class="st-who">${esc(d.name)}</div>` : ''}${statsHtml(d)}</div>`;
+}
+async function viewStats() {
+  const host = shell(loading());
+  const clips = await clipsOf(S.uid).catch(() => null);
+  if (S.view !== 'stats') return;
+  host.innerHTML = `<div class="stats-page"><h1>Статистика</h1>${clips ? statsHtml({ clips: clips.map(v => ({ title: v.title, views: v.views || 0, likes: (v.likes || []).length, at: ms(v.createdAt), thumb: v.thumb || '' })) })
+    : `<div class="empty" style="position:static;padding:72px 24px"><div class="e">📡</div><h2>Не загрузилось</h2></div>`}</div>`;
+}
+
 /* ---------- маршруты ---------- */
 function route() {
+  if (curRoute() === 'stats' && statsFromHash()) { feedCtl?.destroy(); S.view = 'stats'; return viewStatsApp(statsFromHash()); }
   if (S.phase !== 'app') return render();
   feedCtl?.destroy();
   const [a, b] = curRoute().split('/');
@@ -478,9 +536,11 @@ function route() {
   else if (a === 'me') { S.view = 'me'; if (S.me?.nick) go('@' + S.me.nick, true); else viewProfile(S.uid); }
   else if (a.startsWith('@')) { S.view = 'profile'; viewProfile(decodeURIComponent(a)); }
   else if (a === 'id' && b) { S.view = 'profile'; viewProfile(b); }
+  else if (a === 'stats') { S.view = 'stats'; viewStats(); }
   else { S.view = 'feed'; go('', true); }
 }
 function render() {
+  if (curRoute() === 'stats' && statsFromHash()) return route();
   if (S.phase === 'loading') root.innerHTML = `<div class="empty" style="position:fixed"><img src="${BASE}mig/icon-192.png" style="width:96px;height:96px;border-radius:26px" alt=""></div>`;
   else if (S.phase === 'auth') viewAuth();
   else if (S.phase === 'profile') viewOnboard();
