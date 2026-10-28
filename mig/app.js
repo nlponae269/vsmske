@@ -20,8 +20,9 @@ const fb = initializeApp({
 const auth = getAuth(fb); auth.languageCode = 'ru';
 const db = getFirestore(fb);
 
-const VERSION = '1.2';
+const VERSION = '1.3';
 const APK = 'https://storage.yandexcloud.net/vsclips-video/app/Mig.apk';
+const WIN = 'https://storage.yandexcloud.net/vsclips-video/app/Mig-Setup.exe';      // «Миг» для Windows
 const STORAGE = 'https://storage.yandexcloud.net/vsclips-video/';
 const CLIP_SAVE = 'clip_';
 const NICK_RE = /^[a-z0-9._]{4,30}$/;
@@ -297,7 +298,7 @@ function shell(inner, full = false) {
       <a data-go="friends" href="${BASE}friends" class="${on('friends')}">${ic('friends')}Друзья</a>
       <button data-act="plus">${ic('plus')}Снять клип</button>
       <a data-go="${meLink}" href="${BASE}${meLink}" class="${on('me')}">${ic('person')}Профиль</a>
-      <div class="promo"><b>Миг для Android</b><span>Снимайте клипы под звуки, вайбогенератор тем и обои от нейросети.</span><br><a href="${APK}">Скачать APK</a></div>
+      <div class="promo"><b>Миг для Android</b><span>Снимайте клипы под звуки, вайбогенератор тем и обои от нейросети.</span><br><a href="${APK}">Скачать APK</a> <a href="${WIN}">Для Windows</a></div>
     </aside>
     <div class="main"><div class="view ${full ? 'full' : ''}" id="view">${inner}</div></div>
     <nav class="nav">
@@ -388,6 +389,7 @@ async function copyProfile(u) {
 }
 
 /* ---------- вход и анкета ---------- */
+let deskBack = null;      // ответ Google для программы «Миг» на Windows (см. ниже)
 const GOOGLE_CLIENT = '195735209722-8tjsd33moqquhreivj07f48l5cga0r3d.apps.googleusercontent.com';
 async function sha256hex(t) { const b = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(t)); return [...new Uint8Array(b)].map(x => x.toString(16).padStart(2, '0')).join(''); }
 async function googleGo() {      // переход на Google и обратно (если всплывающее окно не открылось)
@@ -400,7 +402,14 @@ async function googleGo() {      // переход на Google и обратно
 }
 {
   const p = new URLSearchParams(location.hash.slice(1));
-  if (p.has('id_token')) {
+  if (p.has('id_token') && (p.get('state') || '').startsWith('desk.')) {
+    // вход через Google для программы «Миг» на Windows: страницу Google она открыла в обычном браузере (в своём окне Google не пускает),
+    // ответ отдаём обратно программе ссылкой mig://auth (метку desk. снимаем — программа сверит state со своим)
+    p.set('state', p.get('state').slice(5));
+    deskBack = 'mig://auth#' + p.toString();
+    history.replaceState(null, '', BASE);
+    location.href = deskBack;
+  } else if (p.has('id_token')) {
     history.replaceState(null, '', BASE);
     let saved = {}; try { saved = JSON.parse(localStorage.getItem('vs_gauth') || '{}'); localStorage.removeItem('vs_gauth'); } catch (e) { }
     if (saved.state === p.get('state')) signInWithCredential(auth, new OAuthProvider('google.com').credential({ idToken: p.get('id_token'), rawNonce: saved.raw }))
@@ -420,7 +429,7 @@ function viewAuth() {
     ${S.authTab ? '' : '<button class="btn gray" id="reset" style="height:40px;font-size:14px">Забыли пароль?</button>'}
     <div class="or">или</div>
     <button class="btn gray" id="google"><b style="color:#4285F4">G</b> Войти через Google</button>
-    <div class="apk">Снимать клипы — в приложении · <a href="${APK}">Скачать APK</a></div>
+    <div class="apk">Снимать клипы — в приложении · <a href="${APK}">Скачать APK</a> · <a href="${WIN}">Для Windows</a></div>
   </div></div>`;
   root.querySelectorAll('[data-t]').forEach(b => b.onclick = () => { S.authTab = +b.dataset.t; S.authErr = ''; viewAuth(); });
   const run = async f => { S.authErr = ''; S.busy = true; $('#go').disabled = true; try { await f(); } catch (e) { S.authErr = errText(e); } S.busy = false; if (S.phase === 'auth') viewAuth(); };
@@ -567,6 +576,10 @@ function route() {
   else { S.view = 'feed'; go('', true); }
 }
 function render() {
+  if (deskBack) { root.innerHTML = `<div class="auth" style="width:100%"><div class="box">
+      <img class="logo" src="${BASE}mig/icon-192.png" alt=""><h1>Вход выполнен</h1>
+      <p class="sub">Вернитесь в программу «Миг» на компьютере — вы уже вошли. Эту вкладку можно закрыть.</p>
+      <a class="btn" href="${esc(deskBack)}">Открыть Миг</a></div></div>`; return; }
   if (curRoute() === 'stats' && statsFromHash()) return route();
   if (S.phase === 'loading') root.innerHTML = `<div class="empty" style="position:fixed"><img src="${BASE}mig/icon-192.png" style="width:96px;height:96px;border-radius:26px" alt=""></div>`;
   else if (S.phase === 'auth') viewAuth();
